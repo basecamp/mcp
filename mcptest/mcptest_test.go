@@ -57,6 +57,26 @@ func TestConnectListsToolsOverTheWire(t *testing.T) {
 	assert.Equal(t, "echoes text back", tools["echo"].Description)
 }
 
+func TestListToolsFollowsPagination(t *testing.T) {
+	// A one-tool page size forces the listing across protocol pages; the
+	// helper must follow cursors rather than stop at the first page.
+	server := mcp.NewServer(&mcp.Implementation{Name: "mcptest-fixture", Version: "0.0.0"}, &mcp.ServerOptions{PageSize: 1})
+	schema := map[string]any{"type": "object"}
+	for _, name := range []string{"alpha", "beta", "gamma"} {
+		server.AddTool(&mcp.Tool{Name: name, Description: name, InputSchema: schema},
+			func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "ok"}}}, nil
+			})
+	}
+
+	session := Connect(t, server)
+	tools := ListTools(t, session)
+	require.Len(t, tools, 3)
+	for _, name := range []string{"alpha", "beta", "gamma"} {
+		assert.Contains(t, tools, name)
+	}
+}
+
 func TestCallTextRoundTrips(t *testing.T) {
 	session := Connect(t, testServer())
 

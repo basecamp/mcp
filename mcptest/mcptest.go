@@ -32,13 +32,13 @@ func Connect(t testing.TB, server *mcp.Server) *mcp.ClientSession {
 	return clientSession
 }
 
-// ListTools lists the session's tools keyed by name.
+// ListTools lists all of the session's tools keyed by name, following
+// pagination cursors until the listing is complete.
 func ListTools(t testing.TB, session *mcp.ClientSession) map[string]*mcp.Tool {
 	t.Helper()
-	res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
-	require.NoError(t, err)
 	tools := map[string]*mcp.Tool{}
-	for _, tool := range res.Tools {
+	for tool, err := range session.Tools(context.Background(), nil) {
+		require.NoError(t, err)
 		tools[tool.Name] = tool
 	}
 	return tools
