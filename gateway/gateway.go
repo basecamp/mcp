@@ -92,6 +92,9 @@ func New(domains []Domain, cfg Config) (*Server, error) {
 
 	byName := map[string]Domain{}
 	for _, d := range domains {
+		if _, ok := d.Find(DescribeAction); ok {
+			return nil, fmt.Errorf("domain %q registers an operation named %q, which is reserved for the gateway describe action", d.Name(), DescribeAction)
+		}
 		byName[d.Name()] = d
 	}
 

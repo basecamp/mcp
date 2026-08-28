@@ -263,6 +263,19 @@ func TestDomainNarrowing(t *testing.T) {
 	assert.Contains(t, tools, "test_search")
 }
 
+func TestReservedDescribeActionFailsClosed(t *testing.T) {
+	// An operation registered under the reserved describe action would be
+	// silently unreachable: dispatch always routes "describe" to
+	// Domain.Describe. Refuse the catalog at startup instead.
+	bad := &fakeDomain{name: "bad", ops: []gateway.Operation{
+		{Action: "describe", ReadOnly: true},
+	}}
+	_, err := gateway.New([]gateway.Domain{bad}, gateway.Config{Handler: echoHandler})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `reserved`)
+	assert.Contains(t, err.Error(), `"bad"`)
+}
+
 func TestMissingHandlerIsAStartupError(t *testing.T) {
 	_, err := gateway.New(testDomains(), gateway.Config{})
 	require.Error(t, err)
