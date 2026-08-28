@@ -780,3 +780,37 @@ func TestSplitServesThroughGateway(t *testing.T) {
 	assert.False(t, writeAnn.ReadOnlyHint)
 	assert.True(t, *writeAnn.DestructiveHint, "delete_note is served here")
 }
+
+// TestDestructiveActionOverrides covers the curated escape hatch for
+// operations whose model lacks the destructive trait and whose name the
+// bridge misses — and proves stale curation fails loudly in every direction.
+func TestDestructiveActionOverrides(t *testing.T) {
+	spec := testSpec(fixtureModel())
+	spec.Domains[0].DestructiveActions = []string{"update_note"}
+	cat, err := Load(spec)
+	require.NoError(t, err)
+	update, ok := domainByKey(t, cat, "notes").Operation("update_note")
+	require.True(t, ok)
+	assert.True(t, update.Destructive)
+
+	spec = testSpec(fixtureModel())
+	spec.Domains[0].DestructiveActions = []string{"no_such_action"}
+	_, err = Load(spec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown action "no_such_action"`)
+
+	spec = testSpec(fixtureModel())
+	spec.Domains[0].DestructiveActions = []string{"get_note"}
+	_, err = Load(spec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `read-only action "get_note"`)
+
+	model := mutatedModel(t, func(bm, oa map[string]any) {
+		bm["operations"].(map[string]any)["UpdateNote"].(map[string]any)["destructive"] = true
+	})
+	spec = testSpec(model)
+	spec.Domains[0].DestructiveActions = []string{"update_note"}
+	_, err = Load(spec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "the model already declares its destructive trait")
+}

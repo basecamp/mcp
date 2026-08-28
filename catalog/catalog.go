@@ -46,6 +46,13 @@ type DomainSpec struct {
 	Title string // human-readable tool title, e.g. "HEY Boxes"
 	Blurb string // first line of the tool description
 	Tags  []string
+	// DestructiveActions marks actions destructive by name: the curated
+	// override for operations whose behavior model does not yet carry the
+	// destructive trait and whose name the bridge classifier misses (hey's
+	// empty_trash, say). Stale curation fails loudly: naming an unknown
+	// action, a read-only action, or an action whose model already declares
+	// the trait is a load error, so overrides die as the model learns.
+	DestructiveActions []string
 }
 
 // Spec parameterizes the catalog for one product.
@@ -242,7 +249,7 @@ func Load(spec Spec) (*Catalog, error) {
 		return nil, err
 	}
 
-	ops, err := joinOperations(&bm, &oa)
+	ops, declared, err := joinOperations(&bm, &oa)
 	if err != nil {
 		return nil, err
 	}
@@ -279,6 +286,19 @@ func Load(spec Spec) (*Catalog, error) {
 		if err := checkActionNames(domain); err != nil {
 			return nil, err
 		}
+		for _, action := range ds.DestructiveActions {
+			op, ok := domain.Operation(action)
+			if !ok {
+				return nil, fmt.Errorf("domain %q marks unknown action %q destructive", ds.Key, action)
+			}
+			if op.ReadOnly {
+				return nil, fmt.Errorf("domain %q marks read-only action %q destructive", ds.Key, action)
+			}
+			if declared[op.ID] {
+				return nil, fmt.Errorf("domain %q overrides action %q, but the model already declares its destructive trait — delete the override", ds.Key, action)
+			}
+			op.Destructive = true
+		}
 		cat.Domains = append(cat.Domains, domain)
 	}
 
@@ -312,40 +332,44 @@ func unmarshalModel(fsys fs.FS, name string, v any) error {
 // result by primary tag. The join is strict both ways: an operation present
 // in one file but not the other means the vendored snapshot is torn, and the
 // catalog refuses to build from it.
-func joinOperations(bm *behaviorModel, oa *openapiDoc) (map[string][]*Operation, error) {
+func joinOperations(bm *behaviorModel, oa *openapiDoc) (map[string][]*Operation, map[string]bool, error) {
 	byTag := map[string][]*Operation{}
+	declared := map[string]bool{}
 	seen := map[string]bool{}
 	for path, methods := range oa.Paths {
 		for method, op := range methods {
 			if op == nil {
-				return nil, fmt.Errorf("%s %s: null operation", method, path)
+				return nil, nil, fmt.Errorf("%s %s: null operation", method, path)
 			}
 			if op.OperationID == "" {
-				return nil, fmt.Errorf("%s %s: missing operationId", method, path)
+				return nil, nil, fmt.Errorf("%s %s: missing operationId", method, path)
 			}
 			if op.RequestBody != nil && op.RequestBody.Ref != "" {
-				return nil, fmt.Errorf("operation %q: requestBody $ref is not supported (inline the body in the SDK export)", op.OperationID)
+				return nil, nil, fmt.Errorf("operation %q: requestBody $ref is not supported (inline the body in the SDK export)", op.OperationID)
 			}
 			if seen[op.OperationID] {
-				return nil, fmt.Errorf("duplicate operationId %q", op.OperationID)
+				return nil, nil, fmt.Errorf("duplicate operationId %q", op.OperationID)
 			}
 			seen[op.OperationID] = true
 
 			traits, ok := bm.Operations[op.OperationID]
 			if !ok {
-				return nil, fmt.Errorf("operation %q in openapi.json but not behavior-model.json", op.OperationID)
+				return nil, nil, fmt.Errorf("operation %q in openapi.json but not behavior-model.json", op.OperationID)
+			}
+			if traits.Destructive != nil {
+				declared[op.OperationID] = true
 			}
 			if len(op.Tags) != 1 {
-				return nil, fmt.Errorf("operation %q: expected exactly one tag, got %v", op.OperationID, op.Tags)
+				return nil, nil, fmt.Errorf("operation %q: expected exactly one tag, got %v", op.OperationID, op.Tags)
 			}
 
 			params, err := resolveParams(op.Parameters, oa)
 			if err != nil {
-				return nil, fmt.Errorf("operation %q: %w", op.OperationID, err)
+				return nil, nil, fmt.Errorf("operation %q: %w", op.OperationID, err)
 			}
 			body, err := resolveBody(op, oa)
 			if err != nil {
-				return nil, fmt.Errorf("operation %q: %w", op.OperationID, err)
+				return nil, nil, fmt.Errorf("operation %q: %w", op.OperationID, err)
 			}
 			action := snakeCase(op.OperationID)
 			destructive := traits.Destructive != nil && *traits.Destructive
@@ -357,7 +381,7 @@ func joinOperations(bm *behaviorModel, oa *openapiDoc) (map[string][]*Operation,
 			if traits.ReadOnly && destructive {
 				// Contradictory annotations resolve differently across MCP
 				// clients; refuse the shape rather than emit it.
-				return nil, fmt.Errorf("operation %q is declared both readonly and destructive", op.OperationID)
+				return nil, nil, fmt.Errorf("operation %q is declared both readonly and destructive", op.OperationID)
 			}
 			joined := &Operation{
 				ID:             op.OperationID,
@@ -386,11 +410,11 @@ func joinOperations(bm *behaviorModel, oa *openapiDoc) (map[string][]*Operation,
 
 	for id := range bm.Operations {
 		if !seen[id] {
-			return nil, fmt.Errorf("operation %q in behavior-model.json but not openapi.json", id)
+			return nil, nil, fmt.Errorf("operation %q in behavior-model.json but not openapi.json", id)
 		}
 	}
 
-	return byTag, nil
+	return byTag, declared, nil
 }
 
 func checkActionNames(d *Domain) error {
