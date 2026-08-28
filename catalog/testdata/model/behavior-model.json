@@ -1,0 +1,11 @@
+{
+  "version": "fixture-1",
+  "operations": {
+    "ListNotes": { "readonly": true, "idempotent": true, "pagination": { "style": "cursor" } },
+    "GetNote": { "readonly": true, "idempotent": true },
+    "CreateNote": { "readonly": false, "idempotent": false },
+    "DeleteNote": { "readonly": false, "idempotent": true },
+    "SearchNotes": { "readonly": true, "idempotent": true },
+    "PurgeAccount": { "readonly": false, "idempotent": false }
+  }
+}
