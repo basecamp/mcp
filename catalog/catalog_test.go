@@ -177,6 +177,27 @@ func TestLoadRejectsTagClaimedTwice(t *testing.T) {
 	assert.Contains(t, err.Error(), `tag "Notes" claimed by both "notes" and "extra"`)
 }
 
+func TestLoadRejectsNullOperations(t *testing.T) {
+	// A null operation unmarshals cleanly; the join must refuse it rather
+	// than panic on the nil dereference during startup.
+	model := mutatedModel(t, func(bm, oa map[string]any) {
+		oa["paths"].(map[string]any)["/notes-null"] = map[string]any{"get": nil}
+	})
+	_, err := Load(testSpec(model))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "null operation")
+}
+
+func TestLoadRejectsDuplicateDomainKeys(t *testing.T) {
+	// Two specs sharing a key would both survive Load but collapse to one
+	// entry in gateway.New's name index, silently dropping operations.
+	spec := testSpec(fixtureModel())
+	spec.Domains = append(spec.Domains, DomainSpec{Key: spec.Domains[0].Key, Blurb: "Same key again.", Tags: []string{"Tasks"}})
+	_, err := Load(spec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate domain key")
+}
+
 func TestLoadRejectsActionNameCollisions(t *testing.T) {
 	// "List_notes" snake-cases to "list_notes", colliding with "ListNotes".
 	model := mutatedModel(t, func(bm, oa map[string]any) {

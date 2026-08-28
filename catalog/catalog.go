@@ -170,7 +170,12 @@ func Load(spec Spec) (*Catalog, error) {
 
 	cat := &Catalog{ModelVersion: bm.Version, Unmapped: map[string][]string{}}
 	claimed := map[string]string{} // tag -> domain key
+	seenKeys := map[string]bool{}
 	for _, ds := range spec.Domains {
+		if seenKeys[ds.Key] {
+			return nil, fmt.Errorf("duplicate domain key %q", ds.Key)
+		}
+		seenKeys[ds.Key] = true
 		domain := &Domain{Key: ds.Key, Tool: spec.ToolPrefix + ds.Key, Blurb: ds.Blurb}
 		for _, tag := range ds.Tags {
 			if prev, ok := claimed[tag]; ok {
@@ -223,6 +228,9 @@ func joinOperations(bm *behaviorModel, oa *openapiDoc) (map[string][]*Operation,
 	seen := map[string]bool{}
 	for path, methods := range oa.Paths {
 		for method, op := range methods {
+			if op == nil {
+				return nil, fmt.Errorf("%s %s: null operation", method, path)
+			}
 			if op.OperationID == "" {
 				return nil, fmt.Errorf("%s %s: missing operationId", method, path)
 			}
