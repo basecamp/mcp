@@ -220,6 +220,48 @@ func TestLoadRejectsTagsAbsentFromModel(t *testing.T) {
 	assert.Contains(t, err.Error(), `domain "ghost" claims tag "Nootes", which is not in the model`)
 }
 
+func TestLoadRejectsParamRefs(t *testing.T) {
+	model := mutatedModel(t, func(bm, oa map[string]any) {
+		get := oa["paths"].(map[string]any)["/notes"].(map[string]any)["get"].(map[string]any)
+		get["parameters"] = []any{map[string]any{"$ref": "#/components/parameters/Page"}}
+	})
+	_, err := Load(testSpec(model))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `parameter $ref "#/components/parameters/Page" is not supported`)
+}
+
+func TestLoadRejectsUnresolvableSchemaRefs(t *testing.T) {
+	model := mutatedModel(t, func(bm, oa map[string]any) {
+		newNote := oa["components"].(map[string]any)["schemas"].(map[string]any)["NewNote"].(map[string]any)
+		newNote["properties"].(map[string]any)["author"] = map[string]any{"$ref": "#/components/schemas/Missing"}
+	})
+	_, err := Load(testSpec(model))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unresolvable $ref "#/components/schemas/Missing"`)
+}
+
+func TestLoadRejectsNonSchemaRefs(t *testing.T) {
+	model := mutatedModel(t, func(bm, oa map[string]any) {
+		newNote := oa["components"].(map[string]any)["schemas"].(map[string]any)["NewNote"].(map[string]any)
+		newNote["properties"].(map[string]any)["author"] = map[string]any{"$ref": "#/components/responses/Author"}
+	})
+	_, err := Load(testSpec(model))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unsupported $ref "#/components/responses/Author"`)
+}
+
+func TestLoadRejectsUnconstrainedBodies(t *testing.T) {
+	// An unconstrained {} body schema would vanish under body's omitempty,
+	// indistinguishable from an operation that takes no body at all.
+	model := mutatedModel(t, func(bm, oa map[string]any) {
+		post := oa["paths"].(map[string]any)["/notes"].(map[string]any)["post"].(map[string]any)
+		post["requestBody"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"] = map[string]any{}
+	})
+	_, err := Load(testSpec(model))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "request body has no schema")
+}
+
 func TestLoadRejectsActionNameCollisions(t *testing.T) {
 	// "List_notes" snake-cases to "list_notes", colliding with "ListNotes".
 	model := mutatedModel(t, func(bm, oa map[string]any) {

@@ -13,6 +13,15 @@
 // surface matched the shape basecamp-mcp-server maintains by hand. The
 // product supplies a Spec: its tool prefix, its curated domain specs, and
 // its vendored model snapshot as an fs.FS.
+//
+// The loader's contract is deliberately bounded to the subset of OpenAPI the
+// producing SDK exports emit: per-operation inline parameters and bodies,
+// schema-located ("#/components/schemas/*") references, exactly one tag per
+// operation. Anything outside that subset — Reference Objects for
+// parameters or bodies, path-level parameters, unresolvable or
+// non-schema-located refs, unconstrained body schemas — fails loudly at
+// Load rather than degrading the derived catalog. Widening the subset is a
+// deliberate change made with a real export in hand, not a fallback.
 package catalog
 
 import (
@@ -92,6 +101,10 @@ type openapiOperation struct {
 
 // Param is one query or path parameter of an operation.
 type Param struct {
+	// Ref captures the reusable Reference Object form ({"$ref": ...}),
+	// which the loader refuses at startup rather than silently dropping.
+	// Never present in a built catalog.
+	Ref         string         `json:"$ref,omitempty"`
 	Name        string         `json:"name"`
 	In          string         `json:"in"`
 	Required    bool           `json:"required,omitempty"`
@@ -258,6 +271,14 @@ func joinOperations(bm *behaviorModel, oa *openapiDoc) (map[string][]*Operation,
 				return nil, fmt.Errorf("operation %q: expected exactly one tag, got %v", op.OperationID, op.Tags)
 			}
 
+			params, err := resolveParams(op.Parameters, oa)
+			if err != nil {
+				return nil, fmt.Errorf("operation %q: %w", op.OperationID, err)
+			}
+			body, err := resolveBody(op, oa)
+			if err != nil {
+				return nil, fmt.Errorf("operation %q: %w", op.OperationID, err)
+			}
 			joined := &Operation{
 				ID:           op.OperationID,
 				Action:       snakeCase(op.OperationID),
@@ -269,8 +290,8 @@ func joinOperations(bm *behaviorModel, oa *openapiDoc) (map[string][]*Operation,
 				ReadOnly:     traits.ReadOnly,
 				Idempotent:   traits.Idempotent,
 				Paginated:    traits.Pagination != nil,
-				Params:       resolveParams(op.Parameters, oa),
-				Body:         resolveBody(op, oa),
+				Params:       params,
+				Body:         body,
 				BodyRequired: op.RequestBody != nil && op.RequestBody.Required,
 			}
 			byTag[joined.Tag] = append(byTag[joined.Tag], joined)
@@ -298,29 +319,48 @@ func checkActionNames(d *Domain) error {
 }
 
 // resolveParams returns the operation's parameters with schema $refs inlined.
-func resolveParams(params []Param, oa *openapiDoc) []Param {
+func resolveParams(params []Param, oa *openapiDoc) ([]Param, error) {
 	if len(params) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make([]Param, len(params))
 	for i, p := range params {
-		p.Schema = asSchema(resolveRefs(p.Schema, oa, 0))
+		if p.Ref != "" {
+			return nil, fmt.Errorf("parameter $ref %q is not supported (inline parameters in the SDK export)", p.Ref)
+		}
+		resolved, err := resolveRefs(p.Schema, oa, 0)
+		if err != nil {
+			return nil, fmt.Errorf("parameter %q: %w", p.Name, err)
+		}
+		p.Schema = asSchema(resolved)
 		out[i] = p
 	}
-	return out
+	return out, nil
 }
 
 // resolveBody returns the operation's JSON request body schema with $refs
 // inlined, or nil when the operation takes no JSON body.
-func resolveBody(op *openapiOperation, oa *openapiDoc) map[string]any {
+func resolveBody(op *openapiOperation, oa *openapiDoc) (map[string]any, error) {
 	if op.RequestBody == nil {
-		return nil
+		return nil, nil
 	}
 	content, ok := op.RequestBody.Content["application/json"]
 	if !ok {
-		return nil
+		return nil, nil
 	}
-	return asSchema(resolveRefs(content.Schema, oa, 0))
+	resolved, err := resolveRefs(content.Schema, oa, 0)
+	if err != nil {
+		return nil, fmt.Errorf("request body: %w", err)
+	}
+	schema := asSchema(resolved)
+	if len(schema) == 0 {
+		// An unconstrained ({}) or missing body schema would vanish under
+		// body's omitempty, leaving clients unable to distinguish
+		// "arbitrary JSON body" from "no body". The SDK exports always
+		// constrain bodies; refuse the shape they never emit.
+		return nil, fmt.Errorf("request body has no schema (the SDK exports always constrain JSON bodies)")
+	}
+	return schema, nil
 }
 
 // maxRefDepth caps $ref inlining. Deeper (usually recursive) structures end
@@ -332,48 +372,68 @@ const maxRefDepth = 8
 // to MCP clients. Sibling keys alongside a $ref (the model carries codegen
 // hints there) are overlaid on the resolved target. Anything unresolvable —
 // unknown ref targets, exhausted depth — passes through untouched.
-func resolveRefs(v any, oa *openapiDoc, depth int) any {
+func resolveRefs(v any, oa *openapiDoc, depth int) (any, error) {
 	switch t := v.(type) {
 	case map[string]any:
 		if ref, ok := t["$ref"].(string); ok {
 			name := strings.TrimPrefix(ref, "#/components/schemas/")
-			if target, found := oa.Components.Schemas[name]; found && name != ref {
-				if depth >= maxRefDepth {
-					// Deeper (usually recursive) structures terminate in a
-					// self-contained stub: describe never returns the
-					// components object, so a retained $ref would dangle.
-					return map[string]any{
-						"type":        "object",
-						"description": fmt.Sprintf("truncated: recursive reference to %s", name),
-					}
-				}
-				resolved, _ := resolveRefs(deepCopy(target), oa, depth+1).(map[string]any)
-				for k, val := range t {
-					if k == "$ref" || strings.HasPrefix(k, "x-go-") {
-						continue
-					}
-					resolved[k] = resolveRefs(val, oa, depth)
-				}
-				return resolved
+			if name == ref {
+				return nil, fmt.Errorf("unsupported $ref %q (only #/components/schemas/* is emitted by the SDK exports)", ref)
 			}
-			return t
+			target, found := oa.Components.Schemas[name]
+			if !found {
+				return nil, fmt.Errorf("unresolvable $ref %q", ref)
+			}
+			if depth >= maxRefDepth {
+				// Deeper (usually recursive) structures terminate in a
+				// self-contained stub: describe never returns the
+				// components object, so a retained $ref would dangle.
+				return map[string]any{
+					"type":        "object",
+					"description": fmt.Sprintf("truncated: recursive reference to %s", name),
+				}, nil
+			}
+			rv, err := resolveRefs(deepCopy(target), oa, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			resolved, _ := rv.(map[string]any)
+			for k, val := range t {
+				if k == "$ref" || strings.HasPrefix(k, "x-go-") {
+					continue
+				}
+				sv, err := resolveRefs(val, oa, depth)
+				if err != nil {
+					return nil, err
+				}
+				resolved[k] = sv
+			}
+			return resolved, nil
 		}
 		out := make(map[string]any, len(t))
 		for k, val := range t {
 			if strings.HasPrefix(k, "x-go-") {
 				continue
 			}
-			out[k] = resolveRefs(val, oa, depth)
+			sv, err := resolveRefs(val, oa, depth)
+			if err != nil {
+				return nil, err
+			}
+			out[k] = sv
 		}
-		return out
+		return out, nil
 	case []any:
 		out := make([]any, len(t))
 		for i, val := range t {
-			out[i] = resolveRefs(val, oa, depth)
+			sv, err := resolveRefs(val, oa, depth)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = sv
 		}
-		return out
+		return out, nil
 	default:
-		return v
+		return v, nil
 	}
 }
 
