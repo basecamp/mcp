@@ -262,6 +262,31 @@ func TestLoadRejectsUnconstrainedBodies(t *testing.T) {
 	assert.Contains(t, err.Error(), "request body has no schema")
 }
 
+func TestLoadRejectsSchemalessParams(t *testing.T) {
+	model := mutatedModel(t, func(bm, oa map[string]any) {
+		get := oa["paths"].(map[string]any)["/notes"].(map[string]any)["get"].(map[string]any)
+		get["parameters"] = []any{map[string]any{"name": "page", "in": "query"}}
+	})
+	_, err := Load(testSpec(model))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `parameter "page" has no inline schema`)
+}
+
+func TestLoadRejectsNonJSONBodies(t *testing.T) {
+	// A media type the loader ignores would advertise body_required with no
+	// schema to satisfy it.
+	model := mutatedModel(t, func(bm, oa map[string]any) {
+		post := oa["paths"].(map[string]any)["/notes"].(map[string]any)["post"].(map[string]any)
+		body := post["requestBody"].(map[string]any)
+		content := body["content"].(map[string]any)
+		content["multipart/form-data"] = content["application/json"]
+		delete(content, "application/json")
+	})
+	_, err := Load(testSpec(model))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `request body media types [multipart/form-data] are not supported`)
+}
+
 func TestLoadRejectsActionNameCollisions(t *testing.T) {
 	// "List_notes" snake-cases to "list_notes", colliding with "ListNotes".
 	model := mutatedModel(t, func(bm, oa map[string]any) {

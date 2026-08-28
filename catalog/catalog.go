@@ -328,6 +328,9 @@ func resolveParams(params []Param, oa *openapiDoc) ([]Param, error) {
 		if p.Ref != "" {
 			return nil, fmt.Errorf("parameter $ref %q is not supported (inline parameters in the SDK export)", p.Ref)
 		}
+		if p.Schema == nil {
+			return nil, fmt.Errorf("parameter %q has no inline schema (content-based parameters are not in the SDK exports)", p.Name)
+		}
 		resolved, err := resolveRefs(p.Schema, oa, 0)
 		if err != nil {
 			return nil, fmt.Errorf("parameter %q: %w", p.Name, err)
@@ -346,7 +349,12 @@ func resolveBody(op *openapiOperation, oa *openapiDoc) (map[string]any, error) {
 	}
 	content, ok := op.RequestBody.Content["application/json"]
 	if !ok {
-		return nil, nil
+		types := make([]string, 0, len(op.RequestBody.Content))
+		for mt := range op.RequestBody.Content {
+			types = append(types, mt)
+		}
+		sort.Strings(types)
+		return nil, fmt.Errorf("request body media types %v are not supported (the SDK exports emit application/json)", types)
 	}
 	resolved, err := resolveRefs(content.Schema, oa, 0)
 	if err != nil {
