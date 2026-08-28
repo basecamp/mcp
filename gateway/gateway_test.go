@@ -2,6 +2,7 @@ package gateway_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -18,12 +19,16 @@ import (
 // fakeDomain is a minimal catalog: what a product's generated or hand-curated
 // catalog supplies to the gateway.
 type fakeDomain struct {
-	name string
-	ops  []gateway.Operation
+	name        string
+	title       string
+	ops         []gateway.Operation
+	destructive bool // reported by AnyDestructive
+	idempotent  bool // reported by AllIdempotent for domains with writes
 }
 
-func (d *fakeDomain) Name() string     { return d.name }
-func (d *fakeDomain) ToolName() string { return "test_" + d.name }
+func (d *fakeDomain) Name() string      { return d.name }
+func (d *fakeDomain) ToolName() string  { return "test_" + d.name }
+func (d *fakeDomain) ToolTitle() string { return d.title }
 func (d *fakeDomain) Description() string {
 	return "Test domain " + d.name + "\n\nACTIONS: " + fmt.Sprint(d.ActionNames())
 }
@@ -53,6 +58,12 @@ func (d *fakeDomain) AllReadOnly() bool {
 	}
 	return true
 }
+
+func (d *fakeDomain) AllIdempotent() bool {
+	return d.AllReadOnly() || d.idempotent
+}
+
+func (d *fakeDomain) AnyDestructive() bool { return d.destructive }
 
 func (d *fakeDomain) ActionNames() []string {
 	names := make([]string, 0, len(d.ops))
@@ -84,7 +95,7 @@ func (d *fakeDomain) Describe(action string) (any, error) {
 }
 
 func (d *fakeDomain) FilterReadOnly() (gateway.Domain, bool) {
-	filtered := &fakeDomain{name: d.name}
+	filtered := &fakeDomain{name: d.name, title: d.title}
 	for _, op := range d.ops {
 		if op.ReadOnly {
 			filtered.ops = append(filtered.ops, op)
@@ -98,15 +109,15 @@ func (d *fakeDomain) FilterReadOnly() (gateway.Domain, bool) {
 
 func testDomains() []gateway.Domain {
 	return []gateway.Domain{
-		&fakeDomain{name: "boxes", ops: []gateway.Operation{
+		&fakeDomain{name: "boxes", title: "Test Boxes", destructive: true, ops: []gateway.Operation{
 			{Action: "get_imbox", ReadOnly: true},
 			{Action: "list_boxes", ReadOnly: true},
 			{Action: "create_box_group", ReadOnly: false},
 		}},
-		&fakeDomain{name: "search", ops: []gateway.Operation{
+		&fakeDomain{name: "search", title: "Test Search", ops: []gateway.Operation{
 			{Action: "search", ReadOnly: true},
 		}},
-		&fakeDomain{name: "todos", ops: []gateway.Operation{
+		&fakeDomain{name: "todos", title: "Test Todos", idempotent: true, ops: []gateway.Operation{
 			{Action: "create_todo", ReadOnly: false},
 		}},
 	}
@@ -229,7 +240,7 @@ func TestReadOnlyRefusesWriteDispatch(t *testing.T) {
 	// A domain that reports a write operation from Find even in read-only
 	// mode (a catalog whose FilterReadOnly is incomplete) still cannot get a
 	// write dispatched: the gate is checked at dispatch time too.
-	leaky := &fakeDomain{name: "leaky", ops: []gateway.Operation{
+	leaky := &fakeDomain{name: "leaky", title: "Test Leaky", ops: []gateway.Operation{
 		{Action: "read_thing", ReadOnly: true},
 		{Action: "write_thing", ReadOnly: false},
 	}}
@@ -267,7 +278,7 @@ func TestReservedDescribeActionFailsClosed(t *testing.T) {
 	// An operation registered under the reserved describe action would be
 	// silently unreachable: dispatch always routes "describe" to
 	// Domain.Describe. Refuse the catalog at startup instead.
-	bad := &fakeDomain{name: "bad", ops: []gateway.Operation{
+	bad := &fakeDomain{name: "bad", title: "Test Bad", ops: []gateway.Operation{
 		{Action: "describe", ReadOnly: true},
 	}}
 	_, err := gateway.New([]gateway.Domain{bad}, gateway.Config{Handler: echoHandler})
@@ -280,4 +291,91 @@ func TestMissingHandlerIsAStartupError(t *testing.T) {
 	_, err := gateway.New(testDomains(), gateway.Config{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Handler is required")
+}
+
+func TestNewRejectsUntitledDomains(t *testing.T) {
+	untitled := &fakeDomain{name: "untitled", ops: []gateway.Operation{
+		{Action: "read_thing", ReadOnly: true},
+	}}
+	_, err := gateway.New([]gateway.Domain{untitled}, gateway.Config{Handler: echoHandler})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `domain "untitled" has no tool title`)
+}
+
+// TestAnnotationsDeriveFromDomain proves every safety hint is derived and
+// explicit: DestructiveHint is tri-state with an absent-means-true default,
+// so clean tools must say false out loud; OpenWorldHint is always false for
+// a bounded product API; IdempotentHint comes from the catalog, never a
+// hardcoded value.
+func TestAnnotationsDeriveFromDomain(t *testing.T) {
+	session := connect(t, gateway.Config{})
+	tools := mcptest.ListTools(t, session)
+
+	boxes := tools["test_boxes"].Annotations
+	assert.Equal(t, "Test Boxes", boxes.Title)
+	assert.False(t, boxes.ReadOnlyHint)
+	require.NotNil(t, boxes.DestructiveHint)
+	assert.True(t, *boxes.DestructiveHint, "boxes has a destructive write")
+	assert.False(t, boxes.IdempotentHint)
+
+	search := tools["test_search"].Annotations
+	assert.Equal(t, "Test Search", search.Title)
+	assert.True(t, search.ReadOnlyHint)
+	require.NotNil(t, search.DestructiveHint)
+	assert.False(t, *search.DestructiveHint, "read-only tools are never destructive")
+	assert.True(t, search.IdempotentHint, "all-read domains are idempotent")
+
+	todos := tools["test_todos"].Annotations
+	require.NotNil(t, todos.DestructiveHint)
+	assert.False(t, *todos.DestructiveHint, "writes without destructive operations say so explicitly")
+	assert.True(t, todos.IdempotentHint)
+
+	for name, tool := range tools {
+		require.NotNil(t, tool.Annotations.OpenWorldHint, "tool %q", name)
+		assert.False(t, *tool.Annotations.OpenWorldHint, "tool %q: a product API is a closed world", name)
+		assert.NotEmpty(t, tool.Annotations.Title, "tool %q", name)
+		if tool.Annotations.ReadOnlyHint {
+			assert.False(t, *tool.Annotations.DestructiveHint,
+				"tool %q: readOnlyHint and destructiveHint must never both be true", name)
+		}
+	}
+}
+
+// TestReadOnlyModeAnnotationsFollowTheFilter proves annotations are computed
+// after read-only filtering: a domain that is destructive when its writes are
+// served becomes a clean read-only tool when they are filtered out.
+func TestReadOnlyModeAnnotationsFollowTheFilter(t *testing.T) {
+	session := connect(t, gateway.Config{ReadOnly: true})
+	tools := mcptest.ListTools(t, session)
+
+	boxes := tools["test_boxes"].Annotations
+	assert.True(t, boxes.ReadOnlyHint)
+	require.NotNil(t, boxes.DestructiveHint)
+	assert.False(t, *boxes.DestructiveHint, "filtered surface has no destructive writes left")
+	assert.True(t, boxes.IdempotentHint)
+}
+
+// TestOverviewAggregatesServedDomains proves the whole-surface payload is
+// honest by construction: it reflects the served catalog after read-only
+// filtering and narrowing, so a filtered action or domain never appears.
+func TestOverviewAggregatesServedDomains(t *testing.T) {
+	srv, err := gateway.New(testDomains(), gateway.Config{Handler: echoHandler})
+	require.NoError(t, err)
+	payload, err := srv.Overview()
+	require.NoError(t, err)
+	rendered, err := json.Marshal(payload)
+	require.NoError(t, err)
+	assert.Contains(t, string(rendered), `"test_boxes"`)
+	assert.Contains(t, string(rendered), `"Test Boxes"`)
+	assert.Contains(t, string(rendered), `"test_todos"`)
+	assert.Contains(t, string(rendered), "create_todo")
+
+	narrowed, err := gateway.New(testDomains(), gateway.Config{ReadOnly: true, Handler: echoHandler})
+	require.NoError(t, err)
+	payload, err = narrowed.Overview()
+	require.NoError(t, err)
+	rendered, err = json.Marshal(payload)
+	require.NoError(t, err)
+	assert.NotContains(t, string(rendered), `"test_todos"`, "all-write domains drop from the read-only overview")
+	assert.NotContains(t, string(rendered), "create_box_group", "filtered writes drop from the overview")
 }

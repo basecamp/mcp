@@ -1,10 +1,11 @@
 {
   "version": "fixture-1",
   "operations": {
-    "ListNotes": { "readonly": true, "idempotent": true, "pagination": { "style": "cursor" } },
-    "GetNote": { "readonly": true, "idempotent": true },
+    "ListNotes": { "readonly": true, "idempotent": true, "pagination": { "style": "cursor", "maxPageSize": 50, "key": "notes" }, "retry": { "max": 3, "base_delay_ms": 1000, "backoff": "exponential", "retry_on": [429, 503] } },
+    "GetNote": { "readonly": true, "idempotent": true, "empty_on": [404] },
     "CreateNote": { "readonly": false, "idempotent": false },
     "DeleteNote": { "readonly": false, "idempotent": true },
+    "UpdateNote": { "readonly": false, "idempotent": true, "write": { "mode": "replace", "clearsOmitted": true, "preservedOnOmission": ["author"] } },
     "SearchNotes": { "readonly": true, "idempotent": true },
     "PurgeAccount": { "readonly": false, "idempotent": false }
   }
