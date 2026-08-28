@@ -287,6 +287,24 @@ func TestLoadRejectsNonJSONBodies(t *testing.T) {
 	assert.Contains(t, err.Error(), `request body media types [multipart/form-data] are not supported`)
 }
 
+func TestLoadRejectsTaglessDomainSpecs(t *testing.T) {
+	spec := testSpec(fixtureModel())
+	spec.Domains = append(spec.Domains, DomainSpec{Key: "hollow", Blurb: "No tags."})
+	_, err := Load(spec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `domain "hollow" claims no tags`)
+}
+
+func TestLoadRejectsAnonymousParams(t *testing.T) {
+	model := mutatedModel(t, func(bm, oa map[string]any) {
+		get := oa["paths"].(map[string]any)["/notes"].(map[string]any)["get"].(map[string]any)
+		get["parameters"] = []any{map[string]any{"name": "page", "schema": map[string]any{"type": "integer"}}}
+	})
+	_, err := Load(testSpec(model))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `parameter (name "page", in "") is missing its identity`)
+}
+
 func TestLoadRejectsActionNameCollisions(t *testing.T) {
 	// "List_notes" snake-cases to "list_notes", colliding with "ListNotes".
 	model := mutatedModel(t, func(bm, oa map[string]any) {

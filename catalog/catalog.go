@@ -193,6 +193,9 @@ func Load(spec Spec) (*Catalog, error) {
 			return nil, fmt.Errorf("duplicate domain key %q", ds.Key)
 		}
 		seenKeys[ds.Key] = true
+		if len(ds.Tags) == 0 {
+			return nil, fmt.Errorf("domain %q claims no tags", ds.Key)
+		}
 		domain := &Domain{Key: ds.Key, Tool: spec.ToolPrefix + ds.Key, Blurb: ds.Blurb}
 		for _, tag := range ds.Tags {
 			if prev, ok := claimed[tag]; ok {
@@ -327,6 +330,9 @@ func resolveParams(params []Param, oa *openapiDoc) ([]Param, error) {
 	for i, p := range params {
 		if p.Ref != "" {
 			return nil, fmt.Errorf("parameter $ref %q is not supported (inline parameters in the SDK export)", p.Ref)
+		}
+		if p.Name == "" || p.In == "" {
+			return nil, fmt.Errorf("parameter (name %q, in %q) is missing its identity", p.Name, p.In)
 		}
 		if p.Schema == nil {
 			return nil, fmt.Errorf("parameter %q has no inline schema (content-based parameters are not in the SDK exports)", p.Name)
