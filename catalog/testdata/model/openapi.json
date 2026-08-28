@@ -63,6 +63,33 @@
           }
         ]
       },
+      "put": {
+        "operationId": "UpdateNote",
+        "tags": [
+          "Notes"
+        ],
+        "description": "Replaces one note. Omitted fields are cleared.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewNote"
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "operationId": "DeleteNote",
         "tags": [

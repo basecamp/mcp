@@ -43,8 +43,16 @@ import (
 // surface is a one-line change in the product's specs.
 type DomainSpec struct {
 	Key   string // short domain name, e.g. "boxes"
+	Title string // human-readable tool title, e.g. "HEY Boxes"
 	Blurb string // first line of the tool description
 	Tags  []string
+	// DestructiveActions marks actions destructive by name: the curated
+	// override for operations whose behavior model does not yet carry the
+	// destructive trait and whose name the bridge classifier misses (hey's
+	// empty_trash, say). Stale curation fails loudly: naming an unknown
+	// action, a read-only action, or an action whose model already declares
+	// the trait is a load error, so overrides die as the model learns.
+	DestructiveActions []string
 }
 
 // Spec parameterizes the catalog for one product.
@@ -68,9 +76,51 @@ type behaviorModel struct {
 type behaviorTraits struct {
 	ReadOnly   bool `json:"readonly"`
 	Idempotent bool `json:"idempotent"`
-	Pagination *struct {
-		Style string `json:"style"`
-	} `json:"pagination"`
+	// Destructive is tri-state: the SDK behavior models are only beginning
+	// to carry the trait, so absent (nil) falls back to BridgeDestructive.
+	Destructive *bool           `json:"destructive"`
+	Sensitive   bool            `json:"sensitive"`
+	Pagination  *Pagination     `json:"pagination"`
+	Retry       *Retry          `json:"retry"`
+	EmptyOn     []int           `json:"empty_on"`
+	Write       *WriteSemantics `json:"write"`
+}
+
+// Pagination is how a list operation pages, in the behavior model's own
+// vocabulary (mixed-case keys are the model's, kept verbatim so describe
+// payloads match what the SDK documents).
+type Pagination struct {
+	// Style is the pagination mechanism: "link" (Link header), "cursor",
+	// or "page".
+	Style string `json:"style"`
+	// PageParam names the query parameter carrying the page number, for
+	// style "page".
+	PageParam string `json:"pageParam,omitempty"`
+	// TotalCountHeader names the response header carrying the total count.
+	TotalCountHeader string `json:"totalCountHeader,omitempty"`
+	// MaxPageSize is the server's page-size cap.
+	MaxPageSize int `json:"maxPageSize,omitempty"`
+	// Key is the response-object key holding the paginated array, when the
+	// response is a wrapper object rather than a bare array.
+	Key string `json:"key,omitempty"`
+}
+
+// Retry is the operation's declared retry policy.
+type Retry struct {
+	Max         int    `json:"max,omitempty"`
+	BaseDelayMs int    `json:"base_delay_ms,omitempty"`
+	Backoff     string `json:"backoff,omitempty"`
+	RetryOn     []int  `json:"retry_on,omitempty"`
+}
+
+// WriteSemantics is how the server interprets a write's request body. Mode
+// "replace" with ClearsOmitted true is the sharpest correctness hint an
+// agent can get: any writable field omitted from the request is cleared
+// server-side, except the fields listed in PreservedOnOmission.
+type WriteSemantics struct {
+	Mode                string   `json:"mode"`
+	ClearsOmitted       bool     `json:"clearsOmitted,omitempty"`
+	PreservedOnOmission []string `json:"preservedOnOmission,omitempty"`
 }
 
 // openapiDoc mirrors the subset of the SDK's openapi.json we read.
@@ -116,17 +166,32 @@ type Param struct {
 // OpenAPI export: everything a gateway tool needs to list, describe, and
 // eventually dispatch it.
 type Operation struct {
-	ID         string  `json:"operation"` // SDK operationId, e.g. "AdvancedSearch"
-	Action     string  `json:"action"`    // gateway action name, e.g. "advanced_search"
-	Tag        string  `json:"tag"`
-	Method     string  `json:"method"`
-	Path       string  `json:"path"`
-	Summary    string  `json:"summary"`
-	Doc        string  `json:"doc,omitempty"`
-	ReadOnly   bool    `json:"readonly"`
-	Idempotent bool    `json:"idempotent"`
-	Paginated  bool    `json:"paginated"`
-	Params     []Param `json:"params,omitempty"`
+	ID         string `json:"operation"` // SDK operationId, e.g. "AdvancedSearch"
+	Action     string `json:"action"`    // gateway action name, e.g. "advanced_search"
+	Tag        string `json:"tag"`
+	Method     string `json:"method"`
+	Path       string `json:"path"`
+	Summary    string `json:"summary"`
+	Doc        string `json:"doc,omitempty"`
+	ReadOnly   bool   `json:"readonly"`
+	Idempotent bool   `json:"idempotent"`
+	// Destructive reports whether the operation deletes or irreversibly
+	// alters data. Sourced from the behavior model's destructive trait when
+	// present; bridged from the action name otherwise (BridgeDestructive).
+	Destructive bool `json:"destructive"`
+	// Sensitive marks operations touching data the model flags as sensitive.
+	Sensitive bool `json:"sensitive,omitempty"`
+	Paginated bool `json:"paginated"`
+	// Pagination carries the mechanics behind Paginated: style, page-size
+	// cap, and where the items live in the response.
+	Pagination *Pagination `json:"pagination,omitempty"`
+	Retry      *Retry      `json:"retry,omitempty"`
+	// EmptyOn lists HTTP statuses that mean "empty result", not "error".
+	EmptyOn []int `json:"empty_on,omitempty"`
+	// WriteSemantics declares how the server treats the request body on
+	// write — most importantly whether omitted fields are cleared.
+	WriteSemantics *WriteSemantics `json:"write_semantics,omitempty"`
+	Params         []Param         `json:"params,omitempty"`
 	// Body is the resolved request body schema ($refs inlined), nil when the
 	// operation takes no body.
 	Body map[string]any `json:"body,omitempty"`
@@ -139,10 +204,14 @@ type Operation struct {
 // Domain is one gateway tool: a curated group of operations exposed as a
 // single MCP tool with resource+action-style dispatch.
 type Domain struct {
-	Key        string       // short name, e.g. "boxes"
-	Tool       string       // MCP tool name, e.g. "hey_boxes"
-	Blurb      string       // first line of the tool description
-	Operations []*Operation // sorted by action name
+	Key   string // short name, e.g. "boxes"
+	Tool  string // MCP tool name, e.g. "hey_boxes"
+	Title string // human-readable tool title, e.g. "HEY Boxes"
+	Blurb string // first line of the tool description
+	// Counterpart names the sibling tool created by SplitReadWrite, so each
+	// half's description can point at the other. Empty when unsplit.
+	Counterpart string
+	Operations  []*Operation // sorted by action name
 }
 
 // Catalog is the full derived tool surface plus the leftovers report: which
@@ -180,7 +249,7 @@ func Load(spec Spec) (*Catalog, error) {
 		return nil, err
 	}
 
-	ops, err := joinOperations(&bm, &oa)
+	ops, declared, err := joinOperations(&bm, &oa)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +265,10 @@ func Load(spec Spec) (*Catalog, error) {
 		if len(ds.Tags) == 0 {
 			return nil, fmt.Errorf("domain %q claims no tags", ds.Key)
 		}
-		domain := &Domain{Key: ds.Key, Tool: spec.ToolPrefix + ds.Key, Blurb: ds.Blurb}
+		if strings.TrimSpace(ds.Title) == "" {
+			return nil, fmt.Errorf("domain %q has no title (connector directories require a title on every tool)", ds.Key)
+		}
+		domain := &Domain{Key: ds.Key, Tool: spec.ToolPrefix + ds.Key, Title: ds.Title, Blurb: ds.Blurb}
 		for _, tag := range ds.Tags {
 			if prev, ok := claimed[tag]; ok {
 				return nil, fmt.Errorf("tag %q claimed by both %q and %q", tag, prev, ds.Key)
@@ -213,6 +285,19 @@ func Load(spec Spec) (*Catalog, error) {
 		})
 		if err := checkActionNames(domain); err != nil {
 			return nil, err
+		}
+		for _, action := range ds.DestructiveActions {
+			op, ok := domain.Operation(action)
+			if !ok {
+				return nil, fmt.Errorf("domain %q marks unknown action %q destructive", ds.Key, action)
+			}
+			if op.ReadOnly {
+				return nil, fmt.Errorf("domain %q marks read-only action %q destructive", ds.Key, action)
+			}
+			if declared[op.ID] {
+				return nil, fmt.Errorf("domain %q overrides action %q, but the model already declares its destructive trait — delete the override", ds.Key, action)
+			}
+			op.Destructive = true
 		}
 		cat.Domains = append(cat.Domains, domain)
 	}
@@ -247,55 +332,77 @@ func unmarshalModel(fsys fs.FS, name string, v any) error {
 // result by primary tag. The join is strict both ways: an operation present
 // in one file but not the other means the vendored snapshot is torn, and the
 // catalog refuses to build from it.
-func joinOperations(bm *behaviorModel, oa *openapiDoc) (map[string][]*Operation, error) {
+func joinOperations(bm *behaviorModel, oa *openapiDoc) (map[string][]*Operation, map[string]bool, error) {
 	byTag := map[string][]*Operation{}
+	declared := map[string]bool{}
 	seen := map[string]bool{}
 	for path, methods := range oa.Paths {
 		for method, op := range methods {
 			if op == nil {
-				return nil, fmt.Errorf("%s %s: null operation", method, path)
+				return nil, nil, fmt.Errorf("%s %s: null operation", method, path)
 			}
 			if op.OperationID == "" {
-				return nil, fmt.Errorf("%s %s: missing operationId", method, path)
+				return nil, nil, fmt.Errorf("%s %s: missing operationId", method, path)
 			}
 			if op.RequestBody != nil && op.RequestBody.Ref != "" {
-				return nil, fmt.Errorf("operation %q: requestBody $ref is not supported (inline the body in the SDK export)", op.OperationID)
+				return nil, nil, fmt.Errorf("operation %q: requestBody $ref is not supported (inline the body in the SDK export)", op.OperationID)
 			}
 			if seen[op.OperationID] {
-				return nil, fmt.Errorf("duplicate operationId %q", op.OperationID)
+				return nil, nil, fmt.Errorf("duplicate operationId %q", op.OperationID)
 			}
 			seen[op.OperationID] = true
 
 			traits, ok := bm.Operations[op.OperationID]
 			if !ok {
-				return nil, fmt.Errorf("operation %q in openapi.json but not behavior-model.json", op.OperationID)
+				return nil, nil, fmt.Errorf("operation %q in openapi.json but not behavior-model.json", op.OperationID)
+			}
+			if traits.Destructive != nil {
+				declared[op.OperationID] = true
 			}
 			if len(op.Tags) != 1 {
-				return nil, fmt.Errorf("operation %q: expected exactly one tag, got %v", op.OperationID, op.Tags)
+				return nil, nil, fmt.Errorf("operation %q: expected exactly one tag, got %v", op.OperationID, op.Tags)
 			}
 
 			params, err := resolveParams(op.Parameters, oa)
 			if err != nil {
-				return nil, fmt.Errorf("operation %q: %w", op.OperationID, err)
+				return nil, nil, fmt.Errorf("operation %q: %w", op.OperationID, err)
 			}
 			body, err := resolveBody(op, oa)
 			if err != nil {
-				return nil, fmt.Errorf("operation %q: %w", op.OperationID, err)
+				return nil, nil, fmt.Errorf("operation %q: %w", op.OperationID, err)
+			}
+			action := snakeCase(op.OperationID)
+			destructive := traits.Destructive != nil && *traits.Destructive
+			if traits.Destructive == nil {
+				// Bridge until the SDK models carry the trait; the model
+				// wins the moment it appears.
+				destructive = !traits.ReadOnly && BridgeDestructive(action)
+			}
+			if traits.ReadOnly && destructive {
+				// Contradictory annotations resolve differently across MCP
+				// clients; refuse the shape rather than emit it.
+				return nil, nil, fmt.Errorf("operation %q is declared both readonly and destructive", op.OperationID)
 			}
 			joined := &Operation{
-				ID:           op.OperationID,
-				Action:       snakeCase(op.OperationID),
-				Tag:          op.Tags[0],
-				Method:       strings.ToUpper(method),
-				Path:         path,
-				Summary:      summarize(op.Summary, op.Description),
-				Doc:          op.Description,
-				ReadOnly:     traits.ReadOnly,
-				Idempotent:   traits.Idempotent,
-				Paginated:    traits.Pagination != nil,
-				Params:       params,
-				Body:         body,
-				BodyRequired: op.RequestBody != nil && op.RequestBody.Required,
+				ID:             op.OperationID,
+				Action:         action,
+				Tag:            op.Tags[0],
+				Method:         strings.ToUpper(method),
+				Path:           path,
+				Summary:        summarize(op.Summary, op.Description),
+				Doc:            op.Description,
+				ReadOnly:       traits.ReadOnly,
+				Idempotent:     traits.Idempotent,
+				Destructive:    destructive,
+				Sensitive:      traits.Sensitive,
+				Paginated:      traits.Pagination != nil,
+				Pagination:     traits.Pagination,
+				Retry:          traits.Retry,
+				EmptyOn:        traits.EmptyOn,
+				WriteSemantics: traits.Write,
+				Params:         params,
+				Body:           body,
+				BodyRequired:   op.RequestBody != nil && op.RequestBody.Required,
 			}
 			byTag[joined.Tag] = append(byTag[joined.Tag], joined)
 		}
@@ -303,11 +410,11 @@ func joinOperations(bm *behaviorModel, oa *openapiDoc) (map[string][]*Operation,
 
 	for id := range bm.Operations {
 		if !seen[id] {
-			return nil, fmt.Errorf("operation %q in behavior-model.json but not openapi.json", id)
+			return nil, nil, fmt.Errorf("operation %q in behavior-model.json but not openapi.json", id)
 		}
 	}
 
-	return byTag, nil
+	return byTag, declared, nil
 }
 
 func checkActionNames(d *Domain) error {
@@ -374,7 +481,43 @@ func resolveBody(op *openapiOperation, oa *openapiDoc) (map[string]any, error) {
 		// constrain bodies; refuse the shape they never emit.
 		return nil, fmt.Errorf("request body has no schema (the SDK exports always constrain JSON bodies)")
 	}
+	StampStrict(schema)
 	return schema, nil
+}
+
+// StampStrict closes a body object schema: when the top level declares no
+// additionalProperties, it becomes false, so clients validate unknown fields
+// instead of silently passing them. Only the top level is stamped — nested
+// schemas keep whatever the SDK emitted; closing those belongs to the
+// emitter (Smithy closed structures), not this loader. An explicit
+// additionalProperties, true or false, is left alone.
+func StampStrict(schema map[string]any) {
+	if _, declared := schema["additionalProperties"]; declared {
+		return
+	}
+	if t, _ := schema["type"].(string); t == "object" || schema["properties"] != nil {
+		schema["additionalProperties"] = false
+	}
+}
+
+// bridgeDestructivePrefixes is the action-name heuristic basecamp-mcp-server
+// used to classify destructive operations before the SDK behavior models
+// carried a destructive trait. It is a bridge, not a home: an operation whose
+// model declares "destructive" ignores the heuristic entirely. Products
+// should carry a tripwire test that fails when their vendored model starts
+// emitting the trait, so the bridge gets deleted rather than becoming
+// permanent.
+var bridgeDestructivePrefixes = []string{"delete", "trash", "remove", "destroy", "unsubscribe", "purge"}
+
+// BridgeDestructive classifies an action name as destructive by prefix. See
+// bridgeDestructivePrefixes for why this exists and when it dies.
+func BridgeDestructive(action string) bool {
+	for _, p := range bridgeDestructivePrefixes {
+		if strings.HasPrefix(action, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // maxRefDepth caps $ref inlining. Deeper (usually recursive) structures end

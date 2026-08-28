@@ -2,7 +2,9 @@
 // by our MCP servers: one MCP tool per domain, the {"action", "params"}
 // calling convention, an in-band describe action serving per-operation
 // schemas, in-band isError failures (never protocol errors), read-only
-// filtering, and fail-closed domain narrowing.
+// filtering, fail-closed domain narrowing, and derived tool annotations
+// (title and explicit safety hints on every tool, computed from the served
+// surface after filtering — never hardcoded).
 //
 // Extracted from hey-mcp-server's server package and basecamp-mcp-server's
 // domain registry, where the conventions existed by duplication. The gateway
@@ -42,12 +44,22 @@ type Domain interface {
 	Name() string
 	// ToolName is the MCP tool name, e.g. "hey_todos".
 	ToolName() string
+	// ToolTitle is the human-readable tool title for annotations. Required:
+	// connector directories reject tools without one.
+	ToolTitle() string
 	// Description renders the tool description shown on tools/list.
 	Description() string
 	// InputSchema renders the JSON Schema for the tool's arguments.
 	InputSchema() map[string]any
 	// AllReadOnly reports whether every operation in the domain is read-only.
 	AllReadOnly() bool
+	// AllIdempotent reports whether every write operation is idempotent.
+	// Read operations count as idempotent regardless of their traits, so an
+	// all-read domain reports true.
+	AllIdempotent() bool
+	// AnyDestructive reports whether any operation deletes or irreversibly
+	// alters data. Never true for an all-read domain.
+	AnyDestructive() bool
 	// ActionNames returns the domain's action names in sorted order.
 	ActionNames() []string
 	// Find returns the operation registered under the given action name.
@@ -91,11 +103,24 @@ func New(domains []Domain, cfg Config) (*Server, error) {
 	}
 
 	byName := map[string]Domain{}
+	byTool := map[string]string{}
 	for _, d := range domains {
 		if _, ok := d.Find(DescribeAction); ok {
 			return nil, fmt.Errorf("domain %q registers an operation named %q, which is reserved for the gateway describe action", d.Name(), DescribeAction)
 		}
+		if strings.TrimSpace(d.ToolTitle()) == "" {
+			return nil, fmt.Errorf("domain %q has no tool title (connector directories require a title on every tool)", d.Name())
+		}
+		if _, dup := byName[d.Name()]; dup {
+			// Silent overwrites would drop a domain's operations — a split
+			// write half colliding with a literal "<key>_write" domain, say.
+			return nil, fmt.Errorf("duplicate domain %q", d.Name())
+		}
+		if prev, dup := byTool[d.ToolName()]; dup {
+			return nil, fmt.Errorf("domains %q and %q both serve tool %q", prev, d.Name(), d.ToolName())
+		}
 		byName[d.Name()] = d
+		byTool[d.ToolName()] = d.Name()
 	}
 
 	names := cfg.Domains
@@ -132,6 +157,33 @@ func (s *Server) Domains() []Domain {
 	return s.domains
 }
 
+// Overview renders the whole served surface in one payload: every domain's
+// tool name and action summaries. Products can mount it on a meta tool as a
+// one-call orientation point. It aggregates the same describe payloads the
+// domain tools serve, after read-only filtering and domain narrowing, so it
+// is honest by construction: an action outside the deployed surface never
+// appears.
+func (s *Server) Overview() (any, error) {
+	type entry struct {
+		Tool   string `json:"tool"`
+		Title  string `json:"title"`
+		Domain any    `json:"domain"`
+	}
+	overview := make([]entry, 0, len(s.domains))
+	for _, d := range s.domains {
+		payload, err := d.Describe("")
+		if err != nil {
+			return nil, fmt.Errorf("domain %q: %w", d.Name(), err)
+		}
+		overview = append(overview, entry{Tool: d.ToolName(), Title: d.ToolTitle(), Domain: payload})
+	}
+	return map[string]any{"domains": overview}, nil
+}
+
+func ptrBool(b bool) *bool {
+	return &b
+}
+
 // BuildMCPServer constructs the SDK MCP server with one gateway tool per
 // served domain. impl identifies the product server in the MCP initialize
 // handshake.
@@ -140,13 +192,25 @@ func (s *Server) BuildMCPServer(impl *mcp.Implementation, logger *slog.Logger) *
 
 	for _, domain := range s.domains {
 		d := domain
+		// Annotations are computed after New's read-only filtering, so they
+		// describe exactly the served surface. DestructiveHint is tri-state
+		// with an absent-means-true spec default, so it is always explicit:
+		// false on clean and read-only tools (never true alongside
+		// ReadOnlyHint — clients resolve that contradiction differently),
+		// true only when a served write action is destructive. OpenWorldHint
+		// is false: a product API is a closed world.
+		readOnly := d.AllReadOnly()
+		destructive := !readOnly && d.AnyDestructive()
 		tool := &mcp.Tool{
 			Name:        d.ToolName(),
 			Description: d.Description(),
 			InputSchema: d.InputSchema(),
 			Annotations: &mcp.ToolAnnotations{
-				ReadOnlyHint:   d.AllReadOnly(),
-				IdempotentHint: false,
+				Title:           d.ToolTitle(),
+				ReadOnlyHint:    readOnly,
+				IdempotentHint:  d.AllIdempotent(),
+				DestructiveHint: &destructive,
+				OpenWorldHint:   ptrBool(false),
 			},
 		}
 		mcpServer.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {

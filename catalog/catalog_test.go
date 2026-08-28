@@ -31,8 +31,8 @@ func testSpec(model fs.FS) Spec {
 	return Spec{
 		ToolPrefix: "test_",
 		Domains: []DomainSpec{
-			{Key: "notes", Blurb: "Notes under test: list, create, get, delete.", Tags: []string{"Notes"}},
-			{Key: "search", Blurb: "Search the notes under test.", Tags: []string{"Search"}},
+			{Key: "notes", Title: "Test Notes", Blurb: "Notes under test: list, create, get, delete.", Tags: []string{"Notes"}},
+			{Key: "search", Title: "Test Search", Blurb: "Search the notes under test.", Tags: []string{"Search"}},
 		},
 		Model: model,
 	}
@@ -109,7 +109,7 @@ func TestLoadDerivesAllDomains(t *testing.T) {
 		assert.Equal(t, "test_"+d.Key, d.Tool)
 		assert.NotEmpty(t, d.Blurb, "domain %q has no blurb", d.Key)
 	}
-	assert.Equal(t, []string{"create_note", "delete_note", "get_note", "list_notes"},
+	assert.Equal(t, []string{"create_note", "delete_note", "get_note", "list_notes", "update_note"},
 		domainByKey(t, cat, "notes").ActionNames())
 }
 
@@ -171,7 +171,7 @@ func TestLoadRejectsMultiTagOperations(t *testing.T) {
 
 func TestLoadRejectsTagClaimedTwice(t *testing.T) {
 	spec := testSpec(fixtureModel())
-	spec.Domains = append(spec.Domains, DomainSpec{Key: "extra", Blurb: "Claims Notes again.", Tags: []string{"Notes"}})
+	spec.Domains = append(spec.Domains, DomainSpec{Key: "extra", Title: "Extra", Blurb: "Claims Notes again.", Tags: []string{"Notes"}})
 	_, err := Load(spec)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `tag "Notes" claimed by both "notes" and "extra"`)
@@ -192,7 +192,7 @@ func TestLoadRejectsDuplicateDomainKeys(t *testing.T) {
 	// Two specs sharing a key would both survive Load but collapse to one
 	// entry in gateway.New's name index, silently dropping operations.
 	spec := testSpec(fixtureModel())
-	spec.Domains = append(spec.Domains, DomainSpec{Key: spec.Domains[0].Key, Blurb: "Same key again.", Tags: []string{"Tasks"}})
+	spec.Domains = append(spec.Domains, DomainSpec{Key: spec.Domains[0].Key, Title: "Dup", Blurb: "Same key again.", Tags: []string{"Tasks"}})
 	_, err := Load(spec)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "duplicate domain key")
@@ -214,7 +214,7 @@ func TestLoadRejectsTagsAbsentFromModel(t *testing.T) {
 	// A misspelled or stale spec tag must not publish a hollow domain while
 	// the real operations quietly land in Unmapped.
 	spec := testSpec(fixtureModel())
-	spec.Domains = append(spec.Domains, DomainSpec{Key: "ghost", Blurb: "Claims nothing real.", Tags: []string{"Nootes"}})
+	spec.Domains = append(spec.Domains, DomainSpec{Key: "ghost", Title: "Ghost", Blurb: "Claims nothing real.", Tags: []string{"Nootes"}})
 	_, err := Load(spec)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `domain "ghost" claims tag "Nootes", which is not in the model`)
@@ -289,7 +289,7 @@ func TestLoadRejectsNonJSONBodies(t *testing.T) {
 
 func TestLoadRejectsTaglessDomainSpecs(t *testing.T) {
 	spec := testSpec(fixtureModel())
-	spec.Domains = append(spec.Domains, DomainSpec{Key: "hollow", Blurb: "No tags."})
+	spec.Domains = append(spec.Domains, DomainSpec{Key: "hollow", Title: "Hollow", Blurb: "No tags."})
 	_, err := Load(spec)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `domain "hollow" claims no tags`)
@@ -374,7 +374,7 @@ func TestReadOnlyDerivesFromBehaviorModel(t *testing.T) {
 
 func TestFilterReadOnlyDropsWrites(t *testing.T) {
 	spec := testSpec(fixtureModel())
-	spec.Domains = append(spec.Domains, DomainSpec{Key: "admin", Blurb: "Admin ops under test.", Tags: []string{"Admin"}})
+	spec.Domains = append(spec.Domains, DomainSpec{Key: "admin", Title: "Test Admin", Blurb: "Admin ops under test.", Tags: []string{"Admin"}})
 	cat, err := Load(spec)
 	require.NoError(t, err)
 
@@ -588,4 +588,229 @@ func TestServesThroughGateway(t *testing.T) {
 	require.False(t, isError, "dispatch failed: %s", text)
 	assert.Contains(t, text, `"action": "get_note"`)
 	assert.Contains(t, text, `"domain": "notes"`)
+}
+
+func TestLoadRejectsUntitledDomainSpecs(t *testing.T) {
+	spec := testSpec(fixtureModel())
+	spec.Domains[0].Title = ""
+	_, err := Load(spec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `domain "notes" has no title`)
+}
+
+// TestDestructiveBridgesFromActionName covers the interim classifier: until
+// the SDK behavior models carry a destructive trait, write actions named like
+// deletions are destructive and everything else is not.
+func TestDestructiveBridgesFromActionName(t *testing.T) {
+	cat := load(t)
+	notes := domainByKey(t, cat, "notes")
+
+	del, ok := notes.Operation("delete_note")
+	require.True(t, ok)
+	assert.True(t, del.Destructive, "delete_* bridges to destructive")
+
+	create, ok := notes.Operation("create_note")
+	require.True(t, ok)
+	assert.False(t, create.Destructive)
+
+	get, ok := notes.Operation("get_note")
+	require.True(t, ok)
+	assert.False(t, get.Destructive, "read-only actions are never destructive")
+}
+
+// TestDestructiveModelTraitWins proves the bridge dies per-operation the
+// moment the model speaks: an explicit destructive trait overrides the name
+// heuristic in both directions.
+func TestDestructiveModelTraitWins(t *testing.T) {
+	model := mutatedModel(t, func(bm, oa map[string]any) {
+		ops := bm["operations"].(map[string]any)
+		ops["CreateNote"].(map[string]any)["destructive"] = true
+		ops["DeleteNote"].(map[string]any)["destructive"] = false
+	})
+	cat, err := Load(testSpec(model))
+	require.NoError(t, err)
+	notes := domainByKey(t, cat, "notes")
+
+	create, ok := notes.Operation("create_note")
+	require.True(t, ok)
+	assert.True(t, create.Destructive, "model trait wins over the clean-looking name")
+
+	del, ok := notes.Operation("delete_note")
+	require.True(t, ok)
+	assert.False(t, del.Destructive, "model trait wins over the destructive-looking name")
+}
+
+func TestLoadRejectsReadonlyDestructiveContradiction(t *testing.T) {
+	model := mutatedModel(t, func(bm, oa map[string]any) {
+		bm["operations"].(map[string]any)["GetNote"].(map[string]any)["destructive"] = true
+	})
+	_, err := Load(testSpec(model))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `operation "GetNote" is declared both readonly and destructive`)
+}
+
+// TestBehaviorTraitDetailReachesDescribe proves the model's operational
+// knowledge — pagination mechanics, retry policy, empty_on, write semantics —
+// survives the join instead of being flattened to booleans.
+func TestBehaviorTraitDetailReachesDescribe(t *testing.T) {
+	cat := load(t)
+	notes := domainByKey(t, cat, "notes")
+
+	list, ok := notes.Operation("list_notes")
+	require.True(t, ok)
+	require.NotNil(t, list.Pagination)
+	assert.True(t, list.Paginated)
+	assert.Equal(t, "cursor", list.Pagination.Style)
+	assert.Equal(t, 50, list.Pagination.MaxPageSize)
+	assert.Equal(t, "notes", list.Pagination.Key)
+	require.NotNil(t, list.Retry)
+	assert.Equal(t, 3, list.Retry.Max)
+	assert.Equal(t, []int{429, 503}, list.Retry.RetryOn)
+
+	get, ok := notes.Operation("get_note")
+	require.True(t, ok)
+	assert.Equal(t, []int{404}, get.EmptyOn)
+
+	update, ok := notes.Operation("update_note")
+	require.True(t, ok)
+	require.NotNil(t, update.WriteSemantics)
+	assert.Equal(t, "replace", update.WriteSemantics.Mode)
+	assert.True(t, update.WriteSemantics.ClearsOmitted)
+	assert.Equal(t, []string{"author"}, update.WriteSemantics.PreservedOnOmission)
+
+	// The detail rides the describe payload as-is: Operation is the payload.
+	payload, err := notes.Describe("update_note")
+	require.NoError(t, err)
+	rendered, err := json.Marshal(payload)
+	require.NoError(t, err)
+	assert.Contains(t, string(rendered), `"clearsOmitted":true`)
+	assert.Contains(t, string(rendered), `"destructive":false`)
+}
+
+// TestBodySchemasAreStrict proves derived body schemas are closed at the top
+// level: unknown fields fail client-side validation instead of passing
+// silently. An explicit additionalProperties is left alone.
+func TestBodySchemasAreStrict(t *testing.T) {
+	cat := load(t)
+	notes := domainByKey(t, cat, "notes")
+	create, ok := notes.Operation("create_note")
+	require.True(t, ok)
+	assert.Equal(t, false, create.Body["additionalProperties"])
+
+	model := mutatedModel(t, func(bm, oa map[string]any) {
+		schemas := oa["components"].(map[string]any)["schemas"].(map[string]any)
+		schemas["NewNote"].(map[string]any)["additionalProperties"] = true
+	})
+	cat, err := Load(testSpec(model))
+	require.NoError(t, err)
+	create, ok = domainByKey(t, cat, "notes").Operation("create_note")
+	require.True(t, ok)
+	assert.Equal(t, true, create.Body["additionalProperties"], "an explicit declaration is not overridden")
+}
+
+// TestSplitReadWrite covers the directory-required partition: reads keep the
+// tool name, writes move to a _write sibling, each half pointing at the
+// other, and an all-read domain yields no write half at all.
+func TestSplitReadWrite(t *testing.T) {
+	cat := load(t)
+
+	read, write := domainByKey(t, cat, "notes").SplitReadWrite()
+	require.NotNil(t, read)
+	require.NotNil(t, write)
+	assert.Equal(t, "notes", read.Key)
+	assert.Equal(t, "test_notes", read.Tool)
+	assert.Equal(t, "Test Notes", read.Title)
+	assert.Equal(t, []string{"get_note", "list_notes"}, read.ActionNames())
+	assert.True(t, read.AllReadOnly())
+	assert.Equal(t, "notes_write", write.Key)
+	assert.Equal(t, "test_notes_write", write.Tool)
+	assert.Equal(t, "Test Notes (writes)", write.Title)
+	assert.Equal(t, []string{"create_note", "delete_note", "update_note"}, write.ActionNames())
+	assert.True(t, write.AnyDestructive())
+
+	assert.Equal(t, write.Tool, read.Counterpart)
+	assert.Equal(t, read.Tool, write.Counterpart)
+	assert.Contains(t, read.Description(), "write actions, when served, live in the test_notes_write tool")
+	assert.Contains(t, write.Description(), "read actions, when served, live in the test_notes tool")
+
+	searchRead, searchWrite := domainByKey(t, cat, "search").SplitReadWrite()
+	require.NotNil(t, searchRead)
+	assert.Nil(t, searchWrite, "all-read domains have no write half")
+	assert.Empty(t, searchRead.Counterpart, "nothing to point at")
+	assert.NotContains(t, searchRead.Description(), "live in the")
+
+	split := SplitReadWrite(cat.Domains)
+	var tools []string
+	for _, d := range split {
+		tools = append(tools, d.Tool)
+	}
+	assert.Equal(t, []string{"test_notes", "test_notes_write", "test_search"}, tools)
+}
+
+// TestSplitServesThroughGateway proves the split catalog is a valid gateway
+// surface end to end, with truthful per-half annotations on the wire.
+func TestSplitServesThroughGateway(t *testing.T) {
+	cat := load(t)
+	split := SplitReadWrite(cat.Domains)
+	domains := make([]gateway.Domain, len(split))
+	for i, d := range split {
+		domains[i] = d
+	}
+	srv, err := gateway.New(domains, gateway.Config{
+		Handler: func(ctx context.Context, d gateway.Domain, op gateway.Operation, params map[string]any) (*mcp.CallToolResult, error) {
+			return gateway.JSONResult(map[string]any{"action": op.Action})
+		},
+	})
+	require.NoError(t, err)
+	impl := &mcp.Implementation{Name: "catalog-test", Version: "0.0.0"}
+	session := mcptest.Connect(t, srv.BuildMCPServer(impl, slog.New(slog.DiscardHandler)))
+
+	tools := mcptest.ListTools(t, session)
+	require.Len(t, tools, 3)
+	require.Contains(t, tools, "test_notes")
+	require.Contains(t, tools, "test_notes_write")
+	require.Contains(t, tools, "test_search")
+
+	readAnn := tools["test_notes"].Annotations
+	assert.True(t, readAnn.ReadOnlyHint)
+	assert.False(t, *readAnn.DestructiveHint)
+
+	writeAnn := tools["test_notes_write"].Annotations
+	assert.Equal(t, "Test Notes (writes)", writeAnn.Title)
+	assert.False(t, writeAnn.ReadOnlyHint)
+	assert.True(t, *writeAnn.DestructiveHint, "delete_note is served here")
+}
+
+// TestDestructiveActionOverrides covers the curated escape hatch for
+// operations whose model lacks the destructive trait and whose name the
+// bridge misses — and proves stale curation fails loudly in every direction.
+func TestDestructiveActionOverrides(t *testing.T) {
+	spec := testSpec(fixtureModel())
+	spec.Domains[0].DestructiveActions = []string{"update_note"}
+	cat, err := Load(spec)
+	require.NoError(t, err)
+	update, ok := domainByKey(t, cat, "notes").Operation("update_note")
+	require.True(t, ok)
+	assert.True(t, update.Destructive)
+
+	spec = testSpec(fixtureModel())
+	spec.Domains[0].DestructiveActions = []string{"no_such_action"}
+	_, err = Load(spec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown action "no_such_action"`)
+
+	spec = testSpec(fixtureModel())
+	spec.Domains[0].DestructiveActions = []string{"get_note"}
+	_, err = Load(spec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `read-only action "get_note"`)
+
+	model := mutatedModel(t, func(bm, oa map[string]any) {
+		bm["operations"].(map[string]any)["UpdateNote"].(map[string]any)["destructive"] = true
+	})
+	spec = testSpec(model)
+	spec.Domains[0].DestructiveActions = []string{"update_note"}
+	_, err = Load(spec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "the model already declares its destructive trait")
 }
