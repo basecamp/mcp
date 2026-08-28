@@ -103,6 +103,7 @@ func New(domains []Domain, cfg Config) (*Server, error) {
 	}
 
 	byName := map[string]Domain{}
+	byTool := map[string]string{}
 	for _, d := range domains {
 		if _, ok := d.Find(DescribeAction); ok {
 			return nil, fmt.Errorf("domain %q registers an operation named %q, which is reserved for the gateway describe action", d.Name(), DescribeAction)
@@ -110,7 +111,16 @@ func New(domains []Domain, cfg Config) (*Server, error) {
 		if d.ToolTitle() == "" {
 			return nil, fmt.Errorf("domain %q has no tool title (connector directories require a title on every tool)", d.Name())
 		}
+		if _, dup := byName[d.Name()]; dup {
+			// Silent overwrites would drop a domain's operations — a split
+			// write half colliding with a literal "<key>_write" domain, say.
+			return nil, fmt.Errorf("duplicate domain %q", d.Name())
+		}
+		if prev, dup := byTool[d.ToolName()]; dup {
+			return nil, fmt.Errorf("domains %q and %q both serve tool %q", prev, d.Name(), d.ToolName())
+		}
 		byName[d.Name()] = d
+		byTool[d.ToolName()] = d.Name()
 	}
 
 	names := cfg.Domains

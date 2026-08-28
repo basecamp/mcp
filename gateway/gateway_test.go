@@ -379,3 +379,15 @@ func TestOverviewAggregatesServedDomains(t *testing.T) {
 	assert.NotContains(t, string(rendered), `"test_todos"`, "all-write domains drop from the read-only overview")
 	assert.NotContains(t, string(rendered), "create_box_group", "filtered writes drop from the overview")
 }
+
+// TestNewRejectsDuplicateDomains proves registration is collision-safe: a
+// duplicate name or tool name is a startup error, never a silent overwrite —
+// the failure a literal "<key>_write" domain colliding with a generated split
+// half would otherwise hit.
+func TestNewRejectsDuplicateDomains(t *testing.T) {
+	a := &fakeDomain{name: "notes", title: "Notes", ops: []gateway.Operation{{Action: "list_notes", ReadOnly: true}}}
+	b := &fakeDomain{name: "notes", title: "Notes Again", ops: []gateway.Operation{{Action: "get_note", ReadOnly: true}}}
+	_, err := gateway.New([]gateway.Domain{a, b}, gateway.Config{Handler: echoHandler})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `duplicate domain "notes"`)
+}
