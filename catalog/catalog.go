@@ -79,7 +79,11 @@ type openapiOperation struct {
 	Description string   `json:"description"`
 	Parameters  []Param  `json:"parameters"`
 	RequestBody *struct {
-		Required bool `json:"required"`
+		// Ref captures the reusable Reference Object form, which this
+		// loader does not resolve: neither producing SDK emits it, and a
+		// silently dropped body would be worse than a startup error.
+		Ref      string `json:"$ref"`
+		Required bool   `json:"required"`
 		Content  map[string]struct {
 			Schema map[string]any `json:"schema"`
 		} `json:"content"`
@@ -182,7 +186,11 @@ func Load(spec Spec) (*Catalog, error) {
 				return nil, fmt.Errorf("tag %q claimed by both %q and %q", tag, prev, ds.Key)
 			}
 			claimed[tag] = ds.Key
-			domain.Operations = append(domain.Operations, ops[tag]...)
+			tagOps, ok := ops[tag]
+			if !ok {
+				return nil, fmt.Errorf("domain %q claims tag %q, which is not in the model", ds.Key, tag)
+			}
+			domain.Operations = append(domain.Operations, tagOps...)
 		}
 		sort.Slice(domain.Operations, func(i, j int) bool {
 			return domain.Operations[i].Action < domain.Operations[j].Action
@@ -233,6 +241,9 @@ func joinOperations(bm *behaviorModel, oa *openapiDoc) (map[string][]*Operation,
 			}
 			if op.OperationID == "" {
 				return nil, fmt.Errorf("%s %s: missing operationId", method, path)
+			}
+			if op.RequestBody != nil && op.RequestBody.Ref != "" {
+				return nil, fmt.Errorf("operation %q: requestBody $ref is not supported (inline the body in the SDK export)", op.OperationID)
 			}
 			if seen[op.OperationID] {
 				return nil, fmt.Errorf("duplicate operationId %q", op.OperationID)

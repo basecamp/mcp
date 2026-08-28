@@ -198,6 +198,28 @@ func TestLoadRejectsDuplicateDomainKeys(t *testing.T) {
 	assert.Contains(t, err.Error(), "duplicate domain key")
 }
 
+func TestLoadRejectsRequestBodyRefs(t *testing.T) {
+	// The reusable Reference Object form would otherwise unmarshal to an
+	// empty body and silently drop the schema and required flag.
+	model := mutatedModel(t, func(bm, oa map[string]any) {
+		post := oa["paths"].(map[string]any)["/notes"].(map[string]any)["post"].(map[string]any)
+		post["requestBody"] = map[string]any{"$ref": "#/components/requestBodies/NewNote"}
+	})
+	_, err := Load(testSpec(model))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `requestBody $ref is not supported`)
+}
+
+func TestLoadRejectsTagsAbsentFromModel(t *testing.T) {
+	// A misspelled or stale spec tag must not publish a hollow domain while
+	// the real operations quietly land in Unmapped.
+	spec := testSpec(fixtureModel())
+	spec.Domains = append(spec.Domains, DomainSpec{Key: "ghost", Blurb: "Claims nothing real.", Tags: []string{"Nootes"}})
+	_, err := Load(spec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `domain "ghost" claims tag "Nootes", which is not in the model`)
+}
+
 func TestLoadRejectsActionNameCollisions(t *testing.T) {
 	// "List_notes" snake-cases to "list_notes", colliding with "ListNotes".
 	model := mutatedModel(t, func(bm, oa map[string]any) {
