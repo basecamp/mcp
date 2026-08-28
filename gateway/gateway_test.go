@@ -391,3 +391,12 @@ func TestNewRejectsDuplicateDomains(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `duplicate domain "notes"`)
 }
+
+func TestNewRejectsWhitespaceTitles(t *testing.T) {
+	blank := &fakeDomain{name: "blank", title: "   ", ops: []gateway.Operation{
+		{Action: "read_thing", ReadOnly: true},
+	}}
+	_, err := gateway.New([]gateway.Domain{blank}, gateway.Config{Handler: echoHandler})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `domain "blank" has no tool title`)
+}

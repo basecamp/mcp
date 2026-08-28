@@ -265,7 +265,7 @@ func Load(spec Spec) (*Catalog, error) {
 		if len(ds.Tags) == 0 {
 			return nil, fmt.Errorf("domain %q claims no tags", ds.Key)
 		}
-		if ds.Title == "" {
+		if strings.TrimSpace(ds.Title) == "" {
 			return nil, fmt.Errorf("domain %q has no title (connector directories require a title on every tool)", ds.Key)
 		}
 		domain := &Domain{Key: ds.Key, Tool: spec.ToolPrefix + ds.Key, Title: ds.Title, Blurb: ds.Blurb}

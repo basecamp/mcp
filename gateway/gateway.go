@@ -108,7 +108,7 @@ func New(domains []Domain, cfg Config) (*Server, error) {
 		if _, ok := d.Find(DescribeAction); ok {
 			return nil, fmt.Errorf("domain %q registers an operation named %q, which is reserved for the gateway describe action", d.Name(), DescribeAction)
 		}
-		if d.ToolTitle() == "" {
+		if strings.TrimSpace(d.ToolTitle()) == "" {
 			return nil, fmt.Errorf("domain %q has no tool title (connector directories require a title on every tool)", d.Name())
 		}
 		if _, dup := byName[d.Name()]; dup {

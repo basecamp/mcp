@@ -730,8 +730,8 @@ func TestSplitReadWrite(t *testing.T) {
 
 	assert.Equal(t, write.Tool, read.Counterpart)
 	assert.Equal(t, read.Tool, write.Counterpart)
-	assert.Contains(t, read.Description(), "write actions live in the test_notes_write tool")
-	assert.Contains(t, write.Description(), "read actions live in the test_notes tool")
+	assert.Contains(t, read.Description(), "write actions, when served, live in the test_notes_write tool")
+	assert.Contains(t, write.Description(), "read actions, when served, live in the test_notes tool")
 
 	searchRead, searchWrite := domainByKey(t, cat, "search").SplitReadWrite()
 	require.NotNil(t, searchRead)

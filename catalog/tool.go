@@ -145,10 +145,13 @@ func (d *Domain) Description() string {
 	b.WriteString("Gateway tool: call with {\"action\": \"...\", \"params\": {...}}.\n")
 	fmt.Fprintf(&b, "Call {\"action\": %q, \"params\": {\"action\": \"NAME\"}} for an action's full parameter schema.\n", gateway.DescribeAction)
 	if d.Counterpart != "" {
+		// "When served": domain narrowing can exclude the sibling, and this
+		// rendering cannot see the final served set — so point at the
+		// counterpart without asserting its presence.
 		if d.AllReadOnly() {
-			fmt.Fprintf(&b, "This tool only reads; the domain's write actions live in the %s tool.\n", d.Counterpart)
+			fmt.Fprintf(&b, "This tool only reads; the domain's write actions, when served, live in the %s tool.\n", d.Counterpart)
 		} else {
-			fmt.Fprintf(&b, "This tool writes; the domain's read actions live in the %s tool.\n", d.Counterpart)
+			fmt.Fprintf(&b, "This tool writes; the domain's read actions, when served, live in the %s tool.\n", d.Counterpart)
 		}
 	}
 	b.WriteString("\nACTIONS (RO = read-only):\n")
