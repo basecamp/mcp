@@ -1,0 +1,171 @@
+{
+  "paths": {
+    "/notes": {
+      "get": {
+        "operationId": "ListNotes",
+        "tags": [
+          "Notes"
+        ],
+        "description": "Lists the notes in the\naccount, newest first. Supports cursor\npagination via the cursor parameter.\n\nPass the next_cursor from a previous\npage to fetch the one after it.",
+        "parameters": [
+          {
+            "name": "filter",
+            "in": "query",
+            "description": "Narrow the listing.",
+            "schema": {
+              "$ref": "#/components/schemas/NoteFilter",
+              "description": "Filter to apply.",
+              "x-go-type": "NoteFilter"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "CreateNote",
+        "tags": [
+          "Notes"
+        ],
+        "description": "Creates a note.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewNote"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notes/{id}": {
+      "get": {
+        "operationId": "GetNote",
+        "tags": [
+          "Notes"
+        ],
+        "description": "Returns one note.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "DeleteNote",
+        "tags": [
+          "Notes"
+        ],
+        "description": "Deletes one note. This cannot be undone.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/search": {
+      "get": {
+        "operationId": "SearchNotes",
+        "tags": [
+          "Search"
+        ],
+        "summary": "Search notes by query",
+        "description": "Full-text search across notes.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/admin/purge": {
+      "post": {
+        "operationId": "PurgeAccount",
+        "tags": [
+          "Admin"
+        ],
+        "description": "Purges the account."
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "NoteFilter": {
+        "type": "string",
+        "enum": [
+          "all",
+          "starred",
+          "archived"
+        ],
+        "description": "Which notes to list.",
+        "x-go-name": "Filter"
+      },
+      "NewNote": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "author": {
+            "$ref": "#/components/schemas/Author"
+          },
+          "outline": {
+            "$ref": "#/components/schemas/TreeNode"
+          }
+        },
+        "x-go-package": "notes"
+      },
+      "Author": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          }
+        }
+      },
+      "TreeNode": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TreeNode"
+            }
+          }
+        }
+      }
+    }
+  }
+}
