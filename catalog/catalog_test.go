@@ -373,6 +373,21 @@ func TestDescribeSchemasAreSelfContained(t *testing.T) {
 
 // TestSummariesAreCompleteLines guards against hard-wrapped SDK descriptions
 // truncating mid-sentence into the generated tool docs.
+func TestRecursiveRefsTruncateSelfContained(t *testing.T) {
+	// TreeNode references itself; inlining must terminate in a stub that
+	// carries no $ref, since describe never returns the components object.
+	cat := load(t)
+	notes := domainByKey(t, cat, "notes")
+	payload, err := notes.Describe("create_note")
+	require.NoError(t, err)
+	op, ok := payload.(*Operation)
+	require.True(t, ok)
+	rendered, err := json.Marshal(op.Body)
+	require.NoError(t, err)
+	assert.NotContains(t, string(rendered), "$ref")
+	assert.Contains(t, string(rendered), "truncated: recursive reference to TreeNode")
+}
+
 func TestSummariesAreCompleteLines(t *testing.T) {
 	cat := load(t)
 	for _, d := range cat.Domains {

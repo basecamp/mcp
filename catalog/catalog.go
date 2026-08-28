@@ -312,8 +312,8 @@ func resolveBody(op *openapiOperation, oa *openapiDoc) map[string]any {
 	return asSchema(resolveRefs(content.Schema, oa, 0))
 }
 
-// maxRefDepth caps $ref inlining. Deeper (usually recursive) structures keep
-// their $ref pointer rather than expanding forever.
+// maxRefDepth caps $ref inlining. Deeper (usually recursive) structures end
+// in a self-contained truncation stub rather than expanding forever.
 const maxRefDepth = 8
 
 // resolveRefs inlines "#/components/schemas/*" references so describe results
@@ -322,14 +322,20 @@ const maxRefDepth = 8
 // hints there) are overlaid on the resolved target. Anything unresolvable —
 // unknown ref targets, exhausted depth — passes through untouched.
 func resolveRefs(v any, oa *openapiDoc, depth int) any {
-	if depth > maxRefDepth {
-		return v
-	}
 	switch t := v.(type) {
 	case map[string]any:
 		if ref, ok := t["$ref"].(string); ok {
 			name := strings.TrimPrefix(ref, "#/components/schemas/")
 			if target, found := oa.Components.Schemas[name]; found && name != ref {
+				if depth >= maxRefDepth {
+					// Deeper (usually recursive) structures terminate in a
+					// self-contained stub: describe never returns the
+					// components object, so a retained $ref would dangle.
+					return map[string]any{
+						"type":        "object",
+						"description": fmt.Sprintf("truncated: recursive reference to %s", name),
+					}
+				}
 				resolved, _ := resolveRefs(deepCopy(target), oa, depth+1).(map[string]any)
 				for k, val := range t {
 					if k == "$ref" || strings.HasPrefix(k, "x-go-") {
