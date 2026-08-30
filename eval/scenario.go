@@ -93,7 +93,23 @@ func Generate(specs []ActionSpec, opts GenerateOptions) []Scenario {
 	for _, spec := range chosen {
 		scenarios = append(scenarios, buildScenario(rng, spec))
 	}
+	disambiguateFramings(scenarios)
 	return scenarios
+}
+
+// disambiguateFramings guarantees every scenario's NL framing is unique, so a
+// framing-keyed consumer (the oracle) can never map two distinct actions to one
+// answer. Collisions are rare — two actions with identical summaries and params
+// — so the common case is untouched; a collision gets the action name appended.
+func disambiguateFramings(scenarios []Scenario) {
+	seen := map[string]int{}
+	for i := range scenarios {
+		f := scenarios[i].NLFraming
+		if seen[f] > 0 {
+			scenarios[i].NLFraming = fmt.Sprintf("%s [%s]", f, scenarios[i].GoldAction)
+		}
+		seen[f]++
+	}
 }
 
 // weightedSampleDistinct draws up to n distinct actions without replacement,
@@ -235,6 +251,10 @@ func syntheticValue(rng *rand.Rand, p ParamSpec) any {
 		return true
 	case "array":
 		return []any{niceString(p.Name)}
+	case "object":
+		// An empty object satisfies the structural type check; v0 does not
+		// recurse into nested object schemas.
+		return map[string]any{}
 	case "string":
 		// Respect the declared type: an id/number declared as a string (Fizzy
 		// renders path tokens this way) needs a numeric string, not an int.

@@ -3,8 +3,8 @@ package eval
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"sort"
-	"strings"
 )
 
 // SpecIndex is the action catalog indexed by tool then action, for O(1) lookup
@@ -111,8 +111,8 @@ func validateParams(spec ActionSpec, params map[string]any) (bool, []string) {
 			continue
 		}
 		if len(p.Enum) > 0 {
-			if s, ok := params[name].(string); !ok || !contains(p.Enum, s) {
-				reasons = append(reasons, fmt.Sprintf("param %s must be one of [%s]", name, strings.Join(p.Enum, ", ")))
+			if !enumContains(p.Enum, params[name]) {
+				reasons = append(reasons, fmt.Sprintf("param %s must be one of [%s]", name, joinEnum(p.Enum, ", ")))
 			}
 			continue
 		}
@@ -174,9 +174,11 @@ func asFloat(v any) (float64, bool) {
 	}
 }
 
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
+// enumContains reports whether v equals any enum member, comparing in JSON
+// value space (json numbers arrive as float64, matching a numeric enum).
+func enumContains(enum []any, v any) bool {
+	for _, e := range enum {
+		if reflect.DeepEqual(e, v) {
 			return true
 		}
 	}

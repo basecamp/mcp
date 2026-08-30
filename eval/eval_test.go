@@ -23,7 +23,7 @@ func fixtureSpecs() []ActionSpec {
 			Params: []ParamSpec{
 				{Name: "board_id", In: "path", Required: true, Type: "string"},
 				{Name: "title", In: "body", Required: true, Type: "string"},
-				{Name: "status", In: "body", Required: false, Type: "string", Enum: []string{"published", "drafted"}}}},
+				{Name: "status", In: "body", Required: false, Type: "string", Enum: []any{"published", "drafted"}}}},
 	}
 }
 
@@ -244,5 +244,62 @@ func TestLoopEndToEndHermetic(t *testing.T) {
 	out := rep.Render("fake")
 	if !strings.Contains(out, "TOTAL COST") || !strings.Contains(out, "PASS") {
 		t.Fatalf("report missing table/totals:\n%s", out)
+	}
+}
+
+func TestNonStringEnumValidation(t *testing.T) {
+	spec := ActionSpec{Params: []ParamSpec{{Name: "level", Type: "integer", Enum: []any{1.0, 2.0}}}}
+	if ok, r := validateParams(spec, map[string]any{"level": 2.0}); !ok {
+		t.Fatalf("valid integer enum rejected: %v", r)
+	}
+	if ok, _ := validateParams(spec, map[string]any{"level": 3.0}); ok {
+		t.Fatal("integer outside enum accepted")
+	}
+}
+
+func TestObjectParamGeneratesObject(t *testing.T) {
+	spec := ActionSpec{Tool: "t", Action: "set_meta",
+		Params: []ParamSpec{{Name: "meta", In: "body", Required: true, Type: "object"}}}
+	idx := Index([]ActionSpec{spec})
+	for _, sc := range Generate([]ActionSpec{spec}, GenerateOptions{N: 1, Seed: 3}) {
+		if _, ok := sc.GoldParams["meta"].(map[string]any); !ok {
+			t.Fatalf("object param not generated as object: %#v", sc.GoldParams["meta"])
+		}
+		gold := Proposal{Tool: sc.GoldTool, Action: sc.GoldAction, Params: sc.GoldParams}
+		if !Grade(sc, gold, idx).Pass() {
+			t.Fatalf("object-param gold did not pass")
+		}
+	}
+}
+
+func TestNullTypeRejectsNonNil(t *testing.T) {
+	if typeMatches("null", "x") {
+		t.Fatal("null type accepted a string")
+	}
+	if !typeMatches("null", nil) {
+		t.Fatal("null type rejected nil")
+	}
+}
+
+func TestPricing(t *testing.T) {
+	if p, ok := PricingFor("oracle"); !ok || p.Cost(Usage{InputTokens: 1e6, OutputTokens: 1e6}) != 0 {
+		t.Fatalf("oracle must price at zero, got %+v ok=%v", p, ok)
+	}
+	if _, ok := PricingFor("mystery-model"); ok {
+		t.Fatal("unknown label should not be found in the pricing table")
+	}
+}
+
+func TestDuplicateFramingsDisambiguated(t *testing.T) {
+	// Two actions with identical summaries and no params would frame
+	// identically; generation must keep framings unique so the oracle (keyed by
+	// framing) never maps two scenarios to one answer.
+	specs := []ActionSpec{
+		{Tool: "t", Action: "a", Summary: "Do the thing"},
+		{Tool: "t", Action: "b", Summary: "Do the thing"},
+	}
+	scen := Generate(specs, GenerateOptions{N: 2, Seed: 1})
+	if scen[0].NLFraming == scen[1].NLFraming {
+		t.Fatalf("colliding framings not disambiguated: %q", scen[0].NLFraming)
 	}
 }

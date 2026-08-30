@@ -114,8 +114,11 @@ func (m *APIModel) Propose(ctx context.Context, system, user string) (string, Us
 	reqBody, _ := json.Marshal(map[string]any{
 		"model":      m.modelID,
 		"max_tokens": m.maxTokens,
-		"system":     system,
-		"messages":   []map[string]any{{"role": "user", "content": user}},
+		// Temp-0, n=1: the v0 config promises reproducible runs, so pin the
+		// sampler rather than inheriting the API default.
+		"temperature": 0,
+		"system":      system,
+		"messages":    []map[string]any{{"role": "user", "content": user}},
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.anthropic.com/v1/messages", bytes.NewReader(reqBody))
 	if err != nil {

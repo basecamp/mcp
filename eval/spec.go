@@ -29,11 +29,11 @@ import (
 // path/query params and request-body properties into a single grading- and
 // generation-friendly shape.
 type ParamSpec struct {
-	Name     string   `json:"name"`
-	In       string   `json:"in"` // "path", "query", or "body"
-	Required bool     `json:"required"`
-	Type     string   `json:"type"` // JSON Schema primitive, "" when unconstrained
-	Enum     []string `json:"enum,omitempty"`
+	Name     string `json:"name"`
+	In       string `json:"in"` // "path", "query", or "body"
+	Required bool   `json:"required"`
+	Type     string `json:"type"` // JSON Schema primitive, "" when unconstrained
+	Enum     []any  `json:"enum,omitempty"`
 }
 
 // ActionSpec is one gateway action fully described: identity, safety
@@ -213,21 +213,16 @@ func bodyParams(body map[string]any) []ParamSpec {
 	return out
 }
 
-// schemaTypeEnum extracts the primitive type and string enum from a property
-// schema.
-func schemaTypeEnum(schema map[string]any) (string, []string) {
+// schemaTypeEnum extracts the primitive type and the enum constraint from a
+// property schema. Enum members are kept in their JSON types (string, number,
+// boolean), not narrowed to strings, so an integer or boolean enum still
+// constrains the grader.
+func schemaTypeEnum(schema map[string]any) (string, []any) {
 	if schema == nil {
 		return "", nil
 	}
 	typ, _ := schema["type"].(string)
-	var enum []string
-	if raw, ok := schema["enum"].([]any); ok {
-		for _, v := range raw {
-			if s, ok := v.(string); ok {
-				enum = append(enum, s)
-			}
-		}
-	}
+	enum, _ := schema["enum"].([]any)
 	return typ, enum
 }
 

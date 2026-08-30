@@ -76,7 +76,7 @@ func renderParams(a ActionSpec) string {
 		}
 		detail := p.Type
 		if len(p.Enum) > 0 {
-			detail = "enum: " + strings.Join(p.Enum, "|")
+			detail = "enum: " + joinEnum(p.Enum, "|")
 		}
 		if detail == "" {
 			parts = append(parts, p.Name+star)
@@ -140,4 +140,14 @@ func extractJSONObject(s string) string {
 		}
 	}
 	return ""
+}
+
+// joinEnum renders enum members (which may be strings, numbers, or booleans)
+// as a delimited list.
+func joinEnum(values []any, sep string) string {
+	parts := make([]string, len(values))
+	for i, v := range values {
+		parts[i] = fmt.Sprint(v)
+	}
+	return strings.Join(parts, sep)
 }

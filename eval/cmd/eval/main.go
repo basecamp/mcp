@@ -132,7 +132,10 @@ func connect(ctx context.Context, server, serverCmd string) (*mcp.ClientSession,
 		}
 	}
 
-	fields := strings.Fields(cmdline)
+	fields, err := splitCommand(cmdline)
+	if err != nil {
+		return nil, nil, err
+	}
 	cmd := exec.Command(fields[0], fields[1:]...)
 	cmd.Env = childEnv(server)
 	if os.Getenv("EVAL_DEBUG") == "" {
@@ -147,6 +150,48 @@ func connect(ctx context.Context, server, serverCmd string) (*mcp.ClientSession,
 		return nil, nil, fmt.Errorf("spawn %q: %w", cmdline, err)
 	}
 	return session, func() { _ = session.Close() }, nil
+}
+
+// splitCommand tokenizes a command line, honoring single and double quotes so a
+// path or argument containing spaces survives intact. It rejects an empty
+// command rather than indexing into no fields.
+func splitCommand(s string) ([]string, error) {
+	var fields []string
+	var cur strings.Builder
+	inField := false
+	var quote rune // 0, '\'' or '"'
+	for _, r := range s {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				cur.WriteRune(r)
+			}
+		case r == '\'' || r == '"':
+			quote = r
+			inField = true
+		case r == ' ' || r == '\t' || r == '\n':
+			if inField {
+				fields = append(fields, cur.String())
+				cur.Reset()
+				inField = false
+			}
+		default:
+			cur.WriteRune(r)
+			inField = true
+		}
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("unbalanced quote in command %q", s)
+	}
+	if inField {
+		fields = append(fields, cur.String())
+	}
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("empty server command")
+	}
+	return fields, nil
 }
 
 // defaultServerCmd maps a product name to its stdio server command, taken from
