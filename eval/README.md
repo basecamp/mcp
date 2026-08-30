@@ -104,10 +104,10 @@ Cheap model (haiku), one turn each, temp-0, n=1, over each server's committed
 corpus. Two structurally distinct product catalogs, one unchanged loop:
 
 ```
-server  tools/actions            model   pass    params  safety  cost_usd
-fizzy   boards, cards            haiku   12/12   12/12   12/12   $0.0165   results/fizzy-v0.jsonl
-hey     boxes, contacts,         haiku   12/12   12/12   12/12   $0.0183   results/hey-v0.jsonl
-        threads, todos
+server  domains sampled                          model   pass    params  safety  cost_usd
+fizzy   boards, cards, columns, comments,         haiku   12/12   12/12   12/12   $0.0165   results/fizzy-v0.jsonl
+        steps, users
+hey     boxes, contacts, threads, todos           haiku   12/12   12/12   12/12   $0.0183   results/hey-v0.jsonl
 ```
 
 Both clear cleanly and cost under two cents: at this size the loop proves the
@@ -140,9 +140,15 @@ added/removed cells rather than a same-cell drop.
 ## CI
 
 `make eval-smoke` (workflow `.github/workflows/eval.yml`) runs the loop against
-the fake server with the oracle backend **and gates it against the committed
-baseline** `testdata/results/fake-oracle.jsonl`: no live model calls, no
-network, zero cost, and a nonzero exit if the fake catalog surface shifts. The
+the fake server with the oracle backend over a **pinned corpus**
+(`testdata/scenarios/fake.json`) **and gates it against the committed baseline**
+`testdata/results/fake-oracle.jsonl`: no live model calls, no network, zero
+cost. The pinned corpus is what makes this a real surface gate — the committed
+golds are graded against the current fake catalog, so a change that invalidates
+a gold under an unchanged scenario id (a renamed action, an added required
+param, a changed enum) scores 0 and fails as a newly-failing regression with a
+nonzero exit. Regenerating the corpus each run would instead let the oracle's
+answers drift with the schema and hide exactly that. The
 unit tests cover the generator (determinism, seed sensitivity, distinct-action
 sampling, gold validity), the grader (every dimension, type checks, enum,
 safety), and the baseline comparison (each regression kind, per-model keying,

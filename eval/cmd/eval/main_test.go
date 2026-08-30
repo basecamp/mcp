@@ -35,13 +35,29 @@ func TestSplitCommand(t *testing.T) {
 	}
 }
 
-func TestDefaultServerCmdHonorsEnvOverride(t *testing.T) {
+func TestServerFieldsHonorsEnvOverride(t *testing.T) {
 	t.Setenv("EVAL_HEY_CMD", "/custom/hey-mcp stdio --writes")
-	if got := defaultServerCmd("hey"); got != "/custom/hey-mcp stdio --writes" {
-		t.Fatalf("env override ignored: got %q", got)
+	got, err := serverFields("hey", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := defaultServerCmd("nonesuch"); got != "" {
-		t.Fatalf("unknown server must have no default: got %q", got)
+	if want := []string{"/custom/hey-mcp", "stdio", "--writes"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("env override: got %v want %v", got, want)
+	}
+	if _, err := serverFields("nonesuch", ""); err == nil {
+		t.Fatalf("unknown server must error")
+	}
+}
+
+func TestServerFieldsSplitsExplicitCommand(t *testing.T) {
+	got, err := serverFields("hey", `"/opt/my apps/hey-mcp" stdio`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// A spaced path in an explicit command survives via quotes; the registry
+	// path avoids the join/split round-trip entirely.
+	if want := []string{"/opt/my apps/hey-mcp", "stdio"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("explicit cmd: got %v want %v", got, want)
 	}
 }
 

@@ -51,7 +51,7 @@ func run() error {
 		out       = flag.String("out", "", "JSONL results path (default eval/results/<server>-v0.jsonl)")
 		scenPath  = flag.String("scenarios", "", "load scenarios from this JSON instead of generating")
 		writeScen = flag.String("write-scenarios", "", "write the generated corpus to this JSON")
-		baseline  = flag.String("baseline", "", "compare this run against a prior results JSONL; exit nonzero on a score drop or newly-failing scenario")
+		baseline  = flag.String("baseline", "", "compare this run against a prior results JSONL; exit nonzero on a score drop, newly-failing scenario, or safety regression")
 	)
 	flag.Parse()
 
@@ -147,19 +147,11 @@ func connect(ctx context.Context, server, serverCmd string) (*mcp.ClientSession,
 		return eval.ConnectInProcess(ctx, srv)
 	}
 
-	cmdline := serverCmd
-	if cmdline == "" {
-		cmdline = defaultServerCmd(server)
-		if cmdline == "" {
-			return nil, nil, fmt.Errorf("no --server-cmd given and no default for server %q (set --server-cmd or EVAL_%s_CMD)", server, strings.ToUpper(server))
-		}
-	}
-
 	if prof, ok := serverProfiles[server]; ok && !prof.hermetic {
 		fmt.Fprintf(os.Stderr, "eval: %s is not hermetic — its stdio server authenticates at startup, so this run needs real credentials and network (a --live target)\n", server)
 	}
 
-	fields, err := splitCommand(cmdline)
+	fields, err := serverFields(server, serverCmd)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -174,7 +166,7 @@ func connect(ctx context.Context, server, serverCmd string) (*mcp.ClientSession,
 	client := mcp.NewClient(&mcp.Implementation{Name: "eval-client", Version: "0.0.0"}, nil)
 	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("spawn %q: %w", cmdline, err)
+		return nil, nil, fmt.Errorf("spawn %q: %w", strings.Join(fields, " "), err)
 	}
 	return session, func() { _ = session.Close() }, nil
 }
@@ -249,21 +241,29 @@ var serverProfiles = map[string]serverProfile{
 	"basecamp": {bin: "basecamp-mcp", args: []string{"stdio"}, hermetic: false},
 }
 
-// defaultServerCmd maps a product name to its stdio server command, taken from
-// EVAL_<PRODUCT>_CMD when set, else the registry's binary resolved on PATH.
-func defaultServerCmd(server string) string {
+// serverFields resolves the argv to spawn for a server. An explicit
+// --server-cmd or an EVAL_<PRODUCT>_CMD is a user-supplied command line, so it
+// is tokenized by splitCommand (honoring quotes). The registry default, by
+// contrast, returns the PATH-resolved binary and its args as an argv slice
+// directly — never round-tripping through a joined string — so a binary
+// installed under a directory whose name contains spaces still spawns
+// correctly.
+func serverFields(server, serverCmd string) ([]string, error) {
+	if serverCmd != "" {
+		return splitCommand(serverCmd)
+	}
 	if v := os.Getenv("EVAL_" + strings.ToUpper(server) + "_CMD"); v != "" {
-		return v
+		return splitCommand(v)
 	}
 	prof, ok := serverProfiles[server]
 	if !ok {
-		return ""
+		return nil, fmt.Errorf("no --server-cmd given and no default for server %q (set --server-cmd or EVAL_%s_CMD)", server, strings.ToUpper(server))
 	}
 	path, err := exec.LookPath(prof.bin)
 	if err != nil {
-		return ""
+		return nil, fmt.Errorf("server %q: %s not found on PATH (set --server-cmd or EVAL_%s_CMD): %w", server, prof.bin, strings.ToUpper(server), err)
 	}
-	return strings.Join(append([]string{path}, prof.args...), " ")
+	return append([]string{path}, prof.args...), nil
 }
 
 // childEnv supplies the spawned server its environment plus any dummy startup

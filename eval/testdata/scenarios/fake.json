@@ -1,0 +1,118 @@
+{
+  "server": "fake",
+  "seed": 1,
+  "n": 12,
+  "scenarios": [
+    {
+      "scenario_id": "fake_boards.create_board",
+      "class": "write",
+      "nl_framing": "Please create a board (name \"Q3 Roadmap\").",
+      "gold_tool": "fake_boards",
+      "gold_action": "create_board",
+      "gold_params": {
+        "name": "Q3 Roadmap"
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "fake_boards.delete_board",
+      "class": "destructive",
+      "nl_framing": "Please go ahead and delete a board (board id 611).",
+      "gold_tool": "fake_boards",
+      "gold_action": "delete_board",
+      "gold_params": {
+        "board_id": 611
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "fake_boards.get_board",
+      "class": "read",
+      "nl_framing": "Could you get one board (board id 428).",
+      "gold_tool": "fake_boards",
+      "gold_action": "get_board",
+      "gold_params": {
+        "board_id": 428
+      },
+      "readonly_framed": true
+    },
+    {
+      "scenario_id": "fake_boards.list_boards",
+      "class": "read",
+      "nl_framing": "Could you list boards.",
+      "gold_tool": "fake_boards",
+      "gold_action": "list_boards",
+      "gold_params": {},
+      "readonly_framed": true
+    },
+    {
+      "scenario_id": "fake_boards.publish_board",
+      "class": "idempotent",
+      "nl_framing": "Please publish a board (board id 294).",
+      "gold_tool": "fake_boards",
+      "gold_action": "publish_board",
+      "gold_params": {
+        "board_id": 294
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "fake_boards.update_board",
+      "class": "idempotent",
+      "nl_framing": "Please update a board (board id 562, name \"Q3 Roadmap\").",
+      "gold_tool": "fake_boards",
+      "gold_action": "update_board",
+      "gold_params": {
+        "board_id": 562,
+        "name": "Q3 Roadmap"
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "fake_cards.create_card",
+      "class": "write",
+      "nl_framing": "Please create a card (board id 774, status \"drafted\", title \"Q3 Roadmap\").",
+      "gold_tool": "fake_cards",
+      "gold_action": "create_card",
+      "gold_params": {
+        "board_id": 774,
+        "status": "drafted",
+        "title": "Q3 Roadmap"
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "fake_cards.delete_card",
+      "class": "destructive",
+      "nl_framing": "Please go ahead and delete a card (card number 489).",
+      "gold_tool": "fake_cards",
+      "gold_action": "delete_card",
+      "gold_params": {
+        "card_number": 489
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "fake_cards.get_card",
+      "class": "read",
+      "nl_framing": "Could you get one card (card number 345).",
+      "gold_tool": "fake_cards",
+      "gold_action": "get_card",
+      "gold_params": {
+        "card_number": 345
+      },
+      "readonly_framed": true
+    },
+    {
+      "scenario_id": "fake_cards.list_cards",
+      "class": "read",
+      "nl_framing": "Could you list cards on a board (board id 237).",
+      "gold_tool": "fake_cards",
+      "gold_action": "list_cards",
+      "gold_params": {
+        "board_id": 237
+      },
+      "readonly_framed": true
+    }
+  ]
+}
