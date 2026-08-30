@@ -86,6 +86,18 @@ func grade1(ctx context.Context, model Model, system string, sc Scenario, idx Sp
 	}
 
 	text, usage, err := model.Propose(ctx, system, user)
+	if err != nil {
+		// A call that never reached a model is not a paid call: record only
+		// usage the backend explicitly returned, never a prompt-size estimate.
+		rec.Error = err.Error()
+		rec.InTokens = usage.InputTokens
+		rec.OutTokens = usage.OutputTokens
+		rec.CostUSD = costOf(model.Label(), usage)
+		return rec
+	}
+
+	// On success, fall back to the deterministic estimate for whichever counts
+	// the backend did not report (the CLI hides most input tokens behind cache).
 	if usage.InputTokens == 0 {
 		usage.InputTokens = EstimateTokens(system) + EstimateTokens(user)
 	}
@@ -94,12 +106,7 @@ func grade1(ctx context.Context, model Model, system string, sc Scenario, idx Sp
 	}
 	rec.InTokens = usage.InputTokens
 	rec.OutTokens = usage.OutputTokens
-	rec.CostUSD = PricingFor(model.Label()).Cost(usage)
-
-	if err != nil {
-		rec.Error = err.Error()
-		return rec
-	}
+	rec.CostUSD = costOf(model.Label(), usage)
 
 	prop, perr := ParseProposal(text)
 	if perr != nil {

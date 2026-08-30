@@ -35,16 +35,29 @@ func (p Pricing) Cost(u Usage) float64 {
 // the cost figure the report prints is computed from these, so it stays honest
 // even when the model is reached through a gateway that hides billing.
 var pricingTable = map[string]Pricing{
+	"oracle": {InputPerMTok: 0, OutputPerMTok: 0},        // deterministic, no spend
 	"haiku":  {InputPerMTok: 0.80, OutputPerMTok: 4.00},  // claude-3-5-haiku
 	"sonnet": {InputPerMTok: 3.00, OutputPerMTok: 15.00}, // claude-sonnet
 }
 
-// PricingFor returns the pricing for a model label, defaulting to Haiku's.
-func PricingFor(label string) Pricing {
-	if p, ok := pricingTable[label]; ok {
-		return p
+// PricingFor returns the pricing for a known model label. An unknown label has
+// no price we can vouch for, so it returns false rather than fabricating one —
+// the caller decides whether to fail or fall back. The deterministic oracle is
+// priced at zero, keeping the zero-spend smoke honestly free.
+func PricingFor(label string) (Pricing, bool) {
+	p, ok := pricingTable[label]
+	return p, ok
+}
+
+// costOf prices usage for a model label. An unknown label falls back to Haiku
+// (the cheapest paid tier) so a custom model still reports a plausible,
+// non-zero cost rather than appearing free.
+func costOf(label string, u Usage) float64 {
+	p, ok := PricingFor(label)
+	if !ok {
+		p = pricingTable["haiku"]
 	}
-	return pricingTable["haiku"]
+	return p.Cost(u)
 }
 
 // EstimateTokens approximates a string's token count at ~4 characters per

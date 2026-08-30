@@ -128,8 +128,10 @@ func validateParams(spec ActionSpec, params map[string]any) (bool, []string) {
 // integral float64.
 func typeMatches(typ string, v any) bool {
 	switch typ {
-	case "", "null":
-		return true
+	case "":
+		return true // unconstrained
+	case "null":
+		return v == nil
 	case "string":
 		_, ok := v.(string)
 		return ok

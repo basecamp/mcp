@@ -141,28 +141,85 @@ func buildScenario(rng *rand.Rand, spec ActionSpec) Scenario {
 	}
 }
 
-// goldParams synthesizes a value for every required parameter, plus one
-// optional enum parameter when present so enum handling is exercised.
+// goldParams synthesizes a value for every required parameter. For a write
+// action it also names at least one body field, so the task expresses the
+// change to make (an update framed with only its ids is a no-op the model can
+// "pass" without understanding). Finally it exercises an enum when the params
+// so far include none.
 func goldParams(rng *rand.Rand, spec ActionSpec) map[string]any {
 	out := map[string]any{}
-	sawEnum := false
 	for _, p := range spec.Params {
 		if p.Required {
 			out[p.Name] = syntheticValue(rng, p)
-			if len(p.Enum) > 0 {
-				sawEnum = true
-			}
 		}
 	}
-	if !sawEnum {
-		for _, p := range spec.Params {
-			if !p.Required && len(p.Enum) > 0 {
-				out[p.Name] = p.Enum[rng.Intn(len(p.Enum))]
-				break
-			}
+
+	// A write must carry a mutation: if no body field is set yet and the action
+	// offers optional body fields, add one (preferring an enum field).
+	if !spec.ReadOnly && !hasIn(out, spec, "body") {
+		if p, ok := firstOptional(spec, "body"); ok {
+			out[p.Name] = syntheticValue(rng, p)
+		}
+	}
+
+	// Exercise an enum when nothing chosen so far constrains one.
+	if !hasEnum(out, spec) {
+		if p, ok := firstOptionalEnum(spec, out); ok {
+			out[p.Name] = p.Enum[rng.Intn(len(p.Enum))]
 		}
 	}
 	return out
+}
+
+// hasIn reports whether any chosen param sits in the given schema location.
+func hasIn(chosen map[string]any, spec ActionSpec, in string) bool {
+	for name := range chosen {
+		if p, ok := spec.param(name); ok && p.In == in {
+			return true
+		}
+	}
+	return false
+}
+
+// hasEnum reports whether any chosen param is enum-constrained.
+func hasEnum(chosen map[string]any, spec ActionSpec) bool {
+	for name := range chosen {
+		if p, ok := spec.param(name); ok && len(p.Enum) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// firstOptional returns the first optional param in the given location, in
+// declaration order, preferring one with an enum.
+func firstOptional(spec ActionSpec, in string) (ParamSpec, bool) {
+	var fallback ParamSpec
+	found := false
+	for _, p := range spec.Params {
+		if p.Required || p.In != in {
+			continue
+		}
+		if len(p.Enum) > 0 {
+			return p, true
+		}
+		if !found {
+			fallback, found = p, true
+		}
+	}
+	return fallback, found
+}
+
+// firstOptionalEnum returns the first optional enum param not already chosen.
+func firstOptionalEnum(spec ActionSpec, chosen map[string]any) (ParamSpec, bool) {
+	for _, p := range spec.Params {
+		if !p.Required && len(p.Enum) > 0 {
+			if _, taken := chosen[p.Name]; !taken {
+				return p, true
+			}
+		}
+	}
+	return ParamSpec{}, false
 }
 
 // syntheticValue produces a stable, type-appropriate gold value for one param.
@@ -205,6 +262,8 @@ func niceString(name string) string {
 		return "Draft copy for review"
 	case "email", "email_address":
 		return "sam@example.com"
+	case "color":
+		return "blue"
 	default:
 		return capitalize(strings.ReplaceAll(name, "_", " "))
 	}

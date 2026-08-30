@@ -68,7 +68,7 @@ func run() error {
 		}
 	}
 
-	models, err := buildModels(*backend, *modelsCSV, scenarios, session, ctx, eval.GenerateOptions{N: *n, Seed: *seed})
+	models, err := buildModels(ctx, *backend, *modelsCSV, scenarios, session, eval.GenerateOptions{N: *n, Seed: *seed})
 	if err != nil {
 		return err
 	}
@@ -178,7 +178,7 @@ func childEnv(server string) []string {
 // buildModels resolves the backend and model labels into Model backends. The
 // oracle backend needs the scenario corpus, so it generates one from the live
 // spec when none was loaded.
-func buildModels(backend, modelsCSV string, scenarios []eval.Scenario, session *mcp.ClientSession, ctx context.Context, gen eval.GenerateOptions) ([]eval.Model, error) {
+func buildModels(ctx context.Context, backend, modelsCSV string, scenarios []eval.Scenario, session *mcp.ClientSession, gen eval.GenerateOptions) ([]eval.Model, error) {
 	labels := strings.Split(modelsCSV, ",")
 	var models []eval.Model
 	for _, label := range labels {

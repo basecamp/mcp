@@ -232,8 +232,13 @@ func TestLoopEndToEndHermetic(t *testing.T) {
 		if r.Score < 1 { // the oracle must score every scenario
 			t.Fatalf("oracle failed %s: params=%v safety=%v err=%q", r.ScenarioID, r.ParamsMatch, r.AnnotationRespected, r.Error)
 		}
-		if r.CostUSD <= 0 || r.InTokens <= 0 {
-			t.Fatalf("record %s has no measured cost/tokens", r.ScenarioID)
+		// The oracle is the zero-spend backend: tokens are still measured, but
+		// its priced cost must be exactly zero.
+		if r.InTokens <= 0 {
+			t.Fatalf("record %s has no measured tokens", r.ScenarioID)
+		}
+		if r.CostUSD != 0 {
+			t.Fatalf("record %s reported nonzero oracle cost %v", r.ScenarioID, r.CostUSD)
 		}
 	}
 	out := rep.Render("fake")

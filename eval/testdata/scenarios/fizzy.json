@@ -84,11 +84,12 @@
     {
       "scenario_id": "fizzy_columns.update_column",
       "class": "idempotent",
-      "nl_framing": "Please rename or recolor a column (board id \"791\", column id \"420\").",
+      "nl_framing": "Please rename or recolor a column (board id \"791\", color \"blue\", column id \"420\").",
       "gold_tool": "fizzy_columns",
       "gold_action": "update_column",
       "gold_params": {
         "board_id": "791",
+        "color": "blue",
         "column_id": "420"
       },
       "readonly_framed": false
@@ -120,11 +121,12 @@
     {
       "scenario_id": "fizzy_steps.update_step",
       "class": "idempotent",
-      "nl_framing": "Please edit a step or toggle its completion (card number \"969\", step id \"810\").",
+      "nl_framing": "Please edit a step or toggle its completion (card number \"969\", completed true, step id \"810\").",
       "gold_tool": "fizzy_steps",
       "gold_action": "update_step",
       "gold_params": {
         "card_number": "969",
+        "completed": true,
         "step_id": "810"
       },
       "readonly_framed": false
