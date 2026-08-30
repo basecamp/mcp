@@ -1,4 +1,4 @@
-# eval — structural MCP eval loop (v0)
+# eval — structural MCP eval loop
 
 A hermetic, rule-graded eval for the gateway MCP servers built on this toolkit
 (basecamp / hey / fizzy). It reads a live server's own wire surface as the
@@ -45,62 +45,122 @@ Frugality is a first-class metric, not an afterthought: the report always prints
 tokens and dollars, and the only spend in the whole loop is the per-scenario
 model turn.
 
+## Servers — one loop, three catalogs
+
+The eval package has **no per-server code**: it reads whatever a session lists
+and describes. Everything product-specific is one entry in the command's server
+registry (`cmd/eval/main.go`), so a second and third server are configuration,
+not code.
+
+| Server | Launch | Hermetic? |
+|--------|--------|-----------|
+| `fake` | in-process catalog (`fake.go`) | yes — the CI fixture |
+| `fizzy` | `fizzy-mcp stdio --writes` | yes — dummy `FIZZY_TOKEN`, never reaches a backend |
+| `hey` | `hey-mcp stdio` | yes — catalog served from the vendored SDK model |
+| `basecamp` | `basecamp-mcp stdio` | **no** — see below |
+
+**`fizzy` and `hey` are hermetic**: `tools/list` + `describe` are served from
+each product's vendored catalog, so both run offline at zero cost with a dummy
+(or no) token. **`basecamp` is not**: its stdio server authenticates eagerly —
+it fetches `authorization.json` before serving the transport — so it needs real
+credentials and network. It is wired into the registry as a credentialed /
+`--live` target so it composes the instant it can run; making it hermetic is the
+cassette player (hillclimb #2), which stubs that startup.
+
 ## Run it
 
 ```bash
-# Hermetic smoke — in-process fake server, deterministic oracle, zero spend:
-go run ./eval/cmd/eval --server fake --backend oracle --n 12
+# Hermetic smoke — in-process fake server, deterministic oracle, zero spend,
+# gated against a committed baseline:
+make eval-smoke
 
-# Real cheap-model run against the fizzy stdio server (structural only; the
-# server runs with a dummy token and never reaches a backend):
-go build -o /tmp/fizzy-mcp github.com/basecamp/fizzy-mcp-server/cmd/fizzy-mcp
-go run ./eval/cmd/eval --server fizzy \
-    --server-cmd "/tmp/fizzy-mcp stdio --writes" \
+# Real cheap-model run against a product's stdio server. fizzy and hey are
+# hermetic (structural only; the server never reaches a backend):
+go build -o /tmp/hey-mcp github.com/basecamp/hey-mcp-server/cmd/hey-mcp
+go run ./eval/cmd/eval --server hey \
+    --server-cmd "/tmp/hey-mcp stdio" \
     --backend cli --models haiku \
-    --scenarios eval/testdata/scenarios/fizzy.json \
-    --out eval/results/fizzy-v0.jsonl
+    --scenarios eval/testdata/scenarios/hey.json \
+    --out eval/results/hey-v0.jsonl
+
+# Catch regressions: compare a fresh run against a prior one. Exits nonzero on
+# any score drop or newly-failing scenario — the merge-blocking signal.
+go run ./eval/cmd/eval --server hey --server-cmd "/tmp/hey-mcp stdio" \
+    --backend cli --models haiku \
+    --scenarios eval/testdata/scenarios/hey.json \
+    --out /tmp/hey-now.jsonl \
+    --baseline eval/results/hey-v0.jsonl
 ```
 
-Backends: `oracle` (deterministic gold, no spend — tests and CI), `cli` (the
-local `claude` CLI, no API key needed), `api` (the Anthropic Messages API,
-needs `ANTHROPIC_API_KEY`, exact token usage).
+The default server command for a known product is resolved on `PATH`
+(`fizzy-mcp`, `hey-mcp`, `basecamp-mcp`); override with `--server-cmd` or
+`EVAL_<PRODUCT>_CMD`. Backends: `oracle` (deterministic gold, no spend — tests
+and CI), `cli` (the local `claude` CLI, no API key needed), `api` (the
+Anthropic Messages API, needs `ANTHROPIC_API_KEY`, exact token usage).
 
-## The v0 fizzy run
+## The runs
 
-12 scenarios over fizzy's 8 tools / 45 actions, cheap model, one turn each,
-temp-0, n=1. See `results/fizzy-v0.jsonl`:
+Cheap model (haiku), one turn each, temp-0, n=1, over each server's committed
+corpus. Two structurally distinct product catalogs, one unchanged loop:
 
 ```
-model       pass      params    safety    in_tok     out_tok    cost_usd
-haiku       12/12     12/12     12/12     19199      291        $0.0165
+server  tools/actions            model   pass    params  safety  cost_usd
+fizzy   boards, cards            haiku   12/12   12/12   12/12   $0.0165   results/fizzy-v0.jsonl
+hey     boxes, contacts,         haiku   12/12   12/12   12/12   $0.0183   results/hey-v0.jsonl
+        threads, todos
 ```
 
-Under two cents ($0.0165) of estimated model spend proves the whole loop
-turns and the cost story is real. A capable model clears this small, unambiguous corpus cleanly:
-v0 proves the machinery, not model discrimination — that is what the hillclimb
-adds.
+Both clear cleanly and cost under two cents: at this size the loop proves the
+machinery and the frugality story across products, not model discrimination —
+that is what the harder-scenario hillclimb adds. The point of the second server
+is that landing it took zero eval-package changes: the hey corpus
+(`testdata/scenarios/hey.json`) was generated straight from hey's own describe
+surface, spanning reads, writes, idempotent updates, and destructive deletes
+across four domains.
+
+## Regression gate — `--baseline`
+
+Each run's JSONL is the append-only store. `--baseline <prior.jsonl>` compares a
+fresh run to it cell by cell, keyed on `(model, scenario_id)`, and classifies
+each change:
+
+- **newly-failing** — passed in the baseline, fails now (gates).
+- **score-drop** — score fell without crossing the pass line (gates).
+- **safety** — respected safety before, violates it now, even at equal score (gates).
+- **improved** / **added** / **removed** — reported, never gated (an improvement
+  or a corpus edit is not a regression).
+
+Any gating change prints a diff table and exits nonzero, so a catalog, SDK, or
+prompt change that quietly degrades routing fails a check instead of merging
+unnoticed. Cross-run keying on the catalog/SDK/API SHAs (the design's three-SHA
+row, which floats a drop to its layer) rides on adding those fields to the
+record — a corpus regenerated from a changed catalog currently surfaces as
+added/removed cells rather than a same-cell drop.
 
 ## CI
 
 `make eval-smoke` (workflow `.github/workflows/eval.yml`) runs the loop against
-the fake server with the oracle backend: no live model calls, no network, zero
-cost. The unit tests (`eval_test.go`) cover the generator (determinism, seed
-sensitivity, distinct-action sampling, gold validity) and the grader (every
-dimension, type checks, enum, safety), and the hermetic end-to-end smoke runs in
-the normal `make test` job too.
+the fake server with the oracle backend **and gates it against the committed
+baseline** `testdata/results/fake-oracle.jsonl`: no live model calls, no
+network, zero cost, and a nonzero exit if the fake catalog surface shifts. The
+unit tests cover the generator (determinism, seed sensitivity, distinct-action
+sampling, gold validity), the grader (every dimension, type checks, enum,
+safety), and the baseline comparison (each regression kind, per-model keying,
+corpus edits never gating). The hermetic end-to-end smoke runs in the normal
+`make test` job too.
 
 ## Hillclimb — deferred, each an independent increment
 
+- **Cassette player** — a record/replay stub for `basecamp-mcp`'s eager
+  startup (and, later, real dispatched-result grading), which turns basecamp
+  from a `--live` target into a hermetic one.
+- **Three-SHA rows** — stamp catalog/SDK/API SHAs on each record so a baseline
+  drop keys directly to the layer that moved, and a PR touching a catalog reruns
+  only the changed domains' scenarios.
 - **Harder scenarios**: distractor tools, paraphrased framings, under-specified
   requests, multi-step tasks — to make the corpus discriminate between models.
-- **A live-API layer**: cassettes (record/replay) and then real calls, grading
-  the dispatched result, not just the proposed call.
-- **An LLM judge** for the open-ended cases rules can't score.
+- **An LLM judge** for the open-ended value-accuracy cases rules can't score.
 - **Prompt caching** on the API backend: the catalog system prompt is static, so
-  cache reads collapse the per-scenario input cost (the report already counts it
-  per scenario, which is the uncached upper bound).
-- **The other two servers** (basecamp, hey) — same loop, their catalogs; and
-  **catalog-SHA regression triggers** computed from the toolkit's snapshot
-  testdata, so the eval reruns when a catalog changes.
+  cache reads collapse the per-scenario input cost.
 - **CI with a tiny real-model set** behind a gated secret, for a periodic signal
   rather than per-PR.

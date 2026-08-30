@@ -34,3 +34,47 @@ func TestSplitCommand(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultServerCmdHonorsEnvOverride(t *testing.T) {
+	t.Setenv("EVAL_HEY_CMD", "/custom/hey-mcp stdio --writes")
+	if got := defaultServerCmd("hey"); got != "/custom/hey-mcp stdio --writes" {
+		t.Fatalf("env override ignored: got %q", got)
+	}
+	if got := defaultServerCmd("nonesuch"); got != "" {
+		t.Fatalf("unknown server must have no default: got %q", got)
+	}
+}
+
+func TestChildEnvInjectsDummyTokenWhenAbsent(t *testing.T) {
+	t.Setenv("FIZZY_TOKEN", "")
+	env := childEnv("fizzy")
+	found := false
+	for _, kv := range env {
+		if kv == "FIZZY_TOKEN=eval-structural-only" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("fizzy childEnv must inject a dummy FIZZY_TOKEN")
+	}
+}
+
+func TestChildEnvNeverOverwritesRealToken(t *testing.T) {
+	t.Setenv("FIZZY_TOKEN", "real-secret")
+	for _, kv := range childEnv("fizzy") {
+		if kv == "FIZZY_TOKEN=eval-structural-only" {
+			t.Fatalf("childEnv overwrote a real FIZZY_TOKEN")
+		}
+	}
+}
+
+func TestServerProfilesRecordHermeticity(t *testing.T) {
+	for _, name := range []string{"fizzy", "hey"} {
+		if !serverProfiles[name].hermetic {
+			t.Fatalf("%s should be hermetic", name)
+		}
+	}
+	if serverProfiles["basecamp"].hermetic {
+		t.Fatalf("basecamp stdio authenticates eagerly; it must be marked non-hermetic")
+	}
+}
