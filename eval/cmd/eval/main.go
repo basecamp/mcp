@@ -46,6 +46,7 @@ func run() error {
 		out       = flag.String("out", "", "JSONL results path (default eval/results/<server>-v0.jsonl)")
 		scenPath  = flag.String("scenarios", "", "load scenarios from this JSON instead of generating")
 		writeScen = flag.String("write-scenarios", "", "write the generated corpus to this JSON")
+		requireP  = flag.Bool("require-pass", false, "exit nonzero unless every record passes (for the deterministic oracle smoke)")
 	)
 	flag.Parse()
 
@@ -63,9 +64,18 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		if scenarios, err = eval.UnmarshalScenarios(data); err != nil {
+		corpus, err := eval.LoadCorpus(data)
+		if err != nil {
 			return err
 		}
+		// A corpus grades product-specific tool/action names; running it against
+		// a different live catalog silently mislabels the mismatch as model
+		// failures. Reject it up front. (Corpora written before this metadata
+		// existed carry an empty server and can't be checked.)
+		if corpus.Server != "" && corpus.Server != *server {
+			return fmt.Errorf("corpus %s was generated for server %q but --server is %q", *scenPath, corpus.Server, *server)
+		}
+		scenarios = corpus.Scenarios
 	}
 
 	models, err := buildModels(ctx, *backend, *modelsCSV, scenarios, session, eval.GenerateOptions{N: *n, Seed: *seed})
@@ -111,6 +121,12 @@ func run() error {
 
 	fmt.Print(rep.Render(*server))
 	fmt.Fprintf(os.Stderr, "\nwrote %d records to %s\n", len(rep.Records), outPath)
+
+	if *requireP {
+		if failing := eval.FailingRecords(rep.Records); len(failing) > 0 {
+			return fmt.Errorf("%d of %d records did not pass (first: %s)", len(failing), len(rep.Records), failing[0].ScenarioID)
+		}
+	}
 	return nil
 }
 

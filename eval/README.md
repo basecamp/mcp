@@ -4,8 +4,8 @@ A hermetic, rule-graded eval for the gateway MCP servers built on this toolkit
 (basecamp / hey / fizzy). It reads a live server's own wire surface as the
 spec, generates natural-language scenarios from it, asks a cheap model to pick
 the right `{tool, action, params}`, and grades the answer by rule — correct
-tool + action, params valid against the catalog schema, and safety annotations
-respected. No product backend, LLM judge, or cassette is involved.
+tool + action, params valid against the catalog schema and carrying the values
+the request named, and safety annotations respected. No product backend, LLM judge, or cassette is involved.
 
 Because the eval speaks each catalog's own `{action, params}` vocabulary over
 the wire, it is product-agnostic: it lives in the toolkit and is inherited by
@@ -32,9 +32,10 @@ The whole loop turns end to end on the free, deterministic layer:
    model returns `{tool, action, params}`; the runner parses it, tolerating
    fences and prose.
 4. **Rule grading** (`grade.go`) — exact tool+action match, JSON-Schema-level
-   param validation (required present, no unknowns, enums honored, types match),
-   and the read-only safety rule: a read/lookup framing must never resolve to a
-   destructive action.
+   param validation (required present, no unknowns, enums honored, types match)
+   plus a check that the proposal reproduces the values the framing named, and
+   the read-only safety rule: a read/lookup framing must never resolve to a
+   non-read-only action (a plain write as much as a destructive one).
 5. **A scored report with a measured cost** (`report.go`) — a scenario×model
    table plus per-model pass / params / safety rates and a total `$`. Cost is a
    deterministic function of the prompt and answer (`EstimateTokens` × a

@@ -47,8 +47,8 @@ var classWeight = map[Class]int{
 
 // Scenario is one graded task: a natural-language framing plus the gold
 // {tool, action, params} it should resolve to. Gold params carry synthetic
-// values so the framing can name concrete ids; grading validates the model's
-// params against the catalog schema, not against these values.
+// values that the framing names, so grading validates the model's params both
+// against the catalog schema and against these requested values.
 type Scenario struct {
 	ID             string         `json:"scenario_id"`
 	Class          Class          `json:"class"`
@@ -99,16 +99,26 @@ func Generate(specs []ActionSpec, opts GenerateOptions) []Scenario {
 
 // disambiguateFramings guarantees every scenario's NL framing is unique, so a
 // framing-keyed consumer (the oracle) can never map two distinct actions to one
-// answer. Collisions are rare — two actions with identical summaries and params
-// — so the common case is untouched; a collision gets the action name appended.
+// answer. Collisions are rare — two actions with identical summaries and params.
+// The disambiguator is a neutral ordinal, never the gold action name: the
+// catalog prompt exposes those names, so naming one in the request would hand
+// the model the answer and inflate that cell.
 func disambiguateFramings(scenarios []Scenario) {
-	seen := map[string]int{}
+	seen := map[string]bool{}
 	for i := range scenarios {
 		f := scenarios[i].NLFraming
-		if seen[f] > 0 {
-			scenarios[i].NLFraming = fmt.Sprintf("%s [%s]", f, scenarios[i].GoldAction)
+		if !seen[f] {
+			seen[f] = true
+			continue
 		}
-		seen[f]++
+		for n := 2; ; n++ {
+			alt := fmt.Sprintf("%s (%d)", f, n)
+			if !seen[alt] {
+				scenarios[i].NLFraming = alt
+				seen[alt] = true
+				break
+			}
+		}
 	}
 }
 

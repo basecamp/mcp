@@ -179,11 +179,31 @@ func MarshalScenarios(server string, gen GenerateOptions, scenarios []Scenario) 
 	}, "", "  ")
 }
 
-// UnmarshalScenarios reads a cached corpus.
-func UnmarshalScenarios(data []byte) ([]Scenario, error) {
+// Corpus is a cached scenario corpus with the metadata needed to validate it
+// against the run it is loaded into — above all the server it was generated for,
+// so a Fizzy corpus is never graded against a different live catalog.
+type Corpus struct {
+	Server    string
+	Seed      int64
+	N         int
+	Scenarios []Scenario
+}
+
+// LoadCorpus reads a cached corpus and its metadata.
+func LoadCorpus(data []byte) (Corpus, error) {
 	var sj scenariosJSON
 	if err := json.Unmarshal(data, &sj); err != nil {
-		return nil, fmt.Errorf("decode scenarios: %w", err)
+		return Corpus{}, fmt.Errorf("decode scenarios: %w", err)
 	}
-	return sj.Scenarios, nil
+	return Corpus{Server: sj.Server, Seed: sj.Seed, N: sj.N, Scenarios: sj.Scenarios}, nil
+}
+
+// UnmarshalScenarios reads just the scenarios from a cached corpus. Prefer
+// LoadCorpus when the server metadata matters.
+func UnmarshalScenarios(data []byte) ([]Scenario, error) {
+	c, err := LoadCorpus(data)
+	if err != nil {
+		return nil, err
+	}
+	return c.Scenarios, nil
 }

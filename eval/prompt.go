@@ -93,33 +93,53 @@ func BuildUser(s Scenario) string {
 }
 
 // ParseProposal extracts the {tool, action, params} object from the model's raw
-// text, tolerating code fences and surrounding prose.
+// text, tolerating code fences and surrounding prose. Prose may itself contain a
+// balanced brace block before the answer (an example, a stray note), so it scans
+// every top-level {...} span and returns the first that decodes and names a tool
+// or action, falling back to the first that merely decodes.
 func ParseProposal(raw string) (Proposal, error) {
-	obj := extractJSONObject(raw)
-	if obj == "" {
+	candidates := extractJSONObjects(raw)
+	if len(candidates) == 0 {
 		return Proposal{}, fmt.Errorf("no JSON object found in model output")
 	}
-	var p Proposal
-	if err := json.Unmarshal([]byte(obj), &p); err != nil {
-		return Proposal{}, fmt.Errorf("decode proposal: %w", err)
+	var (
+		fallback  *Proposal
+		decodeErr error
+	)
+	for _, obj := range candidates {
+		var p Proposal
+		if err := json.Unmarshal([]byte(obj), &p); err != nil {
+			if decodeErr == nil {
+				decodeErr = err
+			}
+			continue
+		}
+		if p.Params == nil {
+			p.Params = map[string]any{}
+		}
+		if p.Tool != "" || p.Action != "" {
+			return p, nil
+		}
+		if fallback == nil {
+			pp := p
+			fallback = &pp
+		}
 	}
-	if p.Params == nil {
-		p.Params = map[string]any{}
+	if fallback != nil {
+		return *fallback, nil
 	}
-	return p, nil
+	return Proposal{}, fmt.Errorf("decode proposal: %w", decodeErr)
 }
 
-// extractJSONObject returns the first balanced top-level {...} span in s, or ""
-// when there is none. It ignores braces inside JSON strings.
-func extractJSONObject(s string) string {
-	start := strings.IndexByte(s, '{')
-	if start < 0 {
-		return ""
-	}
+// extractJSONObjects returns every balanced top-level {...} span in s, in order.
+// It ignores braces inside JSON strings.
+func extractJSONObjects(s string) []string {
+	var objs []string
 	depth := 0
+	start := -1
 	inStr := false
 	escaped := false
-	for i := start; i < len(s); i++ {
+	for i := 0; i < len(s); i++ {
 		c := s[i]
 		switch {
 		case escaped:
@@ -131,15 +151,21 @@ func extractJSONObject(s string) string {
 		case inStr:
 			// skip
 		case c == '{':
+			if depth == 0 {
+				start = i
+			}
 			depth++
 		case c == '}':
-			depth--
-			if depth == 0 {
-				return s[start : i+1]
+			if depth > 0 {
+				depth--
+				if depth == 0 && start >= 0 {
+					objs = append(objs, s[start:i+1])
+					start = -1
+				}
 			}
 		}
 	}
-	return ""
+	return objs
 }
 
 // joinEnum renders enum members (which may be strings, numbers, or booleans)

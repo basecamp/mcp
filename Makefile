@@ -31,4 +31,4 @@ ready: vet test-race build
 # the loop turns. Real model runs use the eval command with --backend cli/api.
 .PHONY: eval-smoke
 eval-smoke:
-	$(GO) run ./eval/cmd/eval --server fake --backend oracle --n 12 --out /tmp/eval-smoke.jsonl
+	$(GO) run ./eval/cmd/eval --server fake --backend oracle --n 12 --out /tmp/eval-smoke.jsonl --require-pass
