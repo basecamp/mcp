@@ -259,6 +259,10 @@ func syntheticValue(rng *rand.Rand, p ParamSpec) any {
 		return 100 + rng.Intn(900)
 	case "boolean":
 		return true
+	case "null":
+		// A null-typed param must be nil to satisfy the strict null grading;
+		// anything else would make the gold proposal fail its own validation.
+		return nil
 	case "array":
 		return []any{niceString(p.Name)}
 	case "object":
@@ -350,6 +354,9 @@ func paramClause(spec ActionSpec, gold map[string]any) string {
 }
 
 func quoteIfString(v any) any {
+	if v == nil {
+		return "null"
+	}
 	if s, ok := v.(string); ok {
 		return fmt.Sprintf("%q", s)
 	}

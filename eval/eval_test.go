@@ -326,6 +326,21 @@ func TestObjectParamGeneratesObject(t *testing.T) {
 	}
 }
 
+func TestNullParamGeneratesNil(t *testing.T) {
+	spec := ActionSpec{Tool: "t", Action: "clear_field",
+		Params: []ParamSpec{{Name: "value", In: "body", Required: true, Type: "null"}}}
+	idx := Index([]ActionSpec{spec})
+	for _, sc := range Generate([]ActionSpec{spec}, GenerateOptions{N: 1, Seed: 7}) {
+		if v, ok := sc.GoldParams["value"]; !ok || v != nil {
+			t.Fatalf("null param not generated as nil: %#v (present=%v)", v, ok)
+		}
+		gold := Proposal{Tool: sc.GoldTool, Action: sc.GoldAction, Params: sc.GoldParams}
+		if !Grade(sc, gold, idx).Pass() {
+			t.Fatal("null-param gold did not pass its own grading")
+		}
+	}
+}
+
 func TestNullTypeRejectsNonNil(t *testing.T) {
 	if typeMatches("null", "x") {
 		t.Fatal("null type accepted a string")
