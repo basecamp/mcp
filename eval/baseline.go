@@ -50,6 +50,13 @@ func LoadBaseline(r io.Reader) (*Baseline, error) {
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
+	// An explicitly requested baseline with no records cannot provide a
+	// regression signal: comparing against it would classify every cell as
+	// "added" and pass a merge gate vacuously. Reject it so an empty or
+	// truncated file fails loudly instead of silently disarming the gate.
+	if len(b.cells) == 0 {
+		return nil, fmt.Errorf("baseline has no records: it cannot provide a regression signal")
+	}
 	return b, nil
 }
 
@@ -147,6 +154,14 @@ func CompareToBaseline(base *Baseline, records []Record) Comparison {
 					Model: rec.Model, ScenarioID: rec.ScenarioID, Kind: "improved",
 					OldScore: prev.Score, NewScore: rec.Score,
 				})
+			} else if dim, ok := dimensionImproved(prev, rec); ok {
+				// Symmetric to the dimension regression above: an already-failing
+				// cell that fixes a correctness dimension without yet passing is
+				// a real improvement the report should show (it never gates).
+				cmp.Improved = append(cmp.Improved, Regression{
+					Model: rec.Model, ScenarioID: rec.ScenarioID, Kind: "improved",
+					Detail: dim, OldScore: prev.Score, NewScore: rec.Score,
+				})
 			}
 		}
 	}
@@ -173,6 +188,21 @@ func dimensionRegressed(prev, rec Record) (string, bool) {
 	case prev.ActionMatch && !rec.ActionMatch:
 		return "action_match", true
 	case prev.ParamsMatch && !rec.ParamsMatch:
+		return "params_match", true
+	}
+	return "", false
+}
+
+// dimensionImproved is the mirror of dimensionRegressed: the first correctness
+// dimension that failed in the baseline and holds now. Used only to keep the
+// (non-gating) improvement report symmetric with the dimension gate.
+func dimensionImproved(prev, rec Record) (string, bool) {
+	switch {
+	case !prev.ToolMatch && rec.ToolMatch:
+		return "tool_match", true
+	case !prev.ActionMatch && rec.ActionMatch:
+		return "action_match", true
+	case !prev.ParamsMatch && rec.ParamsMatch:
 		return "params_match", true
 	}
 	return "", false
@@ -209,7 +239,11 @@ func (c Comparison) Render(baselinePath string) string {
 		}
 	}
 	for _, s := range c.Improved {
-		fmt.Fprintf(&b, "improved   %-32s  %.2f -> %.2f\n", s.ScenarioID, s.OldScore, s.NewScore)
+		detail := fmt.Sprintf("%.2f -> %.2f", s.OldScore, s.NewScore)
+		if s.Detail != "" {
+			detail = s.Detail + " false -> true"
+		}
+		fmt.Fprintf(&b, "improved   %-32s  %s\n", s.ScenarioID, detail)
 	}
 	for _, s := range c.Added {
 		fmt.Fprintf(&b, "added      %s\n", s)

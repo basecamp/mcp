@@ -98,6 +98,28 @@ func TestBaselineNoDimensionRegressionWhenBothFailSameWay(t *testing.T) {
 	}
 }
 
+func TestLoadBaselineRejectsEmpty(t *testing.T) {
+	if _, err := LoadBaseline(strings.NewReader("")); err == nil {
+		t.Fatalf("an empty baseline must be rejected, not silently disable the gate")
+	}
+	if _, err := LoadBaseline(strings.NewReader("\n  \n")); err == nil {
+		t.Fatalf("a blank-only baseline must be rejected")
+	}
+}
+
+func TestBaselineReportsDimensionImprovementWithoutGating(t *testing.T) {
+	prev := []Record{{Model: "haiku", ScenarioID: "a.x", Score: 0, ToolMatch: false, ActionMatch: false, AnnotationRespected: true}}
+	base := baselineFrom(t, prev)
+	now := []Record{{Model: "haiku", ScenarioID: "a.x", Score: 0, ToolMatch: true, ActionMatch: false, AnnotationRespected: true}}
+	cmp := CompareToBaseline(base, now)
+	if cmp.HasRegression() {
+		t.Fatalf("a dimension improvement must not gate: %+v", cmp.Regressions)
+	}
+	if len(cmp.Improved) != 1 || cmp.Improved[0].Detail != "tool_match" {
+		t.Fatalf("want a reported tool_match improvement, got %+v", cmp.Improved)
+	}
+}
+
 func TestBaselineImprovementNeverGates(t *testing.T) {
 	base := baselineFrom(t, records("haiku", "a.x", 0.0, true))
 	now := records("haiku", "a.x", 1.0, true)

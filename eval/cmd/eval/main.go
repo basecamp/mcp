@@ -58,6 +58,22 @@ func run() error {
 
 	ctx := context.Background()
 
+	// Load and validate the baseline first, before spawning a server or making
+	// a single paid model call: a missing, unreadable, or empty --baseline is a
+	// caller error that must fail immediately, not after a full (billable) run.
+	var base *eval.Baseline
+	if *baseline != "" {
+		bf, err := os.Open(*baseline)
+		if err != nil {
+			return err
+		}
+		base, err = eval.LoadBaseline(bf)
+		_ = bf.Close()
+		if err != nil {
+			return err
+		}
+	}
+
 	outPath := *out
 	if outPath == "" {
 		outPath = fmt.Sprintf("eval/results/%s-v0.jsonl", *server)
@@ -145,24 +161,6 @@ func run() error {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "wrote %d scenarios to %s\n", len(rep.Scenarios), *writeScen)
-	}
-
-	// Load the baseline BEFORE writing output: --baseline may name the same
-	// file as --out (the natural "compare against last run, then overwrite it"
-	// case, and the default out path can coincide with it), and os.Create
-	// truncates. Reading it first means the comparison sees the prior run, not
-	// the one we are about to write, and never destroys it unread.
-	var base *eval.Baseline
-	if *baseline != "" {
-		bf, err := os.Open(*baseline)
-		if err != nil {
-			return err
-		}
-		base, err = eval.LoadBaseline(bf)
-		_ = bf.Close()
-		if err != nil {
-			return err
-		}
 	}
 
 	f, err := os.Create(outPath)
