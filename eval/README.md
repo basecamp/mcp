@@ -75,8 +75,11 @@ cassette player (hillclimb #2), which stubs that startup.
 make eval-smoke
 
 # Real cheap-model run against a product's stdio server. fizzy and hey are
-# hermetic (structural only; the server never reaches a backend):
-go build -o /tmp/hey-mcp github.com/basecamp/hey-mcp-server/cmd/hey-mcp
+# hermetic (structural only; the server never reaches a backend). Build the
+# product binary from a checkout of its own repo — the product modules are
+# intentionally absent from this toolkit's module graph, so a bare
+# `go build <product>/cmd/...` from here will not resolve:
+(cd ../hey-mcp-server && go build -o /tmp/hey-mcp ./cmd/hey-mcp)
 go run ./eval/cmd/eval --server hey \
     --server-cmd "/tmp/hey-mcp stdio" \
     --backend cli --models haiku \
