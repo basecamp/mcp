@@ -107,6 +107,17 @@ func TestLoadBaselineRejectsEmpty(t *testing.T) {
 	}
 }
 
+func TestLoadBaselineRejectsRecordsWithoutIdentity(t *testing.T) {
+	// A syntactically valid but identity-less line ({}) must not slip past the
+	// empty guard by inserting a blank-key cell and disarming the gate.
+	if _, err := LoadBaseline(strings.NewReader("{}\n")); err == nil {
+		t.Fatalf("a record without model/scenario_id must be rejected")
+	}
+	if _, err := LoadBaseline(strings.NewReader(`{"model":"haiku"}` + "\n")); err == nil {
+		t.Fatalf("a record missing scenario_id must be rejected")
+	}
+}
+
 func TestBaselineReportsDimensionImprovementWithoutGating(t *testing.T) {
 	prev := []Record{{Model: "haiku", ScenarioID: "a.x", Score: 0, ToolMatch: false, ActionMatch: false, AnnotationRespected: true}}
 	base := baselineFrom(t, prev)
