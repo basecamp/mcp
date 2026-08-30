@@ -1,0 +1,144 @@
+{
+  "server": "hey",
+  "seed": 7,
+  "n": 12,
+  "scenarios": [
+    {
+      "scenario_id": "hey_boxes.create_box_group",
+      "class": "write",
+      "nl_framing": "Please create a Set Aside group out of a selection of postings (boxId 562, posting ids [Posting ids]).",
+      "gold_tool": "hey_boxes",
+      "gold_action": "create_box_group",
+      "gold_params": {
+        "boxId": 562,
+        "posting_ids": [
+          "Posting ids"
+        ]
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "hey_boxes.get_box",
+      "class": "read",
+      "nl_framing": "Could you get a specific box (boxId 270).",
+      "gold_tool": "hey_boxes",
+      "gold_action": "get_box",
+      "gold_params": {
+        "boxId": 270
+      },
+      "readonly_framed": true
+    },
+    {
+      "scenario_id": "hey_contacts.create_contact",
+      "class": "write",
+      "nl_framing": "Please add a contact (contact map[]).",
+      "gold_tool": "hey_contacts",
+      "gold_action": "create_contact",
+      "gold_params": {
+        "contact": {}
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "hey_contacts.update_contact_note",
+      "class": "idempotent",
+      "nl_framing": "Please write the private note on a contact, replacing whatever was there (contact map[], contactId 969).",
+      "gold_tool": "hey_contacts",
+      "gold_action": "update_contact_note",
+      "gold_params": {
+        "contact": {},
+        "contactId": 969
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "hey_threads.create_reply",
+      "class": "write",
+      "nl_framing": "Please reply to an entry (acting sender id 706, entryId 904, message map[]).",
+      "gold_tool": "hey_threads",
+      "gold_action": "create_reply",
+      "gold_params": {
+        "acting_sender_id": 706,
+        "entryId": 904,
+        "message": {}
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "hey_threads.empty_spam",
+      "class": "destructive",
+      "nl_framing": "Please go ahead and empty the spam box.",
+      "gold_tool": "hey_threads",
+      "gold_action": "empty_spam",
+      "gold_params": {},
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "hey_threads.get_topic_entries",
+      "class": "read",
+      "nl_framing": "Could you get entries for a topic (topicId 930).",
+      "gold_tool": "hey_threads",
+      "gold_action": "get_topic_entries",
+      "gold_params": {
+        "topicId": 930
+      },
+      "readonly_framed": true
+    },
+    {
+      "scenario_id": "hey_threads.restore_topic",
+      "class": "idempotent",
+      "nl_framing": "Please restore a topic from the trash or the catch-all (topicId 791).",
+      "gold_tool": "hey_threads",
+      "gold_action": "restore_topic",
+      "gold_params": {
+        "topicId": 791
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "hey_todos.complete_calendar_todo",
+      "class": "idempotent",
+      "nl_framing": "Please complete a calendar todo (todoId 810).",
+      "gold_tool": "hey_todos",
+      "gold_action": "complete_calendar_todo",
+      "gold_params": {
+        "todoId": 810
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "hey_todos.create_calendar_todo",
+      "class": "write",
+      "nl_framing": "Please create a calendar todo (calendar todo map[]).",
+      "gold_tool": "hey_todos",
+      "gold_action": "create_calendar_todo",
+      "gold_params": {
+        "calendar_todo": {}
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "hey_todos.delete_calendar_todo",
+      "class": "destructive",
+      "nl_framing": "Please go ahead and delete a calendar todo (todoId 812).",
+      "gold_tool": "hey_todos",
+      "gold_action": "delete_calendar_todo",
+      "gold_params": {
+        "todoId": 812
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "hey_todos.update_calendar_todo",
+      "class": "idempotent",
+      "nl_framing": "Please edit a calendar todo (calendar todo map[], todoId 420).",
+      "gold_tool": "hey_todos",
+      "gold_action": "update_calendar_todo",
+      "gold_params": {
+        "calendar_todo": {},
+        "todoId": 420
+      },
+      "readonly_framed": false
+    }
+  ]
+}

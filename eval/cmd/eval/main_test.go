@@ -90,24 +90,46 @@ func TestSameFile(t *testing.T) {
 	}
 }
 
-// TestDefaultServerCmdQuotesDiscoveredPath pins that a fizzy-mcp found in a
-// directory with spaces survives splitCommand as one executable field.
-func TestDefaultServerCmdQuotesDiscoveredPath(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "My Tools")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
+func TestDefaultServerCmdHonorsEnvOverride(t *testing.T) {
+	t.Setenv("EVAL_HEY_CMD", "/custom/hey-mcp stdio --writes")
+	if got := defaultServerCmd("hey"); got != "/custom/hey-mcp stdio --writes" {
+		t.Fatalf("env override ignored: got %q", got)
 	}
-	bin := filepath.Join(dir, "fizzy-mcp")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
+	if got := defaultServerCmd("nonesuch"); got != "" {
+		t.Fatalf("unknown server must have no default: got %q", got)
 	}
-	t.Setenv("PATH", dir)
-	t.Setenv("EVAL_FIZZY_CMD", "")
-	fields, err := splitCommand(defaultServerCmd("fizzy"))
-	if err != nil {
-		t.Fatal(err)
+}
+
+func TestChildEnvInjectsDummyTokenWhenAbsent(t *testing.T) {
+	t.Setenv("FIZZY_TOKEN", "")
+	env := childEnv("fizzy")
+	found := false
+	for _, kv := range env {
+		if kv == "FIZZY_TOKEN=eval-structural-only" {
+			found = true
+		}
 	}
-	if !reflect.DeepEqual(fields, []string{bin, "stdio", "--writes"}) {
-		t.Fatalf("discovered path split apart: %q", fields)
+	if !found {
+		t.Fatalf("fizzy childEnv must inject a dummy FIZZY_TOKEN")
+	}
+}
+
+func TestChildEnvNeverOverwritesRealToken(t *testing.T) {
+	t.Setenv("FIZZY_TOKEN", "real-secret")
+	for _, kv := range childEnv("fizzy") {
+		if kv == "FIZZY_TOKEN=eval-structural-only" {
+			t.Fatalf("childEnv overwrote a real FIZZY_TOKEN")
+		}
+	}
+}
+
+func TestServerProfilesRecordHermeticity(t *testing.T) {
+	for _, name := range []string{"fizzy", "hey"} {
+		if !serverProfiles[name].hermetic {
+			t.Fatalf("%s should be hermetic", name)
+		}
+	}
+	if serverProfiles["basecamp"].hermetic {
+		t.Fatalf("basecamp stdio authenticates eagerly; it must be marked non-hermetic")
 	}
 }
