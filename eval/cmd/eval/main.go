@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -27,6 +28,10 @@ import (
 
 	"github.com/basecamp/mcp/eval"
 )
+
+// errRegression is returned when a --baseline comparison finds a worse cell, so
+// the process exits nonzero — the merge-blocking signal for CI.
+var errRegression = errors.New("baseline regression detected")
 
 func main() {
 	if err := run(); err != nil {
@@ -46,10 +51,27 @@ func run() error {
 		out       = flag.String("out", "", "JSONL results path (default eval/results/<server>-v0.jsonl)")
 		scenPath  = flag.String("scenarios", "", "load scenarios from this JSON instead of generating")
 		writeScen = flag.String("write-scenarios", "", "write the generated corpus to this JSON")
+		baseline  = flag.String("baseline", "", "compare this run against a prior results JSONL; exit nonzero on a score drop, newly-failing scenario, or safety regression")
 	)
 	flag.Parse()
 
 	ctx := context.Background()
+
+	// Load and validate the baseline first, before spawning a server or making
+	// a single paid model call: a missing, unreadable, or empty --baseline is a
+	// caller error that must fail immediately, not after a full (billable) run.
+	var base *eval.Baseline
+	if *baseline != "" {
+		bf, err := os.Open(*baseline)
+		if err != nil {
+			return err
+		}
+		base, err = eval.LoadBaseline(bf)
+		_ = bf.Close()
+		if err != nil {
+			return err
+		}
+	}
 
 	session, cleanup, err := connect(ctx, *server, *serverCmd)
 	if err != nil {
@@ -111,6 +133,14 @@ func run() error {
 
 	fmt.Print(rep.Render(*server))
 	fmt.Fprintf(os.Stderr, "\nwrote %d records to %s\n", len(rep.Records), outPath)
+
+	if base != nil {
+		cmp := eval.CompareToBaseline(base, rep.Records)
+		fmt.Print(cmp.Render(*baseline))
+		if cmp.HasRegression() {
+			return errRegression
+		}
+	}
 	return nil
 }
 
@@ -124,15 +154,11 @@ func connect(ctx context.Context, server, serverCmd string) (*mcp.ClientSession,
 		return eval.ConnectInProcess(ctx, srv)
 	}
 
-	cmdline := serverCmd
-	if cmdline == "" {
-		cmdline = defaultServerCmd(server)
-		if cmdline == "" {
-			return nil, nil, fmt.Errorf("no --server-cmd given and no default for server %q (set --server-cmd or EVAL_%s_CMD)", server, strings.ToUpper(server))
-		}
+	if prof, ok := serverProfiles[server]; ok && !prof.hermetic {
+		fmt.Fprintf(os.Stderr, "eval: %s is not hermetic — its stdio server authenticates at startup, so this run needs real credentials and network (a --live target)\n", server)
 	}
 
-	fields, err := splitCommand(cmdline)
+	fields, err := serverFields(server, serverCmd)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -147,7 +173,7 @@ func connect(ctx context.Context, server, serverCmd string) (*mcp.ClientSession,
 	client := mcp.NewClient(&mcp.Implementation{Name: "eval-client", Version: "0.0.0"}, nil)
 	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("spawn %q: %w", cmdline, err)
+		return nil, nil, fmt.Errorf("spawn %q: %w", strings.Join(fields, " "), err)
 	}
 	return session, func() { _ = session.Close() }, nil
 }
@@ -194,28 +220,68 @@ func splitCommand(s string) ([]string, error) {
 	return fields, nil
 }
 
-// defaultServerCmd maps a product name to its stdio server command, taken from
-// EVAL_<PRODUCT>_CMD when set.
-func defaultServerCmd(server string) string {
-	if v := os.Getenv("EVAL_" + strings.ToUpper(server) + "_CMD"); v != "" {
-		return v
-	}
-	switch server {
-	case "fizzy":
-		if path, err := exec.LookPath("fizzy-mcp"); err == nil {
-			return path + " stdio --writes"
-		}
-	}
-	return ""
+// serverProfile describes how to launch and prime one product's stdio MCP
+// server. The eval package is product-agnostic — it reads whatever a session
+// lists and describes — so everything product-specific lives here in the
+// command glue, never in eval/. Adding a product is one map entry, which is
+// what "2nd & 3rd server, no per-server code" means in practice.
+type serverProfile struct {
+	bin  string            // default binary name, resolved on PATH
+	args []string          // stdio subcommand and flags
+	env  map[string]string // env injected only when absent (dummy startup creds)
+	// hermetic is true when tools/list + describe need no live backend or real
+	// credentials, so the eval runs offline at zero cost. A non-hermetic server
+	// is a credentialed / --live target: it is wired here so it composes the
+	// moment it can run, but a default (uncredentialed) spawn will fail.
+	hermetic bool
 }
 
-// childEnv supplies the spawned server a hermetic environment. The structural
-// eval never reaches a backend, but some servers refuse to start without a
-// token, so a dummy is injected when absent.
+// serverProfiles is the known-product registry. fizzy and hey serve their
+// catalog's list+describe surface from the vendored SDK model without touching
+// a backend, so a dummy token (fizzy) or no token (hey) starts them
+// hermetically. basecamp-mcp's stdio authenticates eagerly — it fetches
+// authorization.json before serving — so it needs real credentials and network
+// until the cassette player (hillclimb #2) can stub its startup.
+var serverProfiles = map[string]serverProfile{
+	"fizzy":    {bin: "fizzy-mcp", args: []string{"stdio", "--writes"}, env: map[string]string{"FIZZY_TOKEN": "eval-structural-only"}, hermetic: true},
+	"hey":      {bin: "hey-mcp", args: []string{"stdio"}, hermetic: true},
+	"basecamp": {bin: "basecamp-mcp", args: []string{"stdio"}, hermetic: false},
+}
+
+// serverFields resolves the argv to spawn for a server. An explicit
+// --server-cmd or an EVAL_<PRODUCT>_CMD is a user-supplied command line, so it
+// is tokenized by splitCommand (honoring quotes). The registry default, by
+// contrast, returns the PATH-resolved binary and its args as an argv slice
+// directly — never round-tripping through a joined string — so a binary
+// installed under a directory whose name contains spaces still spawns
+// correctly.
+func serverFields(server, serverCmd string) ([]string, error) {
+	if serverCmd != "" {
+		return splitCommand(serverCmd)
+	}
+	if v := os.Getenv("EVAL_" + strings.ToUpper(server) + "_CMD"); v != "" {
+		return splitCommand(v)
+	}
+	prof, ok := serverProfiles[server]
+	if !ok {
+		return nil, fmt.Errorf("no --server-cmd given and no default for server %q (set --server-cmd or EVAL_%s_CMD)", server, strings.ToUpper(server))
+	}
+	path, err := exec.LookPath(prof.bin)
+	if err != nil {
+		return nil, fmt.Errorf("server %q: %s not found on PATH (set --server-cmd or EVAL_%s_CMD): %w", server, prof.bin, strings.ToUpper(server), err)
+	}
+	return append([]string{path}, prof.args...), nil
+}
+
+// childEnv supplies the spawned server its environment plus any dummy startup
+// credential the registry injects, so a hermetic server starts without real
+// secrets. Existing env always wins — a real token is never overwritten.
 func childEnv(server string) []string {
 	env := os.Environ()
-	if server == "fizzy" && os.Getenv("FIZZY_TOKEN") == "" {
-		env = append(env, "FIZZY_TOKEN=eval-structural-only")
+	for k, v := range serverProfiles[server].env {
+		if os.Getenv(k) == "" {
+			env = append(env, k+"="+v)
+		}
 	}
 	return env
 }
