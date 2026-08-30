@@ -25,3 +25,10 @@ clean:
 	rm -rf bin
 
 ready: vet test-race build
+
+# Run the structural eval loop as a hermetic smoke: the in-process fake server
+# with the deterministic oracle backend. No network, no model spend — proves
+# the loop turns. Real model runs use the eval command with --backend cli/api.
+.PHONY: eval-smoke
+eval-smoke:
+	$(GO) run ./eval/cmd/eval --server fake --backend oracle --n 12 --out /tmp/eval-smoke.jsonl

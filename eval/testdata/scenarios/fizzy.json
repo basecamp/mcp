@@ -1,0 +1,144 @@
+{
+  "server": "fizzy",
+  "seed": 7,
+  "n": 12,
+  "scenarios": [
+    {
+      "scenario_id": "fizzy_boards.create_board",
+      "class": "write",
+      "nl_framing": "Please create a board (name \"Q3 Roadmap\").",
+      "gold_tool": "fizzy_boards",
+      "gold_action": "create_board",
+      "gold_params": {
+        "name": "Q3 Roadmap"
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "fizzy_cards.close_card",
+      "class": "write",
+      "nl_framing": "Please close a card (move it to Done) (card number \"301\").",
+      "gold_tool": "fizzy_cards",
+      "gold_action": "close_card",
+      "gold_params": {
+        "card_number": "301"
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "fizzy_cards.get_card",
+      "class": "read",
+      "nl_framing": "Could you get one card with its board, column, assignees, tags, and steps (card number \"930\").",
+      "gold_tool": "fizzy_cards",
+      "gold_action": "get_card",
+      "gold_params": {
+        "card_number": "930"
+      },
+      "readonly_framed": true
+    },
+    {
+      "scenario_id": "fizzy_cards.list_cards",
+      "class": "read",
+      "nl_framing": "Could you list cards you have access to, filtered by board, column, tag, assignee, state, or search terms (assignment status \"unassigned\").",
+      "gold_tool": "fizzy_cards",
+      "gold_action": "list_cards",
+      "gold_params": {
+        "assignment_status": "unassigned"
+      },
+      "readonly_framed": true
+    },
+    {
+      "scenario_id": "fizzy_cards.unwatch_card",
+      "class": "write",
+      "nl_framing": "Please unsubscribe from notifications for a card (card number \"812\").",
+      "gold_tool": "fizzy_cards",
+      "gold_action": "unwatch_card",
+      "gold_params": {
+        "card_number": "812"
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "fizzy_cards.watch_card",
+      "class": "write",
+      "nl_framing": "Please subscribe to notifications for a card (card number \"611\").",
+      "gold_tool": "fizzy_cards",
+      "gold_action": "watch_card",
+      "gold_params": {
+        "card_number": "611"
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "fizzy_columns.delete_column",
+      "class": "destructive",
+      "nl_framing": "Please go ahead and delete a column (board id \"343\", column id \"711\").",
+      "gold_tool": "fizzy_columns",
+      "gold_action": "delete_column",
+      "gold_params": {
+        "board_id": "343",
+        "column_id": "711"
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "fizzy_columns.update_column",
+      "class": "idempotent",
+      "nl_framing": "Please rename or recolor a column (board id \"791\", column id \"420\").",
+      "gold_tool": "fizzy_columns",
+      "gold_action": "update_column",
+      "gold_params": {
+        "board_id": "791",
+        "column_id": "420"
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "fizzy_comments.delete_comment",
+      "class": "destructive",
+      "nl_framing": "Please go ahead and delete a comment (comment creator only) (card number \"904\", comment id \"706\").",
+      "gold_tool": "fizzy_comments",
+      "gold_action": "delete_comment",
+      "gold_params": {
+        "card_number": "904",
+        "comment_id": "706"
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "fizzy_steps.create_step",
+      "class": "write",
+      "nl_framing": "Please add a step to a card (card number \"270\", content \"Draft copy for review\").",
+      "gold_tool": "fizzy_steps",
+      "gold_action": "create_step",
+      "gold_params": {
+        "card_number": "270",
+        "content": "Draft copy for review"
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "fizzy_steps.update_step",
+      "class": "idempotent",
+      "nl_framing": "Please edit a step or toggle its completion (card number \"969\", step id \"810\").",
+      "gold_tool": "fizzy_steps",
+      "gold_action": "update_step",
+      "gold_params": {
+        "card_number": "969",
+        "step_id": "810"
+      },
+      "readonly_framed": false
+    },
+    {
+      "scenario_id": "fizzy_users.get_user",
+      "class": "read",
+      "nl_framing": "Could you get one user (user id \"285\").",
+      "gold_tool": "fizzy_users",
+      "gold_action": "get_user",
+      "gold_params": {
+        "user_id": "285"
+      },
+      "readonly_framed": true
+    }
+  ]
+}
