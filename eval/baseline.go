@@ -45,6 +45,13 @@ func LoadBaseline(r io.Reader) (*Baseline, error) {
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			return nil, fmt.Errorf("decode baseline record: %w", err)
 		}
+		// A record without identity (a damaged line, or a stray {}) cannot key
+		// a comparison cell — inserting it under a blank key would defeat the
+		// empty-baseline guard below and silently disarm the gate. Reject it so
+		// a corrupt JSONL fails loudly instead.
+		if rec.Model == "" || rec.ScenarioID == "" {
+			return nil, fmt.Errorf("baseline record missing model or scenario_id: %s", line)
+		}
 		b.cells[baselineKey(rec.Model, rec.ScenarioID)] = rec
 	}
 	if err := sc.Err(); err != nil {
