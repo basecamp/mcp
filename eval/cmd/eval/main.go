@@ -147,6 +147,24 @@ func run() error {
 		fmt.Fprintf(os.Stderr, "wrote %d scenarios to %s\n", len(rep.Scenarios), *writeScen)
 	}
 
+	// Load the baseline BEFORE writing output: --baseline may name the same
+	// file as --out (the natural "compare against last run, then overwrite it"
+	// case, and the default out path can coincide with it), and os.Create
+	// truncates. Reading it first means the comparison sees the prior run, not
+	// the one we are about to write, and never destroys it unread.
+	var base *eval.Baseline
+	if *baseline != "" {
+		bf, err := os.Open(*baseline)
+		if err != nil {
+			return err
+		}
+		base, err = eval.LoadBaseline(bf)
+		_ = bf.Close()
+		if err != nil {
+			return err
+		}
+	}
+
 	f, err := os.Create(outPath)
 	if err != nil {
 		return err
@@ -162,26 +180,17 @@ func run() error {
 	fmt.Print(rep.Render(*server))
 	fmt.Fprintf(os.Stderr, "\nwrote %d records to %s\n", len(rep.Records), outPath)
 
-	if *requireP {
-		if err := eval.RequirePass(rep.Records); err != nil {
-			return fmt.Errorf("--require-pass: %w", err)
-		}
-	}
-
-	if *baseline != "" {
-		bf, err := os.Open(*baseline)
-		if err != nil {
-			return err
-		}
-		base, err := eval.LoadBaseline(bf)
-		_ = bf.Close()
-		if err != nil {
-			return err
-		}
+	if base != nil {
 		cmp := eval.CompareToBaseline(base, rep.Records)
 		fmt.Print(cmp.Render(*baseline))
 		if cmp.HasRegression() {
 			return errRegression
+		}
+	}
+
+	if *requireP {
+		if err := eval.RequirePass(rep.Records); err != nil {
+			return fmt.Errorf("--require-pass: %w", err)
 		}
 	}
 	return nil

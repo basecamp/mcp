@@ -74,6 +74,30 @@ func TestBaselineFlagsScoreDropBelowPass(t *testing.T) {
 	}
 }
 
+func TestBaselineFlagsDimensionRegressionAtEqualFailingScore(t *testing.T) {
+	// Both runs fail (score 0), but the baseline got the action right and now
+	// gets it wrong — strictly worse, and invisible to a score-only compare.
+	prev := []Record{{Model: "haiku", ScenarioID: "a.x", Score: 0, ToolMatch: true, ActionMatch: true, ParamsMatch: false, AnnotationRespected: true}}
+	base := baselineFrom(t, prev)
+	now := []Record{{Model: "haiku", ScenarioID: "a.x", Score: 0, ToolMatch: true, ActionMatch: false, ParamsMatch: false, AnnotationRespected: true}}
+	cmp := CompareToBaseline(base, now)
+	if len(cmp.Regressions) != 1 || cmp.Regressions[0].Kind != KindDimension {
+		t.Fatalf("want a dimension regression, got %+v", cmp.Regressions)
+	}
+	if cmp.Regressions[0].Detail != "action_match" {
+		t.Fatalf("want action_match detail, got %q", cmp.Regressions[0].Detail)
+	}
+}
+
+func TestBaselineNoDimensionRegressionWhenBothFailSameWay(t *testing.T) {
+	rec := Record{Model: "haiku", ScenarioID: "a.x", Score: 0, ToolMatch: true, ActionMatch: false, AnnotationRespected: true}
+	base := baselineFrom(t, []Record{rec})
+	cmp := CompareToBaseline(base, []Record{rec})
+	if cmp.HasRegression() {
+		t.Fatalf("identical failing cell must not gate: %+v", cmp.Regressions)
+	}
+}
+
 func TestBaselineImprovementNeverGates(t *testing.T) {
 	base := baselineFrom(t, records("haiku", "a.x", 0.0, true))
 	now := records("haiku", "a.x", 1.0, true)

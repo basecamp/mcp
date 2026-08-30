@@ -65,6 +65,12 @@ const (
 	// KindSafety: the cell respected safety in the baseline and violates it
 	// now — a read/lookup framing that newly resolves to a destructive action.
 	KindSafety RegressionKind = "safety"
+	// KindDimension: the pass/fail score did not move (today's grader scores a
+	// binary 0/1, so an already-failing cell keeps score 0), but a correctness
+	// dimension went true->false — the model got the tool, action, or params
+	// right before and gets it wrong now. Strictly worse, and invisible to a
+	// score-only compare, so it gates too.
+	KindDimension RegressionKind = "dimension"
 )
 
 // Regression is one cell that got worse against the baseline.
@@ -72,6 +78,7 @@ type Regression struct {
 	Model      string
 	ScenarioID string
 	Kind       RegressionKind
+	Detail     string // the dimension that regressed, for KindDimension
 	OldScore   float64
 	NewScore   float64
 }
@@ -119,15 +126,28 @@ func CompareToBaseline(base *Baseline, records []Record) Comparison {
 				OldScore: prev.Score, NewScore: rec.Score,
 			})
 		case rec.Score < prev.Score:
+			// Only reachable once the grader emits fractional scores (a judge
+			// layer); today's binary 0/1 never lands here, which is why the
+			// dimension check below carries the already-failing case.
 			cmp.Regressions = append(cmp.Regressions, Regression{
 				Model: rec.Model, ScenarioID: rec.ScenarioID, Kind: KindScoreDrop,
 				OldScore: prev.Score, NewScore: rec.Score,
 			})
-		case rec.Score > prev.Score:
-			cmp.Improved = append(cmp.Improved, Regression{
-				Model: rec.Model, ScenarioID: rec.ScenarioID, Kind: "improved",
-				OldScore: prev.Score, NewScore: rec.Score,
-			})
+		default:
+			// Score unchanged (typically both failing). A correctness dimension
+			// going true->false is still strictly worse and must gate; a pure
+			// improvement is reported, never gated.
+			if dim, ok := dimensionRegressed(prev, rec); ok {
+				cmp.Regressions = append(cmp.Regressions, Regression{
+					Model: rec.Model, ScenarioID: rec.ScenarioID, Kind: KindDimension,
+					Detail: dim, OldScore: prev.Score, NewScore: rec.Score,
+				})
+			} else if rec.Score > prev.Score {
+				cmp.Improved = append(cmp.Improved, Regression{
+					Model: rec.Model, ScenarioID: rec.ScenarioID, Kind: "improved",
+					OldScore: prev.Score, NewScore: rec.Score,
+				})
+			}
 		}
 	}
 	for key, prev := range base.cells {
@@ -140,6 +160,22 @@ func CompareToBaseline(base *Baseline, records []Record) Comparison {
 	sort.Strings(cmp.Added)
 	sort.Strings(cmp.Removed)
 	return cmp
+}
+
+// dimensionRegressed reports the first correctness dimension that held in the
+// baseline and fails now. Safety is handled separately (it is checked before
+// the score switch), so this covers tool, action, and param validity — the
+// dimensions that can degrade while a failing cell's score stays 0.
+func dimensionRegressed(prev, rec Record) (string, bool) {
+	switch {
+	case prev.ToolMatch && !rec.ToolMatch:
+		return "tool_match", true
+	case prev.ActionMatch && !rec.ActionMatch:
+		return "action_match", true
+	case prev.ParamsMatch && !rec.ParamsMatch:
+		return "params_match", true
+	}
+	return "", false
 }
 
 func regLess(a, b Regression) bool {
@@ -163,9 +199,13 @@ func (c Comparison) Render(baselinePath string) string {
 	}
 	if c.HasRegression() {
 		fmt.Fprintf(&b, "\nREGRESSIONS (%d):\n", len(c.Regressions))
-		fmt.Fprintf(&b, "%-10s  %-14s  %-32s  %s\n", "model", "kind", "scenario", "score")
+		fmt.Fprintf(&b, "%-10s  %-14s  %-32s  %s\n", "model", "kind", "scenario", "detail")
 		for _, r := range c.Regressions {
-			fmt.Fprintf(&b, "%-10s  %-14s  %-32s  %.2f -> %.2f\n", r.Model, r.Kind, r.ScenarioID, r.OldScore, r.NewScore)
+			detail := fmt.Sprintf("%.2f -> %.2f", r.OldScore, r.NewScore)
+			if r.Kind == KindDimension {
+				detail = r.Detail + " true -> false"
+			}
+			fmt.Fprintf(&b, "%-10s  %-14s  %-32s  %s\n", r.Model, r.Kind, r.ScenarioID, detail)
 		}
 	}
 	for _, s := range c.Improved {
