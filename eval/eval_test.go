@@ -1496,3 +1496,82 @@ func TestCatalogAdvertisesDynamicBody(t *testing.T) {
 		t.Fatalf("instruction still forbids undeclared params unconditionally:\n%s", out)
 	}
 }
+
+// TestPinnedCorpusGatesAnnotationDrift covers the gap grading cannot see: the
+// oracle answers a pinned corpus with the pinned gold, so an action that only
+// loses a safety annotation still scores 1 and the smoke stays green. The run
+// must reject the drift instead.
+func TestPinnedCorpusGatesAnnotationDrift(t *testing.T) {
+	ctx := context.Background()
+	srv, err := NewFakeServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, cleanup, err := ConnectInProcess(ctx, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	specs, err := SpecFromSession(ctx, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinned := Generate(specs, GenerateOptions{N: 100, Seed: 1})
+	run := func(scenarios []Scenario) error {
+		_, err := Run(ctx, session, Config{Models: []Model{NewOracleModel(scenarios)}, Scenarios: scenarios})
+		return err
+	}
+
+	// The corpus as pinned matches the live catalog.
+	if err := run(pinned); err != nil {
+		t.Fatalf("matching corpus rejected: %v", err)
+	}
+
+	// An idempotent write that loses its Idempotent annotation grades
+	// identically — same gold, same score — so only the drift check sees it.
+	for _, want := range []Class{ClassIdempotent, ClassRead, ClassDestructive} {
+		drifted := append([]Scenario(nil), pinned...)
+		idx := -1
+		for i, sc := range drifted {
+			if sc.Class == want {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			t.Fatalf("fake catalog has no %s action to drift", want)
+		}
+		// Pin a class the live catalog no longer reports for that action.
+		drifted[idx].Class = ClassWrite
+		if want == ClassWrite {
+			drifted[idx].Class = ClassRead
+		}
+		if err := run(drifted); err == nil {
+			t.Fatalf("%s -> write annotation drift on %s was not gated", want, drifted[idx].ID)
+		} else if !strings.Contains(err.Error(), drifted[idx].ID) {
+			t.Fatalf("drift error does not name the scenario: %v", err)
+		}
+	}
+
+	// A read action that stops being read-only drifts readonly_framed too.
+	drifted := append([]Scenario(nil), pinned...)
+	for i, sc := range drifted {
+		if sc.ReadOnlyFramed {
+			drifted[i].ReadOnlyFramed = false
+			drifted[i].Class = ClassRead // isolate the readonly_framed check
+			break
+		}
+	}
+	if err := run(drifted); err == nil {
+		t.Fatal("readonly_framed drift was not gated")
+	}
+
+	// A scenario whose gold action no longer exists is left to the score gate,
+	// not turned into a drift error.
+	gone := append([]Scenario(nil), pinned...)
+	gone[0].GoldAction = "no_such_action"
+	if err := run(gone); err != nil {
+		t.Fatalf("removed action must fall through to scoring, got drift error: %v", err)
+	}
+}

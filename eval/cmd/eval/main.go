@@ -179,7 +179,10 @@ func run() error {
 	fmt.Fprintf(os.Stderr, "\nwrote %d records to %s\n", len(rep.Records), outPath)
 
 	if base != nil {
-		cmp := eval.CompareToBaseline(base, rep.Records)
+		cmp, err := eval.CompareToBaseline(base, rep.Records)
+		if err != nil {
+			return err
+		}
 		fmt.Print(cmp.Render(*baseline))
 		if cmp.HasRegression() {
 			return errRegression

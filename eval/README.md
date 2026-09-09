@@ -138,6 +138,14 @@ each change:
 - **improved** / **added** / **removed** — reported, never gated (an improvement
   or a corpus edit is not a regression).
 
+Because added and removed cells never gate on their own, a comparison with **no
+matching cells** is an error rather than a pass: an emptied corpus or a
+`--models` label the baseline does not carry would otherwise report "no
+regression" having compared nothing. A baseline with **duplicate**
+`(model, scenario_id)` cells is rejected for the same reason — two runs
+concatenated into the append-only file let a later failure overwrite an earlier
+pass, so the current failure compares equal and clears the gate.
+
 Any gating change prints a diff table and exits nonzero, so a catalog, SDK, or
 prompt change that quietly degrades routing fails a check instead of merging
 unnoticed. Cross-run keying on the catalog/SDK/API SHAs (the design's three-SHA
@@ -156,7 +164,14 @@ golds are graded against the current fake catalog, so a change that invalidates
 a gold under an unchanged scenario id (a renamed action, an added required
 param, a changed enum) scores 0 and fails as a newly-failing regression with a
 nonzero exit. Regenerating the corpus each run would instead let the oracle's
-answers drift with the schema and hide exactly that. The
+answers drift with the schema and hide exactly that.
+
+Safety annotations are the one surface scoring cannot reach: the oracle answers
+with the pinned gold either way, so an action that merely loses `ReadOnly` or
+`Idempotent` still scores 1. A run over a pinned corpus therefore compares each
+scenario's pinned `class` and `readonly_framed` against the live catalog and
+errors on drift, naming the scenario. (A renamed or removed gold action is left
+to the score gate, where it already fails as newly-failing.) The
 unit tests cover the generator (determinism, seed sensitivity, distinct-action
 sampling, gold validity), the grader (every dimension, type checks, enum,
 safety), and the baseline comparison (each regression kind, per-model keying,

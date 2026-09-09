@@ -52,7 +52,17 @@ func LoadBaseline(r io.Reader) (*Baseline, error) {
 		if rec.Model == "" || rec.ScenarioID == "" {
 			return nil, fmt.Errorf("baseline record missing model or scenario_id: %s", line)
 		}
-		b.cells[baselineKey(rec.Model, rec.ScenarioID)] = rec
+		key := baselineKey(rec.Model, rec.ScenarioID)
+		// The store is append-only JSONL, so two runs concatenated into one
+		// file put the same cell in twice. Keeping the last silently lets a
+		// later failing run overwrite an earlier passing one — the current run
+		// then compares equal to the failure and clears the gate. There is no
+		// defensible run-selection rule to pick between them here, so name the
+		// cell and refuse.
+		if _, dup := b.cells[key]; dup {
+			return nil, fmt.Errorf("baseline has duplicate cell %s/%s: split the runs into separate files or keep one", rec.Model, rec.ScenarioID)
+		}
+		b.cells[key] = rec
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
@@ -112,8 +122,16 @@ func (c Comparison) HasRegression() bool { return len(c.Regressions) > 0 }
 // cell. Added scenarios are never regressions (there is nothing to compare);
 // removed scenarios are reported so a shrinking corpus is visible but do not
 // gate, since dropping a scenario is a corpus edit, not a model regression.
-func CompareToBaseline(base *Baseline, records []Record) Comparison {
+//
+// It errors when no cell matches. Added and removed are individually
+// non-gating, so a run with zero (model, scenario_id) overlap — an emptied
+// corpus, or a --models label that does not match the baseline's — would
+// classify every cell as one or the other, report "no regression", and pass a
+// merge gate having compared nothing. A comparison that compares nothing is
+// not a pass.
+func CompareToBaseline(base *Baseline, records []Record) (Comparison, error) {
 	var cmp Comparison
+	matched := 0
 	seen := map[string]bool{}
 	for _, rec := range records {
 		key := baselineKey(rec.Model, rec.ScenarioID)
@@ -123,6 +141,7 @@ func CompareToBaseline(base *Baseline, records []Record) Comparison {
 			cmp.Added = append(cmp.Added, rec.Model+"/"+rec.ScenarioID)
 			continue
 		}
+		matched++
 		// Safety is the sharpest signal: a newly destructive answer to a
 		// read/lookup framing is always a regression, even if the score math
 		// would not otherwise flag it.
@@ -181,7 +200,10 @@ func CompareToBaseline(base *Baseline, records []Record) Comparison {
 	sort.Slice(cmp.Improved, func(i, j int) bool { return regLess(cmp.Improved[i], cmp.Improved[j]) })
 	sort.Strings(cmp.Added)
 	sort.Strings(cmp.Removed)
-	return cmp
+	if matched == 0 {
+		return cmp, fmt.Errorf("baseline comparison matched no cells: %d current and %d baseline (model, scenario_id) cells with no overlap", len(records), len(base.cells))
+	}
+	return cmp, nil
 }
 
 // dimensionRegressed reports the first correctness dimension that held in the

@@ -34,7 +34,10 @@ ready: vet test-race build
 # scenario id — a renamed action, an added required param, a changed enum —
 # scores 0 and fails as a newly-failing regression (nonzero exit). Regenerating
 # the corpus instead would let the oracle's answers drift with the schema and
-# hide exactly that. Real model runs use the eval command with --backend cli/api.
+# hide exactly that. Annotations are the one surface scoring cannot see — the
+# oracle returns the pinned gold either way, so an action that merely loses
+# ReadOnly or Idempotent still scores 1 — so the run compares the pinned class
+# and readonly_framed against the live catalog and errors on drift. Real model runs use the eval command with --backend cli/api.
 .PHONY: eval-smoke
 eval-smoke:
 	$(GO) run ./eval/cmd/eval --server fake --backend oracle \
