@@ -49,15 +49,19 @@ func PricingFor(label string) (Pricing, bool) {
 	return p, ok
 }
 
-// costOf prices usage for a model label. An unknown label falls back to Haiku
-// (the cheapest paid tier) so a custom model still reports a plausible,
-// non-zero cost rather than appearing free.
-func costOf(label string, u Usage) float64 {
+// costOf prices usage for a model label and reports whether the price was
+// estimated. An unknown label falls back to Haiku (the cheapest paid tier) so
+// an ad-hoc `--models some-new-id` run still reports a plausible, non-zero
+// cost rather than appearing free or failing outright — but the fallback is
+// never silent: the second return is true, and both the record
+// (pricing_estimated) and the report's cost line carry the mark, so a figure
+// computed at a substituted price can never be read as measured.
+func costOf(label string, u Usage) (float64, bool) {
 	p, ok := PricingFor(label)
 	if !ok {
-		p = pricingTable["haiku"]
+		return pricingTable["haiku"].Cost(u), true
 	}
-	return p.Cost(u)
+	return p.Cost(u), false
 }
 
 // EstimateTokens approximates a string's token count at ~4 characters per

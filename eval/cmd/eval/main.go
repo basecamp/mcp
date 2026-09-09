@@ -123,8 +123,8 @@ func run() error {
 	fmt.Fprintf(os.Stderr, "\nwrote %d records to %s\n", len(rep.Records), outPath)
 
 	if *requireP {
-		if failing := eval.FailingRecords(rep.Records); len(failing) > 0 {
-			return fmt.Errorf("%d of %d records did not pass (first: %s)", len(failing), len(rep.Records), failing[0].ScenarioID)
+		if err := eval.RequirePass(rep.Records); err != nil {
+			return fmt.Errorf("--require-pass: %w", err)
 		}
 	}
 	return nil

@@ -33,6 +33,20 @@ func FailingRecords(records []Record) []Record {
 	return failing
 }
 
+// RequirePass is the smoke gate: every record must pass, and there must be
+// records to check. "Nothing failed" over an empty run is not a pass — an
+// emptied corpus or an empty model set would otherwise satisfy the gate
+// without evaluating anything — so a zero-record run is an error.
+func RequirePass(records []Record) error {
+	if len(records) == 0 {
+		return fmt.Errorf("the run produced no records to check")
+	}
+	if failing := FailingRecords(records); len(failing) > 0 {
+		return fmt.Errorf("%d of %d records did not pass (first: %s)", len(failing), len(records), failing[0].ScenarioID)
+	}
+	return nil
+}
+
 // modelTotals is one model's aggregate over the corpus.
 type modelTotals struct {
 	label     string
@@ -43,6 +57,7 @@ type modelTotals struct {
 	inTokens  int
 	outTokens int
 	cost      float64
+	estimated bool // any cell priced at a substituted rate
 	errored   int
 }
 
@@ -73,6 +88,9 @@ func (rep *Report) Render(server string) string {
 		t.inTokens += r.InTokens
 		t.outTokens += r.OutTokens
 		t.cost += r.CostUSD
+		if r.PricingEstimated {
+			t.estimated = true
+		}
 	}
 
 	scenarios := append([]Scenario(nil), rep.Scenarios...)
@@ -112,18 +130,33 @@ func (rep *Report) Render(server string) string {
 	fmt.Fprintf(&b, "%-10s  %-8s  %-8s  %-8s  %-9s  %-9s  %-10s\n",
 		"model", "pass", "params", "safety", "in_tok", "out_tok", "cost_usd")
 	var grand float64
+	var anyEstimated bool
 	for _, m := range models {
 		t := totals[m]
-		fmt.Fprintf(&b, "%-10s  %-8s  %-8s  %-8s  %-9d  %-9d  $%-9.4f\n",
+		fmt.Fprintf(&b, "%-10s  %-8s  %-8s  %-8s  %-9d  %-9d  %s\n",
 			t.label,
 			fmt.Sprintf("%d/%d", t.pass, t.total),
 			fmt.Sprintf("%d/%d", t.paramsOK, t.total),
 			fmt.Sprintf("%d/%d", t.safetyOK, t.total),
-			t.inTokens, t.outTokens, t.cost)
+			t.inTokens, t.outTokens, costFigure(t.cost, t.estimated))
 		grand += t.cost
+		anyEstimated = anyEstimated || t.estimated
 	}
-	fmt.Fprintf(&b, "\nTOTAL COST: $%.4f over %d model-scenario calls\n", grand, len(rep.Records))
+	fmt.Fprintf(&b, "\nTOTAL COST: %s over %d model-scenario calls\n",
+		costFigure(grand, anyEstimated), len(rep.Records))
+	if anyEstimated {
+		b.WriteString("(estimated) — priced at the cheapest paid tier because the model label has no published rate; not a measured spend.\n")
+	}
 	return b.String()
+}
+
+// costFigure renders a dollar total, marking it when any of it was priced at a
+// substituted rate so a floored figure is never read as a measured spend.
+func costFigure(cost float64, estimated bool) string {
+	if estimated {
+		return fmt.Sprintf("$%.4f (estimated)", cost)
+	}
+	return fmt.Sprintf("$%.4f", cost)
 }
 
 // cell renders one table cell: PASS/FAIL, with a trailing ! on a safety

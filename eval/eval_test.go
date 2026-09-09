@@ -408,3 +408,126 @@ func TestLoadCorpusPreservesServer(t *testing.T) {
 		t.Fatal("corpus scenarios not loaded")
 	}
 }
+
+// TestLoadCorpusRejectsEmpty pins the fail-closed rule: an empty scenario list
+// unmarshals into a non-nil slice, which suppresses generation and leaves the
+// run with nothing to grade — and a --require-pass gate with nothing to fail.
+func TestLoadCorpusRejectsEmpty(t *testing.T) {
+	if _, err := LoadCorpus([]byte(`{"server":"fake","seed":1,"n":0,"scenarios":[]}`)); err == nil {
+		t.Fatal("empty scenario list accepted; a corpus with no scenarios must be rejected")
+	}
+	if _, err := LoadCorpus([]byte(`{"server":"fake"}`)); err == nil {
+		t.Fatal("corpus with no scenarios key accepted; it must be rejected")
+	}
+	// A one-scenario corpus still loads.
+	c, err := LoadCorpus([]byte(`{"server":"fake","scenarios":[{"scenario_id":"t.a","gold_tool":"t","gold_action":"a"}]}`))
+	if err != nil {
+		t.Fatalf("valid corpus rejected: %v", err)
+	}
+	if len(c.Scenarios) != 1 {
+		t.Fatalf("want 1 scenario, got %d", len(c.Scenarios))
+	}
+}
+
+// TestUnknownPricingIsStampedEstimated covers the design default: an unknown
+// model label keeps the Haiku floor so ad-hoc runs still price, but the record
+// and the report say the figure is estimated rather than measured.
+func TestUnknownPricingIsStampedEstimated(t *testing.T) {
+	u := Usage{InputTokens: 1_000_000, OutputTokens: 1_000_000}
+
+	cost, estimated := costOf("mystery-model", u)
+	if !estimated {
+		t.Fatal("unknown label priced as measured; it must be stamped estimated")
+	}
+	if want := pricingTable["haiku"].Cost(u); cost != want {
+		t.Fatalf("unknown label cost=%v, want the Haiku floor %v", cost, want)
+	}
+
+	if cost, estimated := costOf("haiku", u); estimated || cost == 0 {
+		t.Fatalf("known label mis-stamped: cost=%v estimated=%v", cost, estimated)
+	}
+	if cost, estimated := costOf("oracle", u); estimated || cost != 0 {
+		t.Fatalf("oracle mis-stamped: cost=%v estimated=%v", cost, estimated)
+	}
+
+	// The mark reaches the record and the rendered cost line.
+	rep := &Report{
+		Scenarios: []Scenario{{ID: "t.a", Class: ClassRead}},
+		Records: []Record{{
+			Model: "mystery-model", ScenarioID: "t.a", Class: ClassRead,
+			Score: 1, InTokens: 10, OutTokens: 10, CostUSD: 0.001, PricingEstimated: true,
+		}},
+	}
+	// The mark must ride the cost figures themselves — the per-model row and
+	// the TOTAL COST line — not only a footnote, so a figure can never be read
+	// as measured wherever it appears.
+	out := rep.Render("fake")
+	if line := lineWithPrefix(out, "TOTAL COST:"); !strings.Contains(line, "(estimated)") {
+		t.Fatalf("TOTAL COST line does not mark estimated pricing: %q\n%s", line, out)
+	}
+	if line := lineWithPrefix(out, "mystery-model"); !strings.Contains(line, "(estimated)") {
+		t.Fatalf("model totals row does not mark estimated pricing: %q\n%s", line, out)
+	}
+
+	known := &Report{
+		Scenarios: []Scenario{{ID: "t.a", Class: ClassRead}},
+		Records: []Record{{
+			Model: "haiku", ScenarioID: "t.a", Class: ClassRead,
+			Score: 1, InTokens: 10, OutTokens: 10, CostUSD: 0.001,
+		}},
+	}
+	if out := known.Render("fake"); strings.Contains(out, "(estimated)") {
+		t.Fatalf("known pricing marked estimated:\n%s", out)
+	}
+}
+
+// lineWithPrefix returns the first line of s starting with prefix, or "".
+func lineWithPrefix(s, prefix string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return line
+		}
+	}
+	return ""
+}
+
+// TestRecordCarriesPricingEstimated proves the stamp survives the record's JSON
+// encoding, so a results file records how its cost figures were priced.
+func TestRecordCarriesPricingEstimated(t *testing.T) {
+	var b strings.Builder
+	if err := WriteJSONL(&b, []Record{{Model: "mystery-model", ScenarioID: "t.a", PricingEstimated: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), `"pricing_estimated":true`) {
+		t.Fatalf("record JSON lacks the estimated-pricing stamp: %s", b.String())
+	}
+	// Measured pricing stays out of the file rather than writing false.
+	b.Reset()
+	if err := WriteJSONL(&b, []Record{{Model: "haiku", ScenarioID: "t.a"}}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(b.String(), "pricing_estimated") {
+		t.Fatalf("measured record carries the stamp: %s", b.String())
+	}
+}
+
+// TestRequirePassRejectsEmptyRun pins the other half of the fail-closed gate:
+// with no records there is nothing to fail, so "no failures" must not read as
+// a pass.
+func TestRequirePassRejectsEmptyRun(t *testing.T) {
+	if err := RequirePass(nil); err == nil {
+		t.Fatal("a run with no records passed the gate")
+	}
+	if err := RequirePass([]Record{}); err == nil {
+		t.Fatal("a run with an empty record slice passed the gate")
+	}
+	if err := RequirePass([]Record{{ScenarioID: "t.a", Score: 1}}); err != nil {
+		t.Fatalf("a passing record was rejected: %v", err)
+	}
+	if err := RequirePass([]Record{{ScenarioID: "t.a", Score: 0}}); err == nil {
+		t.Fatal("a failing record passed the gate")
+	}
+	if err := RequirePass([]Record{{ScenarioID: "t.a", Score: 1, Error: "boom"}}); err == nil {
+		t.Fatal("an errored record passed the gate")
+	}
+}

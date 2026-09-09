@@ -27,7 +27,11 @@ type Record struct {
 	InTokens            int     `json:"in_tokens"`
 	OutTokens           int     `json:"out_tokens"`
 	CostUSD             float64 `json:"cost_usd"`
-	Error               string  `json:"error,omitempty"`
+	// PricingEstimated marks a cost computed at a substituted price because
+	// the model label carries no published rate. The figure is a plausible
+	// floor, not a measured spend, and the report labels it as such.
+	PricingEstimated bool   `json:"pricing_estimated,omitempty"`
+	Error            string `json:"error,omitempty"`
 }
 
 // Config parameterizes a run.
@@ -96,7 +100,7 @@ func grade1(ctx context.Context, model Model, system string, sc Scenario, idx Sp
 		rec.Error = err.Error()
 		rec.InTokens = usage.InputTokens
 		rec.OutTokens = usage.OutputTokens
-		rec.CostUSD = costOf(model.Label(), usage)
+		rec.CostUSD, rec.PricingEstimated = costOf(model.Label(), usage)
 		return rec
 	}
 
@@ -110,7 +114,7 @@ func grade1(ctx context.Context, model Model, system string, sc Scenario, idx Sp
 	}
 	rec.InTokens = usage.InputTokens
 	rec.OutTokens = usage.OutputTokens
-	rec.CostUSD = costOf(model.Label(), usage)
+	rec.CostUSD, rec.PricingEstimated = costOf(model.Label(), usage)
 
 	prop, perr := ParseProposal(text)
 	if perr != nil {
@@ -194,6 +198,14 @@ func LoadCorpus(data []byte) (Corpus, error) {
 	var sj scenariosJSON
 	if err := json.Unmarshal(data, &sj); err != nil {
 		return Corpus{}, fmt.Errorf("decode scenarios: %w", err)
+	}
+	// A corpus with no scenarios is not an empty experiment, it is a broken
+	// one: an empty slice is non-nil, so it suppresses generation, the run
+	// grades nothing, and --require-pass passes vacuously because there are no
+	// failing records. Fail closed rather than reporting a green run of zero
+	// cells.
+	if len(sj.Scenarios) == 0 {
+		return Corpus{}, fmt.Errorf("decode scenarios: corpus contains no scenarios")
 	}
 	return Corpus{Server: sj.Server, Seed: sj.Seed, N: sj.N, Scenarios: sj.Scenarios}, nil
 }

@@ -41,6 +41,10 @@ The whole loop turns end to end on the free, deterministic layer:
    deterministic function of the prompt and answer (`EstimateTokens` × a
    published price table), so the frugality metric is reproducible and costs
    nothing to compute; an API backend's exact usage overrides the estimate.
+   A model label with no published rate (an ad-hoc `--models some-new-id`)
+   still prices, at the cheapest paid tier so the run works and the figure is
+   not `$0.00` — but never silently: the record carries `pricing_estimated`
+   and every cost figure derived from it is printed `(estimated)`.
 
 Frugality is a first-class metric, not an afterthought: the report always prints
 tokens and dollars, and the only spend in the whole loop is the per-scenario
