@@ -465,8 +465,15 @@ func preflight(o preflightOpts) (*eval.Baseline, []eval.Scenario, eval.GenerateO
 // backend answers under a single "oracle" label regardless of --models.
 func modelPlan(backend, modelsCSV string) (map[string]string, error) {
 	var labels []string
+	seen := map[string]bool{}
 	for _, l := range strings.Split(modelsCSV, ",") {
 		if l = strings.TrimSpace(l); l != "" {
+			// A repeated label collapses in the plan map and Run rejects it as
+			// a duplicate only after connect; catch it here, before spend.
+			if seen[l] {
+				return nil, fmt.Errorf("duplicate model label %q in --models", l)
+			}
+			seen[l] = true
 			labels = append(labels, l)
 		}
 	}

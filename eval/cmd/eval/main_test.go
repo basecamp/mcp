@@ -335,3 +335,18 @@ func TestOracleBackendBuildsOneModel(t *testing.T) {
 		t.Fatalf("oracle backend built %d models (want 1 labeled oracle)", len(models))
 	}
 }
+
+// TestPreflightRejectsDuplicateModelLabels pins that a repeated --models label
+// is rejected while building the plan — before connect — instead of collapsing
+// silently in preflight and failing only in Run after the live authentication.
+func TestPreflightRejectsDuplicateModelLabels(t *testing.T) {
+	if _, err := modelPlan("cli", "haiku,haiku"); err == nil {
+		t.Fatal("duplicate --models label accepted")
+	}
+	if _, err := modelPlan("cli", "haiku, haiku "); err == nil {
+		t.Fatal("duplicate label with surrounding space accepted")
+	}
+	if _, err := modelPlan("cli", "haiku,sonnet"); err != nil {
+		t.Fatalf("distinct labels rejected: %v", err)
+	}
+}
