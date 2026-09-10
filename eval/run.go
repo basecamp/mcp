@@ -182,8 +182,9 @@ func checkCorpus(scenarios []Scenario, idx SpecIndex) error {
 // live catalog. Grading cannot see this on its own: the oracle returns the
 // pinned gold, the record's class comes from the pinned scenario, and an action
 // that merely loses its Idempotent annotation still scores 1 — so a safety
-// regression in the catalog passes the smoke. A renamed or removed action is
-// left alone: it already scores 0 and gates as a newly-failing cell. Class is a
+// regression in the catalog passes the smoke. A renamed or removed action never
+// reaches this check: checkCorpus refuses it first as a corpus mismatch, so the
+// lookup miss below cannot happen on a corpus that passed preflight. Class is a
 // lossy projection — ReadOnly wins, so a read action's Idempotent flag is not
 // observed here; pinning the raw annotations is a corpus schema change that
 // belongs with the per-record SHA fields.

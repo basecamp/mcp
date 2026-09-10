@@ -160,11 +160,12 @@ the fake server with the oracle backend over a **pinned corpus**
 (`testdata/scenarios/fake.json`) **and gates it against the committed baseline**
 `testdata/results/fake-oracle.jsonl`: no live model calls, no network, zero
 cost. The pinned corpus is what makes this a real surface gate — the committed
-golds are graded against the current fake catalog, so a change that invalidates
+golds are checked against the current fake catalog, so a change that invalidates
 a gold under an unchanged scenario id (a renamed action, an added required
-param, a changed enum) scores 0 and fails as a newly-failing regression with a
-nonzero exit. Regenerating the corpus each run would instead let the oracle's
-answers drift with the schema and hide exactly that.
+param, a changed enum) is refused by the corpus preflight before any cell runs,
+with a nonzero exit and the scenario named. Regenerating the corpus each run
+would instead let the oracle's answers drift with the schema and hide exactly
+that.
 
 Safety annotations are the one surface scoring cannot reach: the oracle answers
 with the pinned gold either way, so an action that merely loses `ReadOnly`, or a
@@ -173,8 +174,8 @@ therefore compares each scenario's pinned `class` and `readonly_framed` against
 the live catalog and errors on drift, naming the scenario. The class is a lossy
 projection: a read-only action folds to `read` whether or not it also carries
 `Idempotent`, so that one flag on reads is not pinned — it rides on the
-per-record annotation fields the three-SHA row adds. (A renamed or removed gold action is left
-to the score gate, where it already fails as newly-failing.) The
+per-record annotation fields the three-SHA row adds. (A renamed or removed gold
+action never reaches the drift check: the corpus preflight refuses it first.) The
 unit tests cover the generator (determinism, seed sensitivity, distinct-action
 sampling, gold validity), the grader (every dimension, type checks, enum,
 safety), and the baseline comparison (each regression kind, per-model keying,

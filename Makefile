@@ -32,9 +32,9 @@ ready: vet test-race build
 # makes the gate real: the committed golds are graded against the current fake
 # catalog, so a surface change that invalidates a gold under an unchanged
 # scenario id — a renamed action, an added required param, a changed enum —
-# scores 0 and fails as a newly-failing regression (nonzero exit). Regenerating
-# the corpus instead would let the oracle's answers drift with the schema and
-# hide exactly that. Annotations are the one surface scoring cannot see — the
+# is refused by the corpus preflight before any cell runs (nonzero exit).
+# Regenerating the corpus instead would let the oracle's answers drift with the
+# schema and hide exactly that. Annotations are the one surface scoring cannot see — the
 # oracle returns the pinned gold either way, so an action that merely loses
 # ReadOnly, or a write that loses Idempotent, still scores 1 — so the run
 # compares the pinned class and readonly_framed against the live catalog and

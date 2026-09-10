@@ -1567,12 +1567,17 @@ func TestPinnedCorpusGatesAnnotationDrift(t *testing.T) {
 		t.Fatal("readonly_framed drift was not gated")
 	}
 
-	// A scenario whose gold action no longer exists is left to the score gate,
-	// not turned into a drift error.
+	// A scenario whose gold action no longer exists is a corpus/surface
+	// mismatch, refused by the corpus preflight before any cell runs — it is
+	// not a drift finding, and never reaches scoring.
 	gone := append([]Scenario(nil), pinned...)
 	gone[0].GoldAction = "no_such_action"
-	if err := run(gone); err != nil {
-		t.Fatalf("removed action must fall through to scoring, got drift error: %v", err)
+	err = run(gone)
+	if err == nil {
+		t.Fatal("removed gold action was not refused")
+	}
+	if strings.Contains(err.Error(), "drifted") || !strings.Contains(err.Error(), "not in the live catalog") {
+		t.Fatalf("removed action must be refused as a corpus mismatch, not reported as drift: %v", err)
 	}
 }
 
