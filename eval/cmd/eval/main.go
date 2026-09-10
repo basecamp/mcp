@@ -58,57 +58,25 @@ func run() error {
 
 	ctx := context.Background()
 
-	// Load and validate the baseline first, before spawning a server or making
-	// a single paid model call: a missing, unreadable, or empty --baseline is a
-	// caller error that must fail immediately, not after a full (billable) run.
-	var base *eval.Baseline
-	if *baseline != "" {
-		bf, err := os.Open(*baseline)
-		if err != nil {
-			return err
-		}
-		base, err = eval.LoadBaseline(bf)
-		_ = bf.Close()
-		if err != nil {
-			return err
-		}
-	}
-
 	outPath := *out
 	if outPath == "" {
 		outPath = fmt.Sprintf("eval/results/%s-v0.jsonl", *server)
 	}
-	// Prove both output destinations are writable before spawning a server or
-	// making a single paid model call: a mistyped --out or a missing directory
-	// would otherwise surface only after the whole experiment had been billed,
-	// with nothing persisted to show for it.
-	for _, path := range []string{outPath, *writeScen} {
-		if path != "" {
-			if err := preflightWritable(path); err != nil {
-				return err
-			}
-		}
-	}
-	if err := checkAliases(outPath, *writeScen, *scenPath, *baseline); err != nil {
+
+	// One gate for every check that needs neither a server connection nor a
+	// paid model call: flags, backend, API key, a non-empty model set, output
+	// writability and aliasing, corpus loading and server match, and — against
+	// a baseline — model-id identity and (for a loaded corpus) cell overlap.
+	// A bad flag, a missing key, or a mismatched baseline fails here, never
+	// after authenticating a live server (basecamp) or billing a run.
+	base, scenarios, gen, plan, err := preflight(preflightOpts{
+		server: *server, backend: *backend, models: *modelsCSV,
+		gen: eval.GenerateOptions{N: *n, Seed: *seed},
+		out: outPath, writeScen: *writeScen,
+		scenPath: *scenPath, baseline: *baseline,
+	})
+	if err != nil {
 		return err
-	}
-
-	// gen labels the corpus: a loaded corpus keeps the seed and n it was
-	// generated with, so rewriting it (--scenarios with --write-scenarios)
-	// never relabels its cases with this run's flags.
-	gen := eval.GenerateOptions{N: *n, Seed: *seed}
-
-	// Load the corpus before spawning a server: a missing, malformed, or
-	// wrong-server --scenarios is a deterministic caller error, and a
-	// non-hermetic server (basecamp authenticates eagerly) would otherwise
-	// make a live authorization call, or fail on credentials, before the
-	// corpus error could be reported.
-	var scenarios []eval.Scenario
-	if *scenPath != "" {
-		var err error
-		if scenarios, gen, err = loadCorpus(*scenPath, *server); err != nil {
-			return err
-		}
 	}
 
 	session, cleanup, err := connect(ctx, *server, *serverCmd)
@@ -117,41 +85,26 @@ func run() error {
 	}
 	defer cleanup()
 
-	// Resolve the corpus once, here, so every preflight below sees the exact
-	// scenarios the run will grade. Run re-validates it against the catalog.
+	// A generated corpus's scenario ids are not known until the live catalog
+	// is read, so its baseline overlap is the one check that must wait for the
+	// connection — still before any model call. A loaded corpus was already
+	// overlap-checked in preflight.
 	if scenarios == nil {
 		specs, err := eval.SpecFromSession(ctx, session)
 		if err != nil {
 			return err
 		}
 		scenarios = eval.Generate(specs, gen)
+		if base != nil {
+			if err := base.CheckOverlap(planLabels(plan), scenarioIDs(scenarios)); err != nil {
+				return err
+			}
+		}
 	}
 
 	models, err := buildModels(*backend, *modelsCSV, scenarios)
 	if err != nil {
 		return err
-	}
-
-	// The baseline must share a cell with this run, and each shared label
-	// must name the same wire model, or the comparison after the run would
-	// refuse — having already paid for every model call.
-	if base != nil {
-		labels := make([]string, 0, len(models))
-		modelIDs := make(map[string]string, len(models))
-		for _, m := range models {
-			labels = append(labels, m.Label())
-			modelIDs[m.Label()] = m.ModelID()
-		}
-		ids := make([]string, 0, len(scenarios))
-		for _, sc := range scenarios {
-			ids = append(ids, sc.ID)
-		}
-		if err := base.CheckOverlap(labels, ids); err != nil {
-			return err
-		}
-		if err := base.CheckModelIDs(modelIDs); err != nil {
-			return err
-		}
 	}
 
 	rep, err := eval.Run(ctx, session, eval.Config{
@@ -427,6 +380,135 @@ func loadCorpus(path, server string) ([]eval.Scenario, eval.GenerateOptions, err
 		return nil, eval.GenerateOptions{}, fmt.Errorf("corpus %s was generated for server %q but --server is %q", path, corpus.Server, server)
 	}
 	return corpus.Scenarios, eval.GenerateOptions{N: corpus.N, Seed: corpus.Seed}, nil
+}
+
+// preflightOpts carries the parsed flags the preflight gate reads.
+type preflightOpts struct {
+	server, backend, models, out, writeScen, scenPath, baseline string
+	gen                                                         eval.GenerateOptions
+}
+
+// preflight runs every check that needs neither a server connection nor a paid
+// model call, returning the loaded baseline (nil when --baseline is unset), the
+// loaded corpus (nil when the run will generate one), the generation options (a
+// loaded corpus keeps its own), and the label->wire-model-id plan the run will
+// produce. It is the single gate the command runs before connect: the only
+// checks left for afterward are the ones that need the live catalog — reading
+// the spec to generate a corpus, and the cell overlap for a generated corpus,
+// whose ids do not exist until then.
+func preflight(o preflightOpts) (*eval.Baseline, []eval.Scenario, eval.GenerateOptions, map[string]string, error) {
+	gen := o.gen
+
+	// Backend, model labels, and the API key when the API backend is selected
+	// — all resolvable from flags alone.
+	plan, err := modelPlan(o.backend, o.models)
+	if err != nil {
+		return nil, nil, gen, nil, err
+	}
+
+	// Output destinations must be writable and must not alias a corpus or the
+	// baseline (os.Create truncates).
+	for _, path := range []string{o.out, o.writeScen} {
+		if path != "" {
+			if err := preflightWritable(path); err != nil {
+				return nil, nil, gen, nil, err
+			}
+		}
+	}
+	if err := checkAliases(o.out, o.writeScen, o.scenPath, o.baseline); err != nil {
+		return nil, nil, gen, nil, err
+	}
+
+	// Baseline file: present, non-empty, well-formed.
+	var base *eval.Baseline
+	if o.baseline != "" {
+		bf, err := os.Open(o.baseline)
+		if err != nil {
+			return nil, nil, gen, nil, err
+		}
+		base, err = eval.LoadBaseline(bf)
+		_ = bf.Close()
+		if err != nil {
+			return nil, nil, gen, nil, err
+		}
+	}
+
+	// Loaded corpus: readable, well-formed, and generated for this server.
+	var scenarios []eval.Scenario
+	if o.scenPath != "" {
+		if scenarios, gen, err = loadCorpus(o.scenPath, o.server); err != nil {
+			return nil, nil, gen, nil, err
+		}
+	}
+
+	// Against a baseline: each label the run will use must name the same wire
+	// model the baseline recorded under it, and — when the corpus is already
+	// known — the run must share a cell with the baseline. (A generated
+	// corpus's overlap is checked after connect, once its ids exist.)
+	if base != nil {
+		if err := base.CheckModelIDs(plan); err != nil {
+			return nil, nil, gen, nil, err
+		}
+		if scenarios != nil {
+			if err := base.CheckOverlap(planLabels(plan), scenarioIDs(scenarios)); err != nil {
+				return nil, nil, gen, nil, err
+			}
+		}
+	}
+	return base, scenarios, gen, plan, nil
+}
+
+// modelPlan maps each requested label to the wire model id the backend will
+// record for it, validating the backend name, the API key when the API backend
+// is selected, and that at least one label was given — all without a session or
+// a paid call, so these deterministic errors surface before connect. The oracle
+// backend answers under a single "oracle" label regardless of --models.
+func modelPlan(backend, modelsCSV string) (map[string]string, error) {
+	var labels []string
+	for _, l := range strings.Split(modelsCSV, ",") {
+		if l = strings.TrimSpace(l); l != "" {
+			labels = append(labels, l)
+		}
+	}
+	if len(labels) == 0 {
+		return nil, fmt.Errorf("no models given")
+	}
+	plan := map[string]string{}
+	switch backend {
+	case "cli":
+		for _, l := range labels {
+			plan[l] = cliModelID(l)
+		}
+	case "api":
+		if os.Getenv("ANTHROPIC_API_KEY") == "" {
+			return nil, fmt.Errorf("--backend api needs ANTHROPIC_API_KEY")
+		}
+		for _, l := range labels {
+			plan[l] = apiModelID(l)
+		}
+	case "oracle":
+		plan["oracle"] = "oracle"
+	default:
+		return nil, fmt.Errorf("unknown backend %q (cli, api, oracle)", backend)
+	}
+	return plan, nil
+}
+
+// planLabels returns the run's model labels; scenarioIDs the corpus's ids.
+func planLabels(plan map[string]string) []string {
+	labels := make([]string, 0, len(plan))
+	for l := range plan {
+		labels = append(labels, l)
+	}
+	return labels
+}
+
+func scenarioIDs(scenarios []eval.Scenario) []string {
+	ids := make([]string, 0, len(scenarios))
+	for _, sc := range scenarios {
+		ids = append(ids, sc.ID)
+	}
+	return ids
 }
 
 // buildModels resolves the backend and model labels into Model backends. The

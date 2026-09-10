@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/basecamp/mcp/eval"
 )
 
 func TestSplitCommand(t *testing.T) {
@@ -223,5 +225,98 @@ func TestLoadCorpusChecksServerWithoutASession(t *testing.T) {
 	}
 	if len(scen) != 1 || gen.Seed != 7 || gen.N != 1 {
 		t.Fatalf("corpus or its metadata not returned: %d scenarios, gen=%+v", len(scen), gen)
+	}
+}
+
+func writeBaselineFile(t *testing.T, path string, recs []eval.Record) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := eval.WriteJSONL(f, recs); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeCorpusFile(t *testing.T, path, server string, scen []eval.Scenario) {
+	t.Helper()
+	data, err := eval.MarshalScenarios(server, eval.GenerateOptions{N: len(scen), Seed: 1}, scen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestPreflightRejectsBeforeConnect pins the consolidated gate: one
+// representative failure of each cheap, deterministic kind — bad backend,
+// empty model set, API backend with no key, wrong-server corpus, unwritable
+// output, a baseline whose wire model differs from the run's, and a baseline
+// sharing no cell — is refused by preflight, which never opens a connection.
+// A well-formed config with a matching baseline passes.
+func TestPreflightRejectsBeforeConnect(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out.jsonl")
+	corpus := filepath.Join(dir, "fizzy.json")
+	writeCorpusFile(t, corpus, "fizzy", []eval.Scenario{
+		{ID: "t.a", NLFraming: "Do it.", GoldTool: "t", GoldAction: "a"},
+	})
+	baseMatch := filepath.Join(dir, "match.jsonl")
+	writeBaselineFile(t, baseMatch, []eval.Record{{Model: "haiku", ScenarioID: "t.a", Score: 1, ModelID: "haiku"}})
+	baseMismatch := filepath.Join(dir, "mismatch.jsonl")
+	writeBaselineFile(t, baseMismatch, []eval.Record{{Model: "haiku", ScenarioID: "t.a", Score: 1, ModelID: "claude-3-5-haiku-latest"}})
+
+	std := preflightOpts{server: "fizzy", out: out, gen: eval.GenerateOptions{N: 12, Seed: 1}}
+	with := func(f func(*preflightOpts)) preflightOpts { o := std; f(&o); return o }
+
+	bad := map[string]preflightOpts{
+		"unknown backend":     with(func(o *preflightOpts) { o.backend = "wat"; o.models = "haiku" }),
+		"empty model set":     with(func(o *preflightOpts) { o.backend = "cli"; o.models = " , " }),
+		"api without key":     with(func(o *preflightOpts) { o.backend = "api"; o.models = "haiku" }),
+		"wrong-server corpus": with(func(o *preflightOpts) { o.backend = "cli"; o.models = "haiku"; o.scenPath = corpus; o.server = "hey" }),
+		"unwritable output": with(func(o *preflightOpts) {
+			o.backend = "cli"
+			o.models = "haiku"
+			o.out = filepath.Join(dir, "no", "such", "out.jsonl")
+		}),
+		"baseline model-id mismatch": with(func(o *preflightOpts) {
+			o.backend = "cli"
+			o.models = "haiku"
+			o.scenPath = corpus
+			o.baseline = baseMismatch
+		}),
+		"baseline no overlap": with(func(o *preflightOpts) {
+			o.backend = "cli"
+			o.models = "sonnet"
+			o.scenPath = corpus
+			o.baseline = baseMatch
+		}),
+	}
+	for name, o := range bad {
+		t.Run(name, func(t *testing.T) {
+			if _, _, _, _, err := preflight(o); err == nil {
+				t.Fatalf("%s: preflight accepted a bad config that should fail before connect", name)
+			}
+		})
+	}
+
+	good := with(func(o *preflightOpts) {
+		o.backend = "cli"
+		o.models = "haiku"
+		o.scenPath = corpus
+		o.baseline = baseMatch
+	})
+	base, scen, _, plan, err := preflight(good)
+	if err != nil {
+		t.Fatalf("well-formed config rejected: %v", err)
+	}
+	if base == nil || len(scen) != 1 || plan["haiku"] != "haiku" {
+		t.Fatalf("preflight returned unexpected state: base=%v scen=%d plan=%v", base != nil, len(scen), plan)
 	}
 }
