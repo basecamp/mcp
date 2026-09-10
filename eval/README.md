@@ -167,10 +167,13 @@ nonzero exit. Regenerating the corpus each run would instead let the oracle's
 answers drift with the schema and hide exactly that.
 
 Safety annotations are the one surface scoring cannot reach: the oracle answers
-with the pinned gold either way, so an action that merely loses `ReadOnly` or
-`Idempotent` still scores 1. A run over a pinned corpus therefore compares each
-scenario's pinned `class` and `readonly_framed` against the live catalog and
-errors on drift, naming the scenario. (A renamed or removed gold action is left
+with the pinned gold either way, so an action that merely loses `ReadOnly`, or a
+write that loses `Idempotent`, still scores 1. A run over a pinned corpus
+therefore compares each scenario's pinned `class` and `readonly_framed` against
+the live catalog and errors on drift, naming the scenario. The class is a lossy
+projection: a read-only action folds to `read` whether or not it also carries
+`Idempotent`, so that one flag on reads is not pinned — it rides on the
+per-record annotation fields the three-SHA row adds. (A renamed or removed gold action is left
 to the score gate, where it already fails as newly-failing.) The
 unit tests cover the generator (determinism, seed sensitivity, distinct-action
 sampling, gold validity), the grader (every dimension, type checks, enum,

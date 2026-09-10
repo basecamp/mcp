@@ -22,6 +22,26 @@ import (
 // changed catalog shows up here as added/removed scenarios rather than a
 // same-cell drop — surfaced, not silently dropped.
 
+// recordKeys are the JSON keys every Record carries (omitempty fields
+// excluded), derived from the type itself so a field added to Record is
+// required of a baseline without a hand-kept list.
+var recordKeys = func() []string {
+	data, err := json.Marshal(Record{})
+	if err != nil {
+		panic(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		panic(err)
+	}
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}()
+
 // baselineKey identifies one comparable cell.
 func baselineKey(model, scenarioID string) string { return model + "\x00" + scenarioID }
 
@@ -40,6 +60,21 @@ func LoadBaseline(r io.Reader) (*Baseline, error) {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" {
 			continue
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(line), &fields); err != nil {
+			return nil, fmt.Errorf("decode baseline record: %w", err)
+		}
+		// A record this tool wrote carries every non-optional Record field. A
+		// line that decodes but lacks one — a hand-written or truncated
+		// baseline, a file from some other tool — would default the missing
+		// grading fields to zero, so every current cell compares as unchanged
+		// or improved and the gate is silently disarmed. Check the whole shape
+		// rather than one field at a time.
+		for _, key := range recordKeys {
+			if _, ok := fields[key]; !ok {
+				return nil, fmt.Errorf("baseline record missing %q: %s", key, line)
+			}
 		}
 		var rec Record
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {

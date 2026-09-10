@@ -6,7 +6,7 @@
     {
       "scenario_id": "hey_boxes.create_box_group",
       "class": "write",
-      "nl_framing": "Please create a Set Aside group out of a selection of postings (boxId 562, posting ids [Posting ids]).",
+      "nl_framing": "Please create a Set Aside group out of a selection of postings (boxId 562, posting ids ["Posting ids"]).",
       "gold_tool": "hey_boxes",
       "gold_action": "create_box_group",
       "gold_params": {
@@ -31,7 +31,7 @@
     {
       "scenario_id": "hey_contacts.create_contact",
       "class": "write",
-      "nl_framing": "Please add a contact (contact map[]).",
+      "nl_framing": "Please add a contact (contact {}).",
       "gold_tool": "hey_contacts",
       "gold_action": "create_contact",
       "gold_params": {
@@ -42,7 +42,7 @@
     {
       "scenario_id": "hey_contacts.update_contact_note",
       "class": "idempotent",
-      "nl_framing": "Please write the private note on a contact, replacing whatever was there (contact map[], contactId 969).",
+      "nl_framing": "Please write the private note on a contact, replacing whatever was there (contact {}, contactId 969).",
       "gold_tool": "hey_contacts",
       "gold_action": "update_contact_note",
       "gold_params": {
@@ -54,7 +54,7 @@
     {
       "scenario_id": "hey_threads.create_reply",
       "class": "write",
-      "nl_framing": "Please reply to an entry (acting sender id 706, entryId 904, message map[]).",
+      "nl_framing": "Please reply to an entry (acting sender id 706, entryId 904, message {}).",
       "gold_tool": "hey_threads",
       "gold_action": "create_reply",
       "gold_params": {
@@ -109,7 +109,7 @@
     {
       "scenario_id": "hey_todos.create_calendar_todo",
       "class": "write",
-      "nl_framing": "Please create a calendar todo (calendar todo map[]).",
+      "nl_framing": "Please create a calendar todo (calendar todo {}).",
       "gold_tool": "hey_todos",
       "gold_action": "create_calendar_todo",
       "gold_params": {
@@ -131,7 +131,7 @@
     {
       "scenario_id": "hey_todos.update_calendar_todo",
       "class": "idempotent",
-      "nl_framing": "Please edit a calendar todo (calendar todo map[], todoId 420).",
+      "nl_framing": "Please edit a calendar todo (calendar todo {}, todoId 420).",
       "gold_tool": "hey_todos",
       "gold_action": "update_calendar_todo",
       "gold_params": {

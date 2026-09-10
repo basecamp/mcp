@@ -183,7 +183,10 @@ func checkCorpus(scenarios []Scenario, idx SpecIndex) error {
 // pinned gold, the record's class comes from the pinned scenario, and an action
 // that merely loses its Idempotent annotation still scores 1 — so a safety
 // regression in the catalog passes the smoke. A renamed or removed action is
-// left alone: it already scores 0 and gates as a newly-failing cell.
+// left alone: it already scores 0 and gates as a newly-failing cell. Class is a
+// lossy projection — ReadOnly wins, so a read action's Idempotent flag is not
+// observed here; pinning the raw annotations is a corpus schema change that
+// belongs with the per-record SHA fields.
 func checkAnnotationDrift(scenarios []Scenario, idx SpecIndex) error {
 	var drift []string
 	for _, sc := range scenarios {

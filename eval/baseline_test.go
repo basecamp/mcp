@@ -221,8 +221,7 @@ func TestCompareRejectsNoMatchingCells(t *testing.T) {
 // keeping the last lets a failing run overwrite a passing one so the same
 // failure now compares equal and clears the gate.
 func TestLoadBaselineRejectsDuplicateCells(t *testing.T) {
-	dup := `{"model":"haiku","scenario_id":"a.x","score":1}` + "\n" +
-		`{"model":"haiku","scenario_id":"a.x","score":0}` + "\n"
+	dup := jsonl(t, append(records("haiku", "a.x", 1.0, true), records("haiku", "a.x", 0.0, true)...))
 	_, err := LoadBaseline(strings.NewReader(dup))
 	if err == nil {
 		t.Fatal("duplicate (model, scenario_id) accepted")
@@ -232,9 +231,49 @@ func TestLoadBaselineRejectsDuplicateCells(t *testing.T) {
 	}
 
 	// Same scenario under a different model is a distinct cell, not a dup.
-	ok := `{"model":"haiku","scenario_id":"a.x","score":1}` + "\n" +
-		`{"model":"sonnet","scenario_id":"a.x","score":1}` + "\n"
+	ok := jsonl(t, append(records("haiku", "a.x", 1.0, true), records("sonnet", "a.x", 1.0, true)...))
 	if _, err := LoadBaseline(strings.NewReader(ok)); err != nil {
 		t.Fatalf("distinct models rejected as duplicates: %v", err)
+	}
+}
+
+// jsonl renders records the way the CLI writes them.
+func jsonl(t *testing.T, recs []Record) string {
+	t.Helper()
+	var b strings.Builder
+	if err := WriteJSONL(&b, recs); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}
+
+// TestLoadBaselineRejectsRecordsMissingFields pins the last silent-disarm
+// shape: a line with identity but without the grading fields decodes to an
+// all-zero cell, so every current cell compares as unchanged or improved. The
+// check is the whole Record shape — any always-written field absent is a
+// rejection — not one field at a time.
+func TestLoadBaselineRejectsRecordsMissingFields(t *testing.T) {
+	cases := []string{
+		`{"model":"haiku","scenario_id":"x"}`,
+		`{"model":"haiku","scenario_id":"x","score":1}`,
+		`{"model":"haiku","scenario_id":"x","score":1,"tool_match":true,"action_match":true,"params_match":true}`,
+	}
+	for _, line := range cases {
+		_, err := LoadBaseline(strings.NewReader(line + "\n"))
+		if err == nil {
+			t.Fatalf("baseline record without grading fields accepted: %s", line)
+		}
+		if !strings.Contains(err.Error(), "missing") {
+			t.Fatalf("error does not say what is missing: %v", err)
+		}
+	}
+	// What the CLI writes loads, optional fields (error, pricing_estimated)
+	// absent or present.
+	full := jsonl(t, []Record{
+		{Model: "haiku", ScenarioID: "x", Score: 1, AnnotationRespected: true},
+		{Model: "haiku", ScenarioID: "y", Error: "boom", PricingEstimated: true},
+	})
+	if _, err := LoadBaseline(strings.NewReader(full)); err != nil {
+		t.Fatalf("a CLI-written baseline was rejected: %v", err)
 	}
 }
