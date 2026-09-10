@@ -181,16 +181,20 @@ func preflightWritable(path string) error {
 
 // checkAliases refuses an output path that names a file the run also reads or
 // writes for another purpose, where the write would silently destroy it:
-// --out truncates (os.Create), so it must not be the source corpus or the
-// corpus just written; --write-scenarios replaces its file, so it must not be
-// the baseline (loaded earlier, so the comparison would still run and report
-// nothing about the results it just overwrote). --out over --baseline is the
-// documented compare-then-overwrite flow and stays allowed, as does rewriting
-// a loaded corpus in place. Identity comparison, so symlink aliases count.
+// --out truncates (os.Create), so it must not be the source corpus, the corpus
+// just written, or the baseline; --write-scenarios replaces its file, so it
+// must not be the baseline either. --out over --baseline is especially unsafe:
+// os.Create overwrites the prior results with the new run before the gate
+// compares, so a regressed run becomes the new baseline and a retry compares
+// against the degraded result and passes — laundering the regression the gate
+// exists to catch. Rewriting a loaded corpus in place (--scenarios ==
+// --write-scenarios) stays allowed. Identity comparison, so symlink aliases
+// count.
 func checkAliases(out, writeScen, scenPath, baseline string) error {
 	pairs := []struct{ aFlag, a, bFlag, b string }{
 		{"--out", out, "--scenarios", scenPath},
 		{"--out", out, "--write-scenarios", writeScen},
+		{"--out", out, "--baseline", baseline},
 		{"--write-scenarios", writeScen, "--baseline", baseline},
 	}
 	for _, p := range pairs {

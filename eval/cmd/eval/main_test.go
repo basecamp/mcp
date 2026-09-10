@@ -188,10 +188,15 @@ func TestCheckAliases(t *testing.T) {
 	if err := checkAliases(out, link, "", results); err == nil {
 		t.Fatal("--write-scenarios aliasing --baseline via symlink accepted")
 	}
-	// Allowed: compare-then-overwrite, and rewriting a loaded corpus in place.
-	if err := checkAliases(results, "", "", results); err != nil {
-		t.Fatalf("--out over --baseline must stay allowed: %v", err)
+	// --out must not be the baseline: os.Create would overwrite the prior
+	// results before the gate compares, laundering a regression on retry.
+	if err := checkAliases(results, "", "", results); err == nil {
+		t.Fatal("--out aliasing --baseline accepted")
 	}
+	if err := checkAliases(link, "", "", results); err == nil {
+		t.Fatal("--out aliasing --baseline via symlink accepted")
+	}
+	// Allowed: rewriting a loaded corpus in place.
 	if err := checkAliases(out, corpus, corpus, ""); err != nil {
 		t.Fatalf("rewriting the loaded corpus in place must stay allowed: %v", err)
 	}
