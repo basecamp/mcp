@@ -56,6 +56,11 @@ type ActionSpec struct {
 	Idempotent  bool        `json:"idempotent"`
 	Paginated   bool        `json:"paginated"`
 	Params      []ParamSpec `json:"params"`
+	// BodyDynamic is true when the request body explicitly permits
+	// additional properties (a dictionary body). validateParams then accepts
+	// body fields the schema does not name, instead of rejecting them as
+	// unknown.
+	BodyDynamic bool `json:"body_dynamic,omitempty"`
 }
 
 // RequiredParams returns the names of the action's required parameters, in
@@ -100,9 +105,12 @@ func SpecFromSession(ctx context.Context, session *mcp.ClientSession) ([]ActionS
 		if err != nil {
 			return nil, err
 		}
-		for _, action := range actions {
-			spec, err := describeAction(ctx, session, tool, action)
+		for _, a := range actions {
+			spec, err := describeAction(ctx, session, tool, a.Action)
 			if err != nil {
+				return nil, err
+			}
+			if err := reconcileDomainDetail(tool, a, spec); err != nil {
 				return nil, err
 			}
 			specs = append(specs, spec)
@@ -117,26 +125,47 @@ func SpecFromSession(ctx context.Context, session *mcp.ClientSession) ([]ActionS
 	return specs, nil
 }
 
-// describeDomain lists an action's names for one tool via the domain-level
-// describe payload.
-func describeDomain(ctx context.Context, session *mcp.ClientSession, tool string) ([]string, error) {
+// domainAction is the shared metadata the domain-level describe advertises for
+// one action: its name plus the safety/summary fields that must agree with the
+// per-action detail.
+type domainAction struct {
+	Action      string `json:"action"`
+	Summary     string `json:"summary"`
+	ReadOnly    bool   `json:"readonly"`
+	Destructive bool   `json:"destructive"`
+}
+
+// describeDomain reads the domain-level describe payload: the action list plus
+// the summary and safety fields the listing advertises for each.
+func describeDomain(ctx context.Context, session *mcp.ClientSession, tool string) ([]domainAction, error) {
 	raw, err := describeCall(ctx, session, tool, "")
 	if err != nil {
 		return nil, err
 	}
 	var payload struct {
-		Actions []struct {
-			Action string `json:"action"`
-		} `json:"actions"`
+		Actions []domainAction `json:"actions"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, fmt.Errorf("%s: decode domain describe: %w", tool, err)
 	}
-	var names []string
-	for _, a := range payload.Actions {
-		names = append(names, a.Action)
+	return payload.Actions, nil
+}
+
+// reconcileDomainDetail refuses a server whose domain listing and per-action
+// detail disagree on the fields both surfaces carry. The eval derives its
+// prompt, grading, and oracle from the detail, so a silent divergence would
+// let a client read one summary or safety class in the listing while the eval
+// scored against another; catch it instead of dropping the listing's copy.
+func reconcileDomainDetail(tool string, listed domainAction, detail ActionSpec) error {
+	switch {
+	case listed.ReadOnly != detail.ReadOnly:
+		return fmt.Errorf("%s/%s: domain listing says readonly=%v, action detail says %v", tool, detail.Action, listed.ReadOnly, detail.ReadOnly)
+	case listed.Destructive != detail.Destructive:
+		return fmt.Errorf("%s/%s: domain listing says destructive=%v, action detail says %v", tool, detail.Action, listed.Destructive, detail.Destructive)
+	case strings.TrimSpace(listed.Summary) != strings.TrimSpace(detail.Summary):
+		return fmt.Errorf("%s/%s: domain listing summary %q differs from action detail %q", tool, detail.Action, listed.Summary, detail.Summary)
 	}
-	return names, nil
+	return nil
 }
 
 // operationDescribe mirrors the subset of the catalog Operation describe
@@ -199,7 +228,20 @@ func describeAction(ctx context.Context, session *mcp.ClientSession, tool, actio
 		})
 	}
 	spec.Params = append(spec.Params, bodyParams(od.Body, od.BodyRequired)...)
+	spec.BodyDynamic = bodyAllowsAdditional(od.Body)
 	return spec, nil
+}
+
+// bodyAllowsAdditional reports whether a request-body schema explicitly
+// permits properties it does not name (additionalProperties: true) — the
+// dictionary-body shape StampStrict deliberately preserves. Such an action
+// takes arbitrary body fields, so the grader must not reject them as unknown.
+func bodyAllowsAdditional(body map[string]any) bool {
+	if body == nil {
+		return false
+	}
+	allowed, ok := body["additionalProperties"].(bool)
+	return ok && allowed
 }
 
 // bodyParams flattens a request-body JSON Schema into body ParamSpecs. The

@@ -127,13 +127,21 @@ func validateParams(spec ActionSpec, params map[string]any) (bool, []string) {
 	for _, name := range names {
 		p, ok := declared[name]
 		if !ok {
-			reasons = append(reasons, "unknown param "+name)
+			// A dynamic body (additionalProperties: true) accepts fields the
+			// schema does not name, so an unknown param is only an error when
+			// the action declares no such open body.
+			if !spec.BodyDynamic {
+				reasons = append(reasons, "unknown param "+name)
+			}
 			continue
 		}
-		if len(p.Enum) > 0 {
-			if !enumContains(p.Enum, params[name]) {
-				reasons = append(reasons, fmt.Sprintf("param %s must be one of [%s]", name, joinEnum(p.Enum, ", ")))
-			}
+		// Enum membership and the declared type are both JSON-Schema
+		// constraints and both must hold: a numeric enum member on a string
+		// param, or a non-integral member on an integer param, is invalid even
+		// when it appears in the enum, so an enum match does not excuse the
+		// type check.
+		if len(p.Enum) > 0 && !enumContains(p.Enum, params[name]) {
+			reasons = append(reasons, fmt.Sprintf("param %s must be one of [%s]", name, joinEnum(p.Enum, ", ")))
 			continue
 		}
 		if !typeMatches(p.Type, params[name]) {

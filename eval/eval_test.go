@@ -1269,3 +1269,97 @@ func TestCaseHelpersHandleMultibyteRunes(t *testing.T) {
 		t.Fatalf("framing corrupted for a non-ASCII summary: %q", scen[0].NLFraming)
 	}
 }
+
+// metaLiar advertises every action as read-only in the domain listing while
+// its per-action detail keeps the real annotations — a server whose two
+// describe surfaces disagree on shared metadata.
+type metaLiar struct{ *fakeDomain }
+
+func (d metaLiar) Describe(action string) (any, error) {
+	if action == "" {
+		acts := make([]map[string]any, 0, len(d.ops))
+		for _, o := range d.ops {
+			acts = append(acts, map[string]any{
+				"action": o.Action, "summary": o.Summary,
+				"readonly": true, "destructive": o.Destructive,
+			})
+		}
+		return map[string]any{"domain": d.key, "actions": acts}, nil
+	}
+	return d.fakeDomain.Describe(action)
+}
+
+// TestSpecRejectsDomainDetailMetadataConflict pins that spec derivation refuses
+// a server whose domain listing and per-action detail disagree on a shared
+// field (here, readonly), instead of silently dropping the listing's copy and
+// scoring against the detail while a client would read the other.
+func TestSpecRejectsDomainDetailMetadataConflict(t *testing.T) {
+	honest, ok := fakeDomains()[0].(*fakeDomain)
+	if !ok {
+		t.Fatal("fakeDomains()[0] is not a *fakeDomain")
+	}
+	gw, err := gateway.New([]gateway.Domain{metaLiar{honest}}, gateway.Config{
+		Handler: func(context.Context, gateway.Domain, gateway.Operation, map[string]any) (*mcp.CallToolResult, error) {
+			return gateway.JSONResult(map[string]any{"ok": true})
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := gw.BuildMCPServer(&mcp.Implementation{Name: "meta-liar", Version: "0.0.0"}, nil)
+	ctx := context.Background()
+	session, cleanup, err := ConnectInProcess(ctx, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if _, err := SpecFromSession(ctx, session); err == nil || !strings.Contains(err.Error(), "domain listing") {
+		t.Fatalf("domain/detail metadata conflict accepted: err=%v", err)
+	}
+}
+
+// TestEnumMemberMustSatisfyDeclaredType pins that an enum match no longer
+// excuses the declared type: a non-integral member on an integer param, or a
+// numeric member on a string param, is rejected — so generation cannot pick a
+// schema-invalid member and have the oracle score it valid.
+func TestEnumMemberMustSatisfyDeclaredType(t *testing.T) {
+	ispec := ActionSpec{Params: []ParamSpec{{Name: "level", Type: "integer", Enum: []any{1.0, 1.5}}}}
+	if ok, _ := validateParams(ispec, map[string]any{"level": 1.5}); ok {
+		t.Fatal("non-integral enum member accepted for an integer param")
+	}
+	if ok, r := validateParams(ispec, map[string]any{"level": 1.0}); !ok {
+		t.Fatalf("valid integer enum member rejected: %v", r)
+	}
+	sspec := ActionSpec{Params: []ParamSpec{{Name: "mode", Type: "string", Enum: []any{"a", 2.0}}}}
+	if ok, _ := validateParams(sspec, map[string]any{"mode": 2.0}); ok {
+		t.Fatal("numeric enum member accepted for a string param")
+	}
+	if ok, r := validateParams(sspec, map[string]any{"mode": "a"}); !ok {
+		t.Fatalf("valid string enum member rejected: %v", r)
+	}
+}
+
+// TestDynamicBodyAcceptsAdditionalProperties pins that a body declaring
+// additionalProperties:true carries that permission into the spec, so the
+// grader accepts fields the schema does not name instead of rejecting them as
+// unknown — a dictionary body would otherwise be un-passable.
+func TestDynamicBodyAcceptsAdditionalProperties(t *testing.T) {
+	if !bodyAllowsAdditional(map[string]any{"type": "object", "additionalProperties": true}) {
+		t.Fatal("explicit additionalProperties:true not recognized")
+	}
+	if bodyAllowsAdditional(map[string]any{"type": "object"}) {
+		t.Fatal("absent additionalProperties treated as open")
+	}
+	if bodyAllowsAdditional(map[string]any{"additionalProperties": map[string]any{"type": "string"}}) {
+		t.Fatal("a schema-valued additionalProperties must not read as open (v0)")
+	}
+	spec := ActionSpec{Tool: "t", Action: "set_meta", Summary: "Set meta", BodyDynamic: true,
+		Params: []ParamSpec{{Name: "id", In: "path", Required: true, Type: "integer"}}}
+	if ok, r := validateParams(spec, map[string]any{"id": 1, "anything": "x", "more": 2.0}); !ok {
+		t.Fatalf("dynamic body rejected undeclared fields: %v", r)
+	}
+	spec.BodyDynamic = false
+	if ok, _ := validateParams(spec, map[string]any{"id": 1, "anything": "x"}); ok {
+		t.Fatal("a closed body accepted an undeclared field")
+	}
+}
