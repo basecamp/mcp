@@ -77,6 +77,9 @@ func Run(ctx context.Context, session *mcp.ClientSession, cfg Config) (*Report, 
 		return nil, fmt.Errorf("no scenarios to run: the server catalog exposes no actions, or the corpus is empty")
 	}
 	idx := Index(specs)
+	if err := checkCorpus(scenarios, idx); err != nil {
+		return nil, err
+	}
 	system := BuildSystem(specs)
 
 	rep := &Report{Specs: specs, Scenarios: scenarios}
@@ -102,6 +105,33 @@ func checkModels(models []Model) error {
 			return fmt.Errorf("duplicate model label %q: each model in a run needs a distinct label", m.Label())
 		}
 		seen[m.Label()] = true
+	}
+	return nil
+}
+
+// checkCorpus proves the corpus can be graded against the live catalog before
+// a single model call is made. Two failures hide behind a green-looking run
+// otherwise. A duplicate scenario ID: records and report cells key on the ID,
+// so the second scenario overwrites the first's cell while the totals count
+// and charge both. An obsolete gold — a corpus written for a wider surface
+// (fizzy with --writes), a narrowed domain set, or a catalog that renamed an
+// action or added a required param — can never be satisfied, so every model
+// burns the cell and the miss is reported as a model failure. Both are
+// corpus/surface mismatches, and they fail here, before spend.
+func checkCorpus(scenarios []Scenario, idx SpecIndex) error {
+	seen := map[string]bool{}
+	for _, sc := range scenarios {
+		if seen[sc.ID] {
+			return fmt.Errorf("duplicate scenario id %q: records and report cells key on the id, so each scenario needs its own", sc.ID)
+		}
+		seen[sc.ID] = true
+		spec, ok := idx.lookup(sc.GoldTool, sc.GoldAction)
+		if !ok {
+			return fmt.Errorf("scenario %s: gold action %s/%s is not in the live catalog (corpus written for a different surface?)", sc.ID, sc.GoldTool, sc.GoldAction)
+		}
+		if ok, reasons := validateParams(spec, sc.GoldParams); !ok {
+			return fmt.Errorf("scenario %s: gold params no longer valid against the live catalog: %v", sc.ID, reasons)
+		}
 	}
 	return nil
 }

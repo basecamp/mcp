@@ -651,3 +651,102 @@ func TestCatalogRendersEnumMembersAsJSON(t *testing.T) {
 		t.Fatalf("numeric enum members not rendered as JSON numbers:\n%s", out)
 	}
 }
+
+// countingModel records how many proposals were requested, so a test can prove
+// a run aborted before the model loop rather than after burning it.
+type countingModel struct{ calls int }
+
+func (m *countingModel) Label() string { return "counting" }
+func (m *countingModel) Propose(context.Context, string, string) (string, Usage, error) {
+	m.calls++
+	return `{"tool":"","action":"","params":{}}`, Usage{}, nil
+}
+
+// TestRunRejectsObsoleteGoldBeforeSpend pins that a corpus whose gold can no
+// longer be satisfied by the live catalog — a removed action, or a gold that
+// the current schema rejects — aborts before any model call, as a
+// corpus/surface mismatch, instead of charging every model for cells that
+// cannot pass and reporting the misses as model failures.
+func TestRunRejectsObsoleteGoldBeforeSpend(t *testing.T) {
+	ctx := context.Background()
+	srv, err := NewFakeServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, cleanup, err := ConnectInProcess(ctx, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	specs, err := SpecFromSession(ctx, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	good := Generate(specs, GenerateOptions{N: 3, Seed: 1})
+
+	cases := map[string]func([]Scenario){
+		"removed action": func(s []Scenario) { s[0].GoldAction = "no_such_action" },
+		"removed tool":   func(s []Scenario) { s[0].GoldTool = "no_such_tool" },
+		"gold rejected by current schema": func(s []Scenario) {
+			s[0].GoldParams = map[string]any{"bogus_param": 1}
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			corpus := append([]Scenario(nil), good...)
+			mutate(corpus)
+			model := &countingModel{}
+			_, err := Run(ctx, session, Config{Models: []Model{model}, Scenarios: corpus})
+			if err == nil {
+				t.Fatal("obsolete gold accepted; the run should abort as a corpus/surface mismatch")
+			}
+			if !strings.Contains(err.Error(), corpus[0].ID) {
+				t.Fatalf("error does not name the scenario: %v", err)
+			}
+			if model.calls != 0 {
+				t.Fatalf("model was called %d times before the corpus check", model.calls)
+			}
+		})
+	}
+
+	// The unmodified corpus still runs.
+	model := &countingModel{}
+	if _, err := Run(ctx, session, Config{Models: []Model{model}, Scenarios: good}); err != nil {
+		t.Fatalf("valid corpus rejected: %v", err)
+	}
+	if model.calls != len(good) {
+		t.Fatalf("want %d model calls, got %d", len(good), model.calls)
+	}
+}
+
+// TestRunRejectsDuplicateScenarioIDs pins the fail-closed rule for a corpus
+// carrying one scenario ID twice: cells key on the ID, so the second would
+// overwrite the first's cell while the totals counted and charged both.
+func TestRunRejectsDuplicateScenarioIDs(t *testing.T) {
+	ctx := context.Background()
+	srv, err := NewFakeServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, cleanup, err := ConnectInProcess(ctx, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	specs, err := SpecFromSession(ctx, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	corpus := Generate(specs, GenerateOptions{N: 2, Seed: 1})
+	dup := corpus[0]
+	dup.NLFraming = "Another phrasing of the same task."
+	corpus = append(corpus, dup)
+	model := &countingModel{}
+	_, err = Run(ctx, session, Config{Models: []Model{model}, Scenarios: corpus})
+	if err == nil || !strings.Contains(err.Error(), "duplicate scenario id") {
+		t.Fatalf("duplicate scenario id accepted: err=%v", err)
+	}
+	if model.calls != 0 {
+		t.Fatalf("model was called %d times before the corpus check", model.calls)
+	}
+}
