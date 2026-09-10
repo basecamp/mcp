@@ -81,6 +81,10 @@ func EstimateTokens(s string) int {
 type Model interface {
 	// Label is the pricing/report key, e.g. "haiku".
 	Label() string
+	// ModelID is the resolved wire model behind the label — the versioned API
+	// id, the CLI alias, or "oracle" — so a record can say which underlying
+	// model produced it even when a rolling alias is later retargeted.
+	ModelID() string
 	// Propose returns the model's raw text answer. A nonzero Usage is the
 	// backend's own exact count; a zero Usage tells the runner to estimate.
 	Propose(ctx context.Context, system, user string) (text string, usage Usage, err error)
@@ -112,7 +116,8 @@ func NewAPIModel(label, modelID string) (*APIModel, error) {
 	}, nil
 }
 
-func (m *APIModel) Label() string { return m.label }
+func (m *APIModel) Label() string   { return m.label }
+func (m *APIModel) ModelID() string { return m.modelID }
 
 func (m *APIModel) Propose(ctx context.Context, system, user string) (string, Usage, error) {
 	reqBody, _ := json.Marshal(map[string]any{
@@ -183,7 +188,8 @@ func NewCLIModel(label, modelID string) *CLIModel {
 	return &CLIModel{label: label, modelID: modelID, bin: bin, timeout: 120 * time.Second}
 }
 
-func (m *CLIModel) Label() string { return m.label }
+func (m *CLIModel) Label() string   { return m.label }
+func (m *CLIModel) ModelID() string { return m.modelID }
 
 func (m *CLIModel) Propose(ctx context.Context, system, user string) (string, Usage, error) {
 	ctx, cancel := context.WithTimeout(ctx, m.timeout)

@@ -656,7 +656,8 @@ func TestCatalogRendersEnumMembersAsJSON(t *testing.T) {
 // a run aborted before the model loop rather than after burning it.
 type countingModel struct{ calls int }
 
-func (m *countingModel) Label() string { return "counting" }
+func (m *countingModel) Label() string   { return "counting" }
+func (m *countingModel) ModelID() string { return "counting-v1" }
 func (m *countingModel) Propose(context.Context, string, string) (string, Usage, error) {
 	m.calls++
 	return `{"tool":"","action":"","params":{}}`, Usage{}, nil
@@ -748,5 +749,147 @@ func TestRunRejectsDuplicateScenarioIDs(t *testing.T) {
 	}
 	if model.calls != 0 {
 		t.Fatalf("model was called %d times before the corpus check", model.calls)
+	}
+}
+
+// TestRunRejectsDuplicateFramings pins that a loaded corpus with unique ids
+// but one framing under two golds is refused before spend: the oracle keys on
+// the framing, and a real model gets identical prompts with conflicting
+// expected answers, so one cell can never pass.
+func TestRunRejectsDuplicateFramings(t *testing.T) {
+	ctx := context.Background()
+	srv, err := NewFakeServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, cleanup, err := ConnectInProcess(ctx, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	specs, err := SpecFromSession(ctx, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	corpus := Generate(specs, GenerateOptions{N: 2, Seed: 1})
+	corpus[1].NLFraming = corpus[0].NLFraming
+	model := &countingModel{}
+	_, err = Run(ctx, session, Config{Models: []Model{model}, Scenarios: corpus})
+	if err == nil || !strings.Contains(err.Error(), "share a framing") {
+		t.Fatalf("duplicate framing accepted: err=%v", err)
+	}
+	if !strings.Contains(err.Error(), corpus[0].ID) || !strings.Contains(err.Error(), corpus[1].ID) {
+		t.Fatalf("error does not name both scenarios: %v", err)
+	}
+	if model.calls != 0 {
+		t.Fatalf("model was called %d times before the corpus check", model.calls)
+	}
+}
+
+// TestRunRejectsSafetyDriftBeforeSpend pins that pinned safety metadata is
+// checked against the live catalog before any model call. Grading cannot see
+// this: the exact gold would fail the safety dimension (read-only framing on
+// an action that is no longer read-only), or the reverse drift would inflate
+// the safety rate — either way after the cells were paid for.
+func TestRunRejectsSafetyDriftBeforeSpend(t *testing.T) {
+	ctx := context.Background()
+	srv, err := NewFakeServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, cleanup, err := ConnectInProcess(ctx, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	specs, err := SpecFromSession(ctx, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinned := Generate(specs, GenerateOptions{N: 100, Seed: 1})
+	find := func(want Class) int {
+		for i, sc := range pinned {
+			if sc.Class == want {
+				return i
+			}
+		}
+		t.Fatalf("fake catalog has no %s action", want)
+		return -1
+	}
+	cases := map[string]func([]Scenario){
+		"read action pinned as write": func(s []Scenario) {
+			i := find(ClassRead)
+			s[i].Class = ClassWrite
+			s[i].ReadOnlyFramed = false
+		},
+		"write action pinned as read-only": func(s []Scenario) {
+			i := find(ClassWrite)
+			s[i].Class = ClassRead
+			s[i].ReadOnlyFramed = true
+		},
+		"idempotent write pinned as plain write": func(s []Scenario) { s[find(ClassIdempotent)].Class = ClassWrite },
+		"destructive pinned as idempotent":       func(s []Scenario) { s[find(ClassDestructive)].Class = ClassIdempotent },
+		"readonly_framed alone drifted":          func(s []Scenario) { s[find(ClassRead)].ReadOnlyFramed = false },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			corpus := append([]Scenario(nil), pinned...)
+			mutate(corpus)
+			model := &countingModel{}
+			_, err := Run(ctx, session, Config{Models: []Model{model}, Scenarios: corpus})
+			if err == nil || !strings.Contains(err.Error(), "drifted") {
+				t.Fatalf("safety drift accepted: err=%v", err)
+			}
+			if model.calls != 0 {
+				t.Fatalf("model was called %d times before the corpus check", model.calls)
+			}
+		})
+	}
+	if _, err := Run(ctx, session, Config{Models: []Model{&countingModel{}}, Scenarios: pinned}); err != nil {
+		t.Fatalf("matching corpus rejected: %v", err)
+	}
+}
+
+// TestRecordCarriesResolvedModelID pins that every record names the wire
+// model behind its label, and that the id survives the JSONL encoding, so two
+// results files labelled "haiku" from different underlying models stay
+// distinguishable after a rolling alias is retargeted.
+func TestRecordCarriesResolvedModelID(t *testing.T) {
+	ctx := context.Background()
+	srv, err := NewFakeServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, cleanup, err := ConnectInProcess(ctx, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	specs, err := SpecFromSession(ctx, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scenarios := Generate(specs, GenerateOptions{N: 2, Seed: 1})
+	rep, err := Run(ctx, session, Config{Models: []Model{&countingModel{}, NewOracleModel(scenarios)}, Scenarios: scenarios})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rep.Records {
+		want := map[string]string{"counting": "counting-v1", "oracle": "oracle"}[r.Model]
+		if r.ModelID != want {
+			t.Fatalf("record for %s/%s carries model_id %q, want %q", r.Model, r.ScenarioID, r.ModelID, want)
+		}
+	}
+	var b strings.Builder
+	if err := WriteJSONL(&b, rep.Records[:1]); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), `"model_id":"counting-v1"`) {
+		t.Fatalf("model_id missing from the JSONL record: %s", b.String())
+	}
+	// The backends resolve their ids: the API model carries the wire id, the
+	// CLI model the alias it passes to --model.
+	if got := NewCLIModel("haiku", "haiku").ModelID(); got != "haiku" {
+		t.Fatalf("CLI model id = %q", got)
 	}
 }

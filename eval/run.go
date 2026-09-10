@@ -32,6 +32,11 @@ type Record struct {
 	// floor, not a measured spend, and the report labels it as such.
 	PricingEstimated bool   `json:"pricing_estimated,omitempty"`
 	Error            string `json:"error,omitempty"`
+	// ModelID is the resolved wire model the backend actually called — the
+	// versioned API id, the CLI alias, or "oracle" — recorded alongside the
+	// label so results from different underlying models never collapse into
+	// one "haiku" when a rolling alias is retargeted.
+	ModelID string `json:"model_id,omitempty"`
 }
 
 // Config parameterizes a run.
@@ -110,27 +115,43 @@ func checkModels(models []Model) error {
 }
 
 // checkCorpus proves the corpus can be graded against the live catalog before
-// a single model call is made. Two failures hide behind a green-looking run
-// otherwise. A duplicate scenario ID: records and report cells key on the ID,
-// so the second scenario overwrites the first's cell while the totals count
-// and charge both. An obsolete gold — a corpus written for a wider surface
-// (fizzy with --writes), a narrowed domain set, or a catalog that renamed an
-// action or added a required param — can never be satisfied, so every model
-// burns the cell and the miss is reported as a model failure. Both are
-// corpus/surface mismatches, and they fail here, before spend.
+// a single model call is made. Each failure below would otherwise hide behind
+// a green-looking or misattributed run. A duplicate scenario ID: records and
+// report cells key on the ID, so the second scenario overwrites the first's
+// cell while the totals count and charge both. A duplicate framing: the oracle
+// keys on it and a real model receives identical prompts with conflicting
+// expected answers, so one of the two cells can never pass. An obsolete gold —
+// a corpus written for a wider surface (fizzy with --writes), a narrowed domain
+// set, or a catalog that renamed an action or added a required param — can
+// never be satisfied, so every model burns the cell and the miss is reported
+// as a model failure. Drifted safety metadata — a pinned read-only framing
+// whose action is no longer read-only, or the reverse — makes the exact gold
+// fail the safety dimension, or inflates the safety rate, after spend. All
+// are corpus/surface mismatches, and they fail here, before spend.
 func checkCorpus(scenarios []Scenario, idx SpecIndex) error {
-	seen := map[string]bool{}
+	seenID := map[string]bool{}
+	seenFraming := map[string]string{}
 	for _, sc := range scenarios {
-		if seen[sc.ID] {
+		if seenID[sc.ID] {
 			return fmt.Errorf("duplicate scenario id %q: records and report cells key on the id, so each scenario needs its own", sc.ID)
 		}
-		seen[sc.ID] = true
+		seenID[sc.ID] = true
+		if prior, dup := seenFraming[sc.NLFraming]; dup {
+			return fmt.Errorf("scenarios %s and %s share a framing %q: one request cannot have two expected answers", prior, sc.ID, sc.NLFraming)
+		}
+		seenFraming[sc.NLFraming] = sc.ID
 		spec, ok := idx.lookup(sc.GoldTool, sc.GoldAction)
 		if !ok {
 			return fmt.Errorf("scenario %s: gold action %s/%s is not in the live catalog (corpus written for a different surface?)", sc.ID, sc.GoldTool, sc.GoldAction)
 		}
 		if ok, reasons := validateParams(spec, sc.GoldParams); !ok {
 			return fmt.Errorf("scenario %s: gold params no longer valid against the live catalog: %v", sc.ID, reasons)
+		}
+		if got := classOf(spec); got != sc.Class {
+			return fmt.Errorf("scenario %s: pinned class %q but the live catalog says %q (annotations drifted; regenerate the corpus)", sc.ID, sc.Class, got)
+		}
+		if spec.ReadOnly != sc.ReadOnlyFramed {
+			return fmt.Errorf("scenario %s: pinned readonly_framed=%v but the live action readonly=%v (annotations drifted; regenerate the corpus)", sc.ID, sc.ReadOnlyFramed, spec.ReadOnly)
 		}
 	}
 	return nil
@@ -141,6 +162,7 @@ func grade1(ctx context.Context, model Model, system string, sc Scenario, idx Sp
 	user := BuildUser(sc)
 	rec := Record{
 		Model:          model.Label(),
+		ModelID:        model.ModelID(),
 		ScenarioID:     sc.ID,
 		Class:          sc.Class,
 		GoldTool:       sc.GoldTool,
@@ -210,7 +232,8 @@ func NewOracleModel(scenarios []Scenario) *OracleModel {
 	return &OracleModel{label: "oracle", gold: gold}
 }
 
-func (m *OracleModel) Label() string { return m.label }
+func (m *OracleModel) Label() string   { return m.label }
+func (m *OracleModel) ModelID() string { return m.label }
 
 func (m *OracleModel) Propose(_ context.Context, _, user string) (string, Usage, error) {
 	framing := user
