@@ -32,6 +32,9 @@ type fakeOp struct {
 	Paginated   bool           `json:"paginated,omitempty"`
 	Params      []fakeParam    `json:"params,omitempty"`
 	Body        map[string]any `json:"body,omitempty"`
+	// BodyRequired mirrors the catalog's body_required: the request must
+	// carry a body, so the body schema's required array binds unconditionally.
+	BodyRequired bool `json:"body_required,omitempty"`
 }
 
 type fakeDomain struct {
@@ -165,7 +168,7 @@ func fakeDomains() []gateway.Domain {
 	boards := &fakeDomain{
 		key: "boards", tool: "fake_boards", title: "Fake Boards", blurb: "Boards.",
 		ops: []*fakeOp{
-			{Action: "create_board", Summary: "Create a board",
+			{Action: "create_board", Summary: "Create a board", BodyRequired: true,
 				Body: map[string]any{"type": "object", "required": []any{"name"},
 					"properties": map[string]any{"name": fakeStr("Board name")}}},
 			{Action: "delete_board", Summary: "Delete a board", Destructive: true,
@@ -184,7 +187,7 @@ func fakeDomains() []gateway.Domain {
 	cards := &fakeDomain{
 		key: "cards", tool: "fake_cards", title: "Fake Cards", blurb: "Cards.",
 		ops: []*fakeOp{
-			{Action: "create_card", Summary: "Create a card",
+			{Action: "create_card", Summary: "Create a card", BodyRequired: true,
 				Params: []fakeParam{{Name: "board_id", In: "path", Required: true, Schema: fakeInt("Board ID")}},
 				Body: map[string]any{"type": "object", "required": []any{"title"},
 					"properties": map[string]any{

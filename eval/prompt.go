@@ -78,6 +78,12 @@ func renderParams(a ActionSpec) string {
 		if len(p.Enum) > 0 {
 			detail = "enum: " + joinEnum(p.Enum, "|")
 		}
+		if p.RequiredWithBody {
+			if detail != "" {
+				detail += ", "
+			}
+			detail += "required with body"
+		}
 		if detail == "" {
 			parts = append(parts, p.Name+star)
 		} else {

@@ -2,6 +2,7 @@ package eval
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -891,5 +892,122 @@ func TestRecordCarriesResolvedModelID(t *testing.T) {
 	// CLI model the alias it passes to --model.
 	if got := NewCLIModel("haiku", "haiku").ModelID(); got != "haiku" {
 		t.Fatalf("CLI model id = %q", got)
+	}
+}
+
+// TestOptionalBodyKeepsInnerRequiredConditional pins that flattening an
+// optional request body does not promote its schema's required properties to
+// unconditional: a gold or proposal that omits the whole body is valid, one
+// that sends a body must carry them, and a required body still binds them
+// outright. Generation honors the same rule so a gold never fails its own
+// validation.
+func TestOptionalBodyKeepsInnerRequiredConditional(t *testing.T) {
+	body := map[string]any{"type": "object", "required": []any{"name"},
+		"properties": map[string]any{"name": fakeStr("Name"), "color": fakeStr("Color")}}
+
+	optional := ActionSpec{Tool: "t", Action: "update_thing", Summary: "Update a thing", Idempotent: true,
+		Params: append([]ParamSpec{{Name: "thing_id", In: "path", Required: true, Type: "integer"}}, bodyParams(body, false)...)}
+	if got := optional.RequiredParams(); len(got) != 1 || got[0] != "thing_id" {
+		t.Fatalf("optional body promoted inner required to unconditional: %v", got)
+	}
+	if ok, r := validateParams(optional, map[string]any{"thing_id": 1.0}); !ok {
+		t.Fatalf("omitting an optional body rejected: %v", r)
+	}
+	if ok, _ := validateParams(optional, map[string]any{"thing_id": 1.0, "color": "blue"}); ok {
+		t.Fatal("a body missing its required property accepted")
+	}
+	if ok, r := validateParams(optional, map[string]any{"thing_id": 1.0, "color": "blue", "name": "x"}); !ok {
+		t.Fatalf("a complete body rejected: %v", r)
+	}
+
+	required := ActionSpec{Tool: "t", Action: "create_thing", Summary: "Create a thing",
+		Params: bodyParams(body, true)}
+	if ok, _ := validateParams(required, map[string]any{}); ok {
+		t.Fatal("a required body's required property was not enforced")
+	}
+
+	// A generated gold for the optional-body action carries a mutation and
+	// therefore the body's required property; it validates against itself.
+	idx := Index([]ActionSpec{optional})
+	for _, sc := range Generate([]ActionSpec{optional}, GenerateOptions{N: 1, Seed: 2}) {
+		if _, ok := sc.GoldParams["name"]; !ok {
+			t.Fatalf("gold sent a body without its required property: %v", sc.GoldParams)
+		}
+		if ok, r := validateParams(optional, sc.GoldParams); !ok {
+			t.Fatalf("gold fails its own validation: %v", r)
+		}
+		if !Grade(sc, Proposal{Tool: sc.GoldTool, Action: sc.GoldAction, Params: sc.GoldParams}, idx).Pass() {
+			t.Fatal("gold proposal did not pass")
+		}
+	}
+
+	// A pinned corpus whose gold omits the optional body passes the preflight
+	// and grades cleanly: the catalog prompt must not tell the model the
+	// field is mandatory either.
+	sc := Scenario{ID: "t.update_thing", Class: ClassIdempotent, NLFraming: "Please update a thing (thing id 7).",
+		GoldTool: "t", GoldAction: "update_thing", GoldParams: map[string]any{"thing_id": 7}}
+	if err := checkCorpus([]Scenario{sc}, idx); err != nil {
+		t.Fatalf("valid body-less gold rejected by preflight: %v", err)
+	}
+	if out := BuildSystem([]ActionSpec{optional}); strings.Contains(out, "name*") || !strings.Contains(out, "required with body") {
+		t.Fatalf("catalog prompt misstates the body requirement:\n%s", out)
+	}
+}
+
+// TestFakeServerCarriesBodyRequired pins the wire: the fake's creates declare
+// a required body, so their inner required properties arrive unconditional
+// through SpecFromSession, while an optional body's do not.
+func TestFakeServerCarriesBodyRequired(t *testing.T) {
+	ctx := context.Background()
+	srv, err := NewFakeServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, cleanup, err := ConnectInProcess(ctx, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	specs, err := SpecFromSession(ctx, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx := Index(specs)
+	create, _ := idx.lookup("fake_boards", "create_board")
+	if p, _ := create.param("name"); !p.Required || p.RequiredWithBody {
+		t.Fatalf("required body's property not unconditional: %+v", p)
+	}
+	update, _ := idx.lookup("fake_boards", "update_board")
+	if p, _ := update.param("name"); p.Required || p.RequiredWithBody {
+		t.Fatalf("optional, non-required body property mis-flagged: %+v", p)
+	}
+}
+
+// TestEnumMembersCompareInJSONValueSpace pins that enum membership does not
+// depend on Go type identity: a programmatically built spec's int member
+// matches the float64 a JSON-decoded proposal carries, and a string "1" does
+// not match the number 1.
+func TestEnumMembersCompareInJSONValueSpace(t *testing.T) {
+	spec := ActionSpec{Params: []ParamSpec{{Name: "level", Type: "integer", Enum: []any{1, 2}}}}
+	if ok, r := validateParams(spec, map[string]any{"level": float64(1)}); !ok {
+		t.Fatalf("decoded float64 rejected against int enum member: %v", r)
+	}
+	if ok, _ := validateParams(spec, map[string]any{"level": "1"}); ok {
+		t.Fatal(`string "1" accepted against numeric enum`)
+	}
+	if ok, _ := validateParams(spec, map[string]any{"level": float64(3)}); ok {
+		t.Fatal("number outside the enum accepted")
+	}
+	// The oracle's own gold round-trips through JSON, so a programmatic spec
+	// with int enum members must grade its gold as a pass.
+	idx := Index([]ActionSpec{{Tool: "t", Action: "set_level", Summary: "Set the level", Params: spec.Params}})
+	sc := Scenario{ID: "t.set_level", GoldTool: "t", GoldAction: "set_level", GoldParams: map[string]any{"level": 2}}
+	raw, _ := json.Marshal(Proposal{Tool: "t", Action: "set_level", Params: sc.GoldParams})
+	prop, err := ParseProposal(string(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := Grade(sc, prop, idx); !r.Pass() {
+		t.Fatalf("JSON-round-tripped gold failed against int enum: %v", r.Reasons)
 	}
 }

@@ -191,6 +191,16 @@ func goldParams(rng *rand.Rand, spec ActionSpec) map[string]any {
 			out[p.Name] = p.Enum[rng.Intn(len(p.Enum))]
 		}
 	}
+
+	// A gold that carries a body must satisfy the body's own required
+	// properties, or it fails the validation it is graded by.
+	if hasIn(out, spec, "body") {
+		for _, p := range spec.Params {
+			if _, chosen := out[p.Name]; p.RequiredWithBody && !chosen {
+				out[p.Name] = syntheticValue(rng, p)
+			}
+		}
+	}
 	return out
 }
 

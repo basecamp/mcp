@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"reflect"
 	"sort"
 )
 
@@ -108,6 +107,15 @@ func validateParams(spec ActionSpec, params map[string]any) (bool, []string) {
 	for _, name := range spec.RequiredParams() {
 		if _, present := params[name]; !present {
 			reasons = append(reasons, "missing required param "+name)
+		}
+	}
+	// An optional body's own required properties bind only once the request
+	// carries a body at all.
+	if hasBody(spec, params) {
+		for _, p := range spec.Params {
+			if _, present := params[p.Name]; p.RequiredWithBody && !present {
+				reasons = append(reasons, "missing required body param "+p.Name)
+			}
 		}
 	}
 
@@ -220,11 +228,23 @@ func asFloat(v any) (float64, bool) {
 	}
 }
 
+// hasBody reports whether params carry any body property.
+func hasBody(spec ActionSpec, params map[string]any) bool {
+	for _, p := range spec.Params {
+		if _, present := params[p.Name]; present && p.In == "body" {
+			return true
+		}
+	}
+	return false
+}
+
 // enumContains reports whether v equals any enum member, comparing in JSON
-// value space (json numbers arrive as float64, matching a numeric enum).
+// value space: a JSON-decoded float64(1) matches an enum member written as
+// the Go int 1, while the string "1" does not. Go type identity would reject
+// every numeric member of a programmatically built spec.
 func enumContains(enum []any, v any) bool {
 	for _, e := range enum {
-		if reflect.DeepEqual(e, v) {
+		if jsonEqual(e, v) {
 			return true
 		}
 	}

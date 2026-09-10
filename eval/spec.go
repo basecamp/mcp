@@ -32,8 +32,14 @@ type ParamSpec struct {
 	Name     string `json:"name"`
 	In       string `json:"in"` // "path", "query", or "body"
 	Required bool   `json:"required"`
-	Type     string `json:"type"` // JSON Schema primitive, "" when unconstrained
-	Enum     []any  `json:"enum,omitempty"`
+	// RequiredWithBody marks a body property the schema lists as required
+	// when the body itself is optional: it must be present once the request
+	// carries any body field, and may be omitted with the whole body. The
+	// catalog exposes the two separately (body_required vs the schema's own
+	// required array), and flattening must not collapse them.
+	RequiredWithBody bool   `json:"required_with_body,omitempty"`
+	Type             string `json:"type"` // JSON Schema primitive, "" when unconstrained
+	Enum             []any  `json:"enum,omitempty"`
 }
 
 // ActionSpec is one gateway action fully described: identity, safety
@@ -149,6 +155,10 @@ type operationDescribe struct {
 		Schema   map[string]any `json:"schema"`
 	} `json:"params"`
 	Body map[string]any `json:"body"`
+	// BodyRequired is OpenAPI requestBody.required: whether the body itself
+	// must be supplied. Without it the schema's inner required array is
+	// conditional on a body being present at all.
+	BodyRequired bool `json:"body_required"`
 }
 
 // describeAction reads one action's full describe payload and flattens it into
@@ -178,12 +188,14 @@ func describeAction(ctx context.Context, session *mcp.ClientSession, tool, actio
 			Name: p.Name, In: p.In, Required: p.Required, Type: typ, Enum: enum,
 		})
 	}
-	spec.Params = append(spec.Params, bodyParams(od.Body)...)
+	spec.Params = append(spec.Params, bodyParams(od.Body, od.BodyRequired)...)
 	return spec, nil
 }
 
-// bodyParams flattens a request-body JSON Schema into body ParamSpecs.
-func bodyParams(body map[string]any) []ParamSpec {
+// bodyParams flattens a request-body JSON Schema into body ParamSpecs. The
+// schema's required array binds unconditionally only when the body itself is
+// required; for an optional body those properties become RequiredWithBody.
+func bodyParams(body map[string]any, bodyRequired bool) []ParamSpec {
 	if body == nil {
 		return nil
 	}
@@ -208,7 +220,11 @@ func bodyParams(body map[string]any) []ParamSpec {
 	for _, name := range names {
 		schema, _ := props[name].(map[string]any)
 		typ, enum := schemaTypeEnum(schema)
-		out = append(out, ParamSpec{Name: name, In: "body", Required: required[name], Type: typ, Enum: enum})
+		out = append(out, ParamSpec{
+			Name: name, In: "body", Type: typ, Enum: enum,
+			Required:         required[name] && bodyRequired,
+			RequiredWithBody: required[name] && !bodyRequired,
+		})
 	}
 	return out
 }
