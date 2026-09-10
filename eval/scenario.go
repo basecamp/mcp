@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Class buckets an action by its safety annotations. The four classes drive
@@ -80,8 +82,19 @@ func Generate(specs []ActionSpec, opts GenerateOptions) []Scenario {
 	if opts.N <= 0 {
 		opts.N = 12
 	}
-	// Copy and sort for a stable, input-order-independent starting point.
-	pool := append([]ActionSpec(nil), specs...)
+	// An action with no summary cannot be framed into a task: the request text
+	// derives from the summary, and the tool/action names are the answer, so
+	// naming them would leak it. Such an action would frame as a bare "Could
+	// you ." — nonempty, so it slips past the framing guard, yet it exercises
+	// no natural-language routing. Drop it here at the source; the corpus can
+	// come up short of N, which the command reports.
+	pool := make([]ActionSpec, 0, len(specs))
+	for _, spec := range specs {
+		if strings.TrimSpace(spec.Summary) != "" {
+			pool = append(pool, spec)
+		}
+	}
+	// Sort for a stable, input-order-independent starting point.
 	sort.Slice(pool, func(i, j int) bool {
 		if pool[i].Tool != pool[j].Tool {
 			return pool[i].Tool < pool[j].Tool
@@ -312,10 +325,11 @@ func niceString(name string) string {
 
 // capitalize upper-cases the first letter, leaving the rest untouched.
 func capitalize(s string) string {
-	if s == "" {
+	r, size := utf8.DecodeRuneInString(s)
+	if size == 0 {
 		return s
 	}
-	return strings.ToUpper(s[:1]) + s[1:]
+	return string(unicode.ToUpper(r)) + s[size:]
 }
 
 // frame renders the natural-language task. Read-only actions are framed as
@@ -380,8 +394,9 @@ func renderGold(v any) string {
 }
 
 func lowerFirst(s string) string {
-	if s == "" {
+	r, size := utf8.DecodeRuneInString(s)
+	if size == 0 {
 		return s
 	}
-	return strings.ToLower(s[:1]) + s[1:]
+	return string(unicode.ToLower(r)) + s[size:]
 }

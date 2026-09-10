@@ -8,8 +8,11 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basecamp/mcp/gateway"
 )
 
 // fixtureSpecs is a small hand-built catalog spanning the four classes, used by
@@ -1176,5 +1179,93 @@ func TestCommittedResultsCarryProvenance(t *testing.T) {
 				t.Fatalf("%s:%d: no tokens and not marked estimated", path, i+1)
 			}
 		}
+	}
+}
+
+// lyingDomain advertises its real action names in the domain listing but
+// returns a different action name from the per-action describe — a server
+// whose two describe surfaces disagree.
+type lyingDomain struct{ *fakeDomain }
+
+func (d lyingDomain) Describe(action string) (any, error) {
+	if action == "" {
+		return d.fakeDomain.Describe("")
+	}
+	return &fakeOp{Action: "renamed_" + action, Summary: "x"}, nil
+}
+
+// TestSpecRejectsDescribeActionMismatch pins that spec derivation refuses a
+// server whose per-action describe names a different action than the domain
+// listing asked for, instead of silently substituting it (which would drop
+// the listed action while a generated oracle still graded perfectly).
+func TestSpecRejectsDescribeActionMismatch(t *testing.T) {
+	honest, ok := fakeDomains()[0].(*fakeDomain)
+	if !ok {
+		t.Fatal("fakeDomains()[0] is not a *fakeDomain")
+	}
+	gw, err := gateway.New([]gateway.Domain{lyingDomain{honest}}, gateway.Config{
+		Handler: func(context.Context, gateway.Domain, gateway.Operation, map[string]any) (*mcp.CallToolResult, error) {
+			return gateway.JSONResult(map[string]any{"ok": true})
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := gw.BuildMCPServer(&mcp.Implementation{Name: "lying-mcp-server", Version: "0.0.0"}, nil)
+	ctx := context.Background()
+	session, cleanup, err := ConnectInProcess(ctx, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	_, err = SpecFromSession(ctx, session)
+	if err == nil || !strings.Contains(err.Error(), "not the requested") {
+		t.Fatalf("describe/listing mismatch accepted: err=%v", err)
+	}
+}
+
+// TestGenerateDropsSummarylessActions pins that an action with no summary is
+// dropped from generation: it cannot be framed (the request derives from the
+// summary, and its own name is the answer), so it would otherwise produce a
+// bare "Could you ." that exercises no routing yet still passes.
+func TestGenerateDropsSummarylessActions(t *testing.T) {
+	specs := []ActionSpec{
+		{Tool: "t", Action: "usable", Summary: "Do the thing", ReadOnly: true},
+		{Tool: "t", Action: "blank", Summary: "   "},
+		{Tool: "t", Action: "empty", Summary: ""},
+	}
+	scen := Generate(specs, GenerateOptions{N: 10, Seed: 1})
+	if len(scen) != 1 || scen[0].GoldAction != "usable" {
+		t.Fatalf("summary-less actions not dropped: %+v", scen)
+	}
+	for _, s := range scen {
+		bare := strings.TrimSuffix(strings.TrimPrefix(s.NLFraming, "Could you "), ".")
+		if strings.TrimSpace(bare) == "" {
+			t.Fatalf("degenerate framing survived: %q", s.NLFraming)
+		}
+	}
+	if got := Generate([]ActionSpec{{Tool: "t", Action: "blank", Summary: ""}}, GenerateOptions{N: 5, Seed: 1}); len(got) != 0 {
+		t.Fatalf("a catalog of only summary-less actions must yield nothing, got %d", len(got))
+	}
+}
+
+// TestCaseHelpersHandleMultibyteRunes pins that the first-letter case change
+// decodes a full UTF-8 rune, so a localized summary is not corrupted into an
+// invalid byte sequence before it reaches the model.
+func TestCaseHelpersHandleMultibyteRunes(t *testing.T) {
+	if got := lowerFirst("Ärger"); got != "ärger" || !utf8.ValidString(got) {
+		t.Fatalf("lowerFirst mangled a multibyte rune: %q", got)
+	}
+	if got := capitalize("übung"); got != "Übung" || !utf8.ValidString(got) {
+		t.Fatalf("capitalize mangled a multibyte rune: %q", got)
+	}
+	scen := Generate([]ActionSpec{{Tool: "t", Action: "a", Summary: "Öffnen the board", ReadOnly: true,
+		Params: []ParamSpec{{Name: "board_id", In: "path", Required: true, Type: "integer"}}}},
+		GenerateOptions{N: 1, Seed: 1})
+	if len(scen) != 1 {
+		t.Fatalf("want 1 scenario, got %d", len(scen))
+	}
+	if !utf8.ValidString(scen[0].NLFraming) || strings.ContainsRune(scen[0].NLFraming, '�') {
+		t.Fatalf("framing corrupted for a non-ASCII summary: %q", scen[0].NLFraming)
 	}
 }

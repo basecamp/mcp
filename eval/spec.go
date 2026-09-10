@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -171,6 +172,15 @@ func describeAction(ctx context.Context, session *mcp.ClientSession, tool, actio
 	var od operationDescribe
 	if err := json.Unmarshal(raw, &od); err != nil {
 		return ActionSpec{}, fmt.Errorf("%s/%s: decode action describe: %w", tool, action, err)
+	}
+
+	// The per-action describe must name the action we asked about. A server
+	// whose domain listing and per-action describe disagree would otherwise
+	// have this silently substitute the returned action for the requested
+	// one, dropping the listed action from the corpus while a generated
+	// oracle run still grades perfectly against the substituted spec.
+	if strings.TrimSpace(od.Action) == "" || od.Action != action {
+		return ActionSpec{}, fmt.Errorf("%s/%s: describe named action %q, not the requested %q", tool, action, od.Action, action)
 	}
 
 	spec := ActionSpec{
