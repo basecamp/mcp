@@ -367,3 +367,23 @@ func TestRenderImprovementRowsNameTheModel(t *testing.T) {
 		t.Fatalf("improvement rows do not name the model:\n%s", out)
 	}
 }
+
+// TestBaselineCheckModelIDsBeforeSpend pins the pre-run half of the
+// like-for-like rule: a label whose baseline cells were produced by a
+// different wire model is refused before any model call, not by the
+// comparison after the run has been paid for.
+func TestBaselineCheckModelIDsBeforeSpend(t *testing.T) {
+	base := baselineFrom(t, []Record{
+		{Model: "haiku", ScenarioID: "a.x", Score: 1, AnnotationRespected: true, ModelID: "claude-3-5-haiku-latest"},
+		{Model: "legacy", ScenarioID: "a.x", Score: 1, AnnotationRespected: true},
+	})
+	if err := base.CheckModelIDs(map[string]string{"haiku": "haiku"}); err == nil {
+		t.Fatal("different wire model under the baseline's label accepted")
+	}
+	if err := base.CheckModelIDs(map[string]string{"haiku": "claude-3-5-haiku-latest"}); err != nil {
+		t.Fatalf("same wire model rejected: %v", err)
+	}
+	if err := base.CheckModelIDs(map[string]string{"legacy": "anything", "sonnet": "claude-sonnet-4-5"}); err != nil {
+		t.Fatalf("legacy (no model_id) or absent labels must not be checked: %v", err)
+	}
+}

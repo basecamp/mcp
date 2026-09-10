@@ -128,6 +128,23 @@ func (b *Baseline) CheckOverlap(models []string, scenarioIDs []string) error {
 	return fmt.Errorf("baseline shares no (model, scenario_id) cell with this run: %d model(s) x %d scenario(s) against %d baseline cells — nothing would be compared", len(models), len(scenarioIDs), len(b.cells))
 }
 
+// CheckModelIDs proves, before any model is invoked, that each label this run
+// will use names the same wire model the baseline recorded under it.
+// CompareToBaseline refuses a mismatched cell, but only after the run — the
+// paid calls would already have been made against a baseline that could never
+// be like-for-like. Labels the baseline lacks, and baseline records without a
+// model_id, are not checked here.
+func (b *Baseline) CheckModelIDs(modelIDs map[string]string) error {
+	for _, rec := range b.cells {
+		want, ok := modelIDs[rec.Model]
+		if !ok || rec.ModelID == "" || want == "" || rec.ModelID == want {
+			continue
+		}
+		return fmt.Errorf("label %q: baseline was produced by model %q, this run would use %q — not the same model; regenerate the baseline or run under a distinct label", rec.Model, rec.ModelID, want)
+	}
+	return nil
+}
+
 // RegressionKind names why a cell regressed.
 type RegressionKind string
 

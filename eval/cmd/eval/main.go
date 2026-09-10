@@ -132,18 +132,24 @@ func run() error {
 		return err
 	}
 
-	// The baseline must share a cell with this run, or the comparison after
-	// the run would refuse — having already paid for every model call.
+	// The baseline must share a cell with this run, and each shared label
+	// must name the same wire model, or the comparison after the run would
+	// refuse — having already paid for every model call.
 	if base != nil {
 		labels := make([]string, 0, len(models))
+		modelIDs := make(map[string]string, len(models))
 		for _, m := range models {
 			labels = append(labels, m.Label())
+			modelIDs[m.Label()] = m.ModelID()
 		}
 		ids := make([]string, 0, len(scenarios))
 		for _, sc := range scenarios {
 			ids = append(ids, sc.ID)
 		}
 		if err := base.CheckOverlap(labels, ids); err != nil {
+			return err
+		}
+		if err := base.CheckModelIDs(modelIDs); err != nil {
 			return err
 		}
 	}
