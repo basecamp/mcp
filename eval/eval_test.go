@@ -1499,8 +1499,10 @@ func TestCatalogAdvertisesDynamicBody(t *testing.T) {
 
 // TestPinnedCorpusGatesAnnotationDrift covers the gap grading cannot see: the
 // oracle answers a pinned corpus with the pinned gold, so an action that only
-// loses a safety annotation still scores 1 and the smoke stays green. The run
-// must reject the drift instead.
+// loses a safety annotation still scores 1 and the smoke stays green. The
+// corpus preflight (checkCorpus) must reject the drift instead — this is the
+// smoke-shaped end-to-end check over the whole fake catalog, on top of the
+// per-shape cases in TestRunRejectsSafetyDriftBeforeSpend.
 func TestPinnedCorpusGatesAnnotationDrift(t *testing.T) {
 	ctx := context.Background()
 	srv, err := NewFakeServer()

@@ -277,3 +277,36 @@ func TestLoadBaselineRejectsRecordsMissingFields(t *testing.T) {
 		t.Fatalf("a CLI-written baseline was rejected: %v", err)
 	}
 }
+
+// TestRenderShowsImprovementOnlyComparison pins that a run whose only
+// differences are improvements renders each improved cell with its scenario
+// and detail, and never claims that every cell held its baseline score.
+func TestRenderShowsImprovementOnlyComparison(t *testing.T) {
+	prev := []Record{
+		{Model: "haiku", ScenarioID: "a.x", Score: 0, AnnotationRespected: true},
+		{Model: "haiku", ScenarioID: "b.y", Score: 0, ToolMatch: false, AnnotationRespected: true},
+	}
+	now := []Record{
+		{Model: "haiku", ScenarioID: "a.x", Score: 1, AnnotationRespected: true},
+		{Model: "haiku", ScenarioID: "b.y", Score: 0, ToolMatch: true, AnnotationRespected: true},
+	}
+	cmp := compare(t, baselineFrom(t, prev), now)
+	if cmp.HasRegression() || len(cmp.Improved) != 2 {
+		t.Fatalf("want two improvements and no regression, got %+v", cmp)
+	}
+	out := cmp.Render("prior.jsonl")
+	if strings.Contains(out, "no change") {
+		t.Fatalf("improvement-only comparison rendered as no change:\n%s", out)
+	}
+	if !strings.Contains(out, "improved   a.x") || !strings.Contains(out, "0.00 -> 1.00") {
+		t.Fatalf("score improvement row missing:\n%s", out)
+	}
+	if !strings.Contains(out, "improved   b.y") || !strings.Contains(out, "tool_match false -> true") {
+		t.Fatalf("dimension improvement row missing:\n%s", out)
+	}
+	// A genuinely unchanged run still says so.
+	same := compare(t, baselineFrom(t, prev), prev)
+	if !strings.Contains(same.Render("prior.jsonl"), "no change") {
+		t.Fatalf("unchanged run not rendered as no change:\n%s", same.Render("prior.jsonl"))
+	}
+}

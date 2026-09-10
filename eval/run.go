@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -87,8 +86,6 @@ func Run(ctx context.Context, session *mcp.ClientSession, cfg Config) (*Report, 
 	scenarios := cfg.Scenarios
 	if scenarios == nil {
 		scenarios = Generate(specs, cfg.Gen)
-	} else if err := checkAnnotationDrift(scenarios, idx); err != nil {
-		return nil, err
 	}
 	// An empty corpus grades nothing, and a run of zero cells must never read
 	// as green. LoadCorpus already refuses an empty cached corpus; hold the same
@@ -174,36 +171,6 @@ func checkCorpus(scenarios []Scenario, idx SpecIndex) error {
 		if spec.ReadOnly != sc.ReadOnlyFramed {
 			return fmt.Errorf("scenario %s: pinned readonly_framed=%v but the live action readonly=%v (annotations drifted; regenerate the corpus)", sc.ID, sc.ReadOnlyFramed, spec.ReadOnly)
 		}
-	}
-	return nil
-}
-
-// checkAnnotationDrift compares a pinned corpus's safety metadata against the
-// live catalog. Grading cannot see this on its own: the oracle returns the
-// pinned gold, the record's class comes from the pinned scenario, and an action
-// that merely loses its Idempotent annotation still scores 1 — so a safety
-// regression in the catalog passes the smoke. A renamed or removed action never
-// reaches this check: checkCorpus refuses it first as a corpus mismatch, so the
-// lookup miss below cannot happen on a corpus that passed preflight. Class is a
-// lossy projection — ReadOnly wins, so a read action's Idempotent flag is not
-// observed here; pinning the raw annotations is a corpus schema change that
-// belongs with the per-record SHA fields.
-func checkAnnotationDrift(scenarios []Scenario, idx SpecIndex) error {
-	var drift []string
-	for _, sc := range scenarios {
-		spec, ok := idx.lookup(sc.GoldTool, sc.GoldAction)
-		if !ok {
-			continue
-		}
-		if got := classOf(spec); got != sc.Class {
-			drift = append(drift, fmt.Sprintf("%s: pinned class %q, catalog now %q", sc.ID, sc.Class, got))
-		}
-		if spec.ReadOnly != sc.ReadOnlyFramed {
-			drift = append(drift, fmt.Sprintf("%s: pinned readonly_framed=%v, catalog readonly=%v", sc.ID, sc.ReadOnlyFramed, spec.ReadOnly))
-		}
-	}
-	if len(drift) > 0 {
-		return fmt.Errorf("catalog annotations drifted from the pinned corpus:\n  %s", strings.Join(drift, "\n  "))
 	}
 	return nil
 }

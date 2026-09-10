@@ -283,12 +283,12 @@ func regLess(a, b Regression) bool {
 func (c Comparison) Render(baselinePath string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "\nBASELINE COMPARE — vs %s\n", baselinePath)
-	if !c.HasRegression() && len(c.Added) == 0 && len(c.Removed) == 0 {
-		fmt.Fprintf(&b, "no change: every cell holds its baseline score")
-		if len(c.Improved) > 0 {
-			fmt.Fprintf(&b, " (%d improved)", len(c.Improved))
-		}
-		b.WriteString("\n")
+	// "No change" means exactly that: no regression, nothing added or removed,
+	// and nothing improved. An improvement-only run falls through so its rows
+	// render with scenario and detail, rather than being summarized away
+	// under a line that says every cell held its score.
+	if !c.HasRegression() && len(c.Added) == 0 && len(c.Removed) == 0 && len(c.Improved) == 0 {
+		b.WriteString("no change: every cell holds its baseline score\n")
 		return b.String()
 	}
 	if c.HasRegression() {
