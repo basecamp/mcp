@@ -1,0 +1,36 @@
+name: Eval smoke
+
+# The structural eval loop, run hermetically: the in-process fake catalog
+# server driven by the deterministic oracle backend. No live model calls and no
+# network, so CI proves the loop turns — spec derivation, scenario generation,
+# prompting, parsing, grading, and reporting — at zero cost. Real model runs
+# (--backend cli or api) are a local/manual step, never CI by default.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  eval-smoke:
+    name: Eval smoke (no model calls)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run eval smoke
+        run: make eval-smoke

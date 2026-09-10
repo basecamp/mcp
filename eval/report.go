@@ -1,0 +1,200 @@
+package eval
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"sort"
+	"strings"
+)
+
+// WriteJSONL writes one JSON object per record to w, one record per line. A
+// results file holds exactly one run: the CLI writes each run to its own path
+// (the committed results/<server>-v0.jsonl files are run snapshots that double
+// as baselines), so run history lives in git, not in a growing log.
+func WriteJSONL(w io.Writer, records []Record) error {
+	enc := json.NewEncoder(w)
+	for _, r := range records {
+		if err := enc.Encode(r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// FailingRecords returns the records that errored or scored below a full pass.
+// The deterministic oracle must clear every scenario, so the CI smoke uses this
+// to fail loudly when a regression makes any oracle cell emit FAIL or ERR?.
+func FailingRecords(records []Record) []Record {
+	var failing []Record
+	for _, r := range records {
+		if r.Error != "" || r.Score < 1 {
+			failing = append(failing, r)
+		}
+	}
+	return failing
+}
+
+// RequirePass is the smoke gate: every record must pass, and there must be
+// records to check. "Nothing failed" over an empty run is not a pass — an
+// emptied corpus or an empty model set would otherwise satisfy the gate
+// without evaluating anything — so a zero-record run is an error.
+func RequirePass(records []Record) error {
+	if len(records) == 0 {
+		return fmt.Errorf("the run produced no records to check")
+	}
+	if failing := FailingRecords(records); len(failing) > 0 {
+		return fmt.Errorf("%d of %d records did not pass (first: %s)", len(failing), len(records), failing[0].ScenarioID)
+	}
+	return nil
+}
+
+// modelTotals is one model's aggregate over the corpus.
+type modelTotals struct {
+	label     string
+	pass      int
+	paramsOK  int
+	safetyOK  int
+	total     int
+	inTokens  int
+	outTokens int
+	cost      float64
+	estimated bool // any cell priced at a substituted rate
+	usageEst  bool // any cell's token counts estimated rather than reported
+	errored   int
+}
+
+// Render renders the scored scenario×model table and the cost totals.
+func (rep *Report) Render(server string) string {
+	models := rep.modelOrder()
+	byCell := map[string]Record{} // scenarioID|model -> record
+	totals := map[string]*modelTotals{}
+	for _, m := range models {
+		totals[m] = &modelTotals{label: m}
+	}
+	for _, r := range rep.Records {
+		byCell[r.ScenarioID+"|"+r.Model] = r
+		t := totals[r.Model]
+		t.total++
+		if r.Score >= 1 {
+			t.pass++
+		}
+		if r.ParamsMatch {
+			t.paramsOK++
+		}
+		if r.AnnotationRespected {
+			t.safetyOK++
+		}
+		if r.Error != "" {
+			t.errored++
+		}
+		t.inTokens += r.InTokens
+		t.outTokens += r.OutTokens
+		t.cost += r.CostUSD
+		if r.PricingEstimated {
+			t.estimated = true
+		}
+		if r.UsageEstimated {
+			t.usageEst = true
+		}
+	}
+
+	scenarios := append([]Scenario(nil), rep.Scenarios...)
+	sort.Slice(scenarios, func(i, j int) bool { return scenarios[i].ID < scenarios[j].ID })
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "MCP structural eval — server=%s  scenarios=%d  models=%s\n\n",
+		server, len(scenarios), strings.Join(models, ","))
+
+	idWidth := len("SCENARIO")
+	for _, s := range scenarios {
+		if len(s.ID) > idWidth {
+			idWidth = len(s.ID)
+		}
+	}
+	classWidth := len("CLASS")
+	for _, s := range scenarios {
+		if len(string(s.Class)) > classWidth {
+			classWidth = len(string(s.Class))
+		}
+	}
+
+	fmt.Fprintf(&b, "%-*s  %-*s", idWidth, "SCENARIO", classWidth, "CLASS")
+	for _, m := range models {
+		fmt.Fprintf(&b, "  %-10s", m)
+	}
+	b.WriteString("\n")
+	for _, s := range scenarios {
+		fmt.Fprintf(&b, "%-*s  %-*s", idWidth, s.ID, classWidth, string(s.Class))
+		for _, m := range models {
+			fmt.Fprintf(&b, "  %-10s", cell(byCell[s.ID+"|"+m]))
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\nTOTALS\n")
+	fmt.Fprintf(&b, "%-10s  %-8s  %-8s  %-8s  %-9s  %-9s  %-10s\n",
+		"model", "pass", "params", "safety", "in_tok", "out_tok", "cost_usd")
+	var grand float64
+	var anyPriceEst, anyUsageEst bool
+	for _, m := range models {
+		t := totals[m]
+		fmt.Fprintf(&b, "%-10s  %-8s  %-8s  %-8s  %-9d  %-9d  %s\n",
+			t.label,
+			fmt.Sprintf("%d/%d", t.pass, t.total),
+			fmt.Sprintf("%d/%d", t.paramsOK, t.total),
+			fmt.Sprintf("%d/%d", t.safetyOK, t.total),
+			t.inTokens, t.outTokens, costFigure(t.cost, t.estimated || t.usageEst))
+		grand += t.cost
+		anyPriceEst = anyPriceEst || t.estimated
+		anyUsageEst = anyUsageEst || t.usageEst
+	}
+	fmt.Fprintf(&b, "\nTOTAL COST: %s over %d model-scenario calls\n",
+		costFigure(grand, anyPriceEst || anyUsageEst), len(rep.Records))
+	if anyPriceEst {
+		b.WriteString("(estimated) — priced at the cheapest paid tier because the model label has no published rate; not a measured spend.\n")
+	}
+	if anyUsageEst {
+		b.WriteString("(estimated) — token counts the backend did not report were estimated at ~4 characters per token; not a measured spend.\n")
+	}
+	return b.String()
+}
+
+// costFigure renders a dollar total, marking it when any of it was priced at a
+// substituted rate or built on estimated token counts, so such a figure is
+// never read as a measured spend.
+func costFigure(cost float64, estimated bool) string {
+	if estimated {
+		return fmt.Sprintf("$%.4f (estimated)", cost)
+	}
+	return fmt.Sprintf("$%.4f", cost)
+}
+
+// cell renders one table cell: PASS/FAIL, with a trailing ! on a safety
+// violation and ? on a model/parse error.
+func cell(r Record) string {
+	if r.Error != "" {
+		return "ERR?"
+	}
+	s := "FAIL"
+	if r.Score >= 1 {
+		s = "PASS"
+	}
+	if !r.AnnotationRespected {
+		s += "!" // safety violation: a non-read-only action on a read-only-framed task
+	}
+	return s
+}
+
+// modelOrder returns the models in first-seen record order.
+func (rep *Report) modelOrder() []string {
+	var order []string
+	seen := map[string]bool{}
+	for _, r := range rep.Records {
+		if !seen[r.Model] {
+			seen[r.Model] = true
+			order = append(order, r.Model)
+		}
+	}
+	return order
+}
