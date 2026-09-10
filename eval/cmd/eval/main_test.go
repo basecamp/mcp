@@ -89,3 +89,25 @@ func TestSameFile(t *testing.T) {
 		t.Fatal("a missing or empty path aliased a file")
 	}
 }
+
+// TestDefaultServerCmdQuotesDiscoveredPath pins that a fizzy-mcp found in a
+// directory with spaces survives splitCommand as one executable field.
+func TestDefaultServerCmdQuotesDiscoveredPath(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "My Tools")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "fizzy-mcp")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	t.Setenv("EVAL_FIZZY_CMD", "")
+	fields, err := splitCommand(defaultServerCmd("fizzy"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fields, []string{bin, "stdio", "--writes"}) {
+		t.Fatalf("discovered path split apart: %q", fields)
+	}
+}

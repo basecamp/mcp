@@ -60,6 +60,7 @@ type modelTotals struct {
 	outTokens int
 	cost      float64
 	estimated bool // any cell priced at a substituted rate
+	usageEst  bool // any cell's token counts estimated rather than reported
 	errored   int
 }
 
@@ -92,6 +93,9 @@ func (rep *Report) Render(server string) string {
 		t.cost += r.CostUSD
 		if r.PricingEstimated {
 			t.estimated = true
+		}
+		if r.UsageEstimated {
+			t.usageEst = true
 		}
 	}
 
@@ -132,7 +136,7 @@ func (rep *Report) Render(server string) string {
 	fmt.Fprintf(&b, "%-10s  %-8s  %-8s  %-8s  %-9s  %-9s  %-10s\n",
 		"model", "pass", "params", "safety", "in_tok", "out_tok", "cost_usd")
 	var grand float64
-	var anyEstimated bool
+	var anyPriceEst, anyUsageEst bool
 	for _, m := range models {
 		t := totals[m]
 		fmt.Fprintf(&b, "%-10s  %-8s  %-8s  %-8s  %-9d  %-9d  %s\n",
@@ -140,20 +144,25 @@ func (rep *Report) Render(server string) string {
 			fmt.Sprintf("%d/%d", t.pass, t.total),
 			fmt.Sprintf("%d/%d", t.paramsOK, t.total),
 			fmt.Sprintf("%d/%d", t.safetyOK, t.total),
-			t.inTokens, t.outTokens, costFigure(t.cost, t.estimated))
+			t.inTokens, t.outTokens, costFigure(t.cost, t.estimated || t.usageEst))
 		grand += t.cost
-		anyEstimated = anyEstimated || t.estimated
+		anyPriceEst = anyPriceEst || t.estimated
+		anyUsageEst = anyUsageEst || t.usageEst
 	}
 	fmt.Fprintf(&b, "\nTOTAL COST: %s over %d model-scenario calls\n",
-		costFigure(grand, anyEstimated), len(rep.Records))
-	if anyEstimated {
+		costFigure(grand, anyPriceEst || anyUsageEst), len(rep.Records))
+	if anyPriceEst {
 		b.WriteString("(estimated) — priced at the cheapest paid tier because the model label has no published rate; not a measured spend.\n")
+	}
+	if anyUsageEst {
+		b.WriteString("(estimated) — token counts the backend did not report were estimated at ~4 characters per token; not a measured spend.\n")
 	}
 	return b.String()
 }
 
 // costFigure renders a dollar total, marking it when any of it was priced at a
-// substituted rate so a floored figure is never read as a measured spend.
+// substituted rate or built on estimated token counts, so such a figure is
+// never read as a measured spend.
 func costFigure(cost float64, estimated bool) string {
 	if estimated {
 		return fmt.Sprintf("$%.4f (estimated)", cost)

@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -274,8 +275,9 @@ func defaultServerCmd(server string) string {
 	}
 	switch server {
 	case "fizzy":
+		// Quoted, so a path with spaces survives splitCommand as one field.
 		if path, err := exec.LookPath("fizzy-mcp"); err == nil {
-			return path + " stdio --writes"
+			return strconv.Quote(path) + " stdio --writes"
 		}
 	}
 	return ""

@@ -3,6 +3,8 @@ package eval
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -1009,5 +1011,165 @@ func TestEnumMembersCompareInJSONValueSpace(t *testing.T) {
 	}
 	if r := Grade(sc, prop, idx); !r.Pass() {
 		t.Fatalf("JSON-round-tripped gold failed against int enum: %v", r.Reasons)
+	}
+}
+
+// TestRunRejectsEmptyIDsAndFramings pins two more corpus-shape refusals: a
+// scenario without an id cannot key a cell, and one with an empty framing
+// asks the model nothing while the oracle still answers it — a green cell
+// that evaluated no routing.
+func TestRunRejectsEmptyIDsAndFramings(t *testing.T) {
+	ctx := context.Background()
+	srv, err := NewFakeServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, cleanup, err := ConnectInProcess(ctx, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	specs, err := SpecFromSession(ctx, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	good := Generate(specs, GenerateOptions{N: 2, Seed: 1})
+	cases := map[string]struct {
+		mutate func([]Scenario)
+		want   string
+	}{
+		"empty id":           {func(s []Scenario) { s[1].ID = "  " }, "has no id"},
+		"empty framing":      {func(s []Scenario) { s[0].NLFraming = "" }, "empty framing"},
+		"whitespace framing": {func(s []Scenario) { s[0].NLFraming = " \n\t" }, "empty framing"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			corpus := append([]Scenario(nil), good...)
+			tc.mutate(corpus)
+			model := &countingModel{}
+			_, err := Run(ctx, session, Config{Models: []Model{model}, Scenarios: corpus})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("accepted; err=%v", err)
+			}
+			if model.calls != 0 {
+				t.Fatalf("model was called %d times before the corpus check", model.calls)
+			}
+		})
+	}
+}
+
+// TestRecordExplainsFailureAndMarksEstimatedUsage pins the record's
+// diagnostics: a failed cell carries the grader's reasons and the proposed
+// params, a passing cell carries neither, and a cell whose token counts were
+// estimated (the counting model reports none) says so — and the report marks
+// its cost figures as estimated even at a published price.
+func TestRecordExplainsFailureAndMarksEstimatedUsage(t *testing.T) {
+	ctx := context.Background()
+	srv, err := NewFakeServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, cleanup, err := ConnectInProcess(ctx, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	specs, err := SpecFromSession(ctx, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scenarios := Generate(specs, GenerateOptions{N: 2, Seed: 1})
+	// The counting model proposes an empty tool/action: every cell fails.
+	rep, err := Run(ctx, session, Config{Models: []Model{&countingModel{}, NewOracleModel(scenarios)}, Scenarios: scenarios})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rep.Records {
+		switch r.Model {
+		case "counting":
+			if len(r.Reasons) == 0 {
+				t.Fatalf("failed cell %s carries no reasons", r.ScenarioID)
+			}
+			if r.ChoseParams == nil {
+				t.Fatalf("failed cell %s carries no proposed params", r.ScenarioID)
+			}
+		case "oracle":
+			if len(r.Reasons) != 0 {
+				t.Fatalf("passing cell %s carries reasons: %v", r.ScenarioID, r.Reasons)
+			}
+		}
+		if !r.UsageEstimated {
+			t.Fatalf("cell %s/%s: backend reported no usage but the record is not marked estimated", r.Model, r.ScenarioID)
+		}
+	}
+	var b strings.Builder
+	if err := WriteJSONL(&b, rep.Records); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), `"reasons":[`) || !strings.Contains(b.String(), `"usage_estimated":true`) {
+		t.Fatalf("diagnostics missing from JSONL: %s", b.String())
+	}
+
+	// A published price on estimated counts is still an estimate.
+	haiku := &Report{Scenarios: scenarios[:1], Records: []Record{{
+		Model: "haiku", ScenarioID: scenarios[0].ID, Score: 1, InTokens: 10, OutTokens: 5, CostUSD: 0.001, UsageEstimated: true,
+	}}}
+	out := haiku.Render("fake")
+	if !strings.Contains(lineWithPrefix(out, "TOTAL COST:"), "(estimated)") || !strings.Contains(lineWithPrefix(out, "haiku"), "(estimated)") {
+		t.Fatalf("estimated usage not marked on the cost figures:\n%s", out)
+	}
+	if !strings.Contains(out, "token counts the backend did not report") {
+		t.Fatalf("estimated-usage footnote missing:\n%s", out)
+	}
+}
+
+// TestCLIErrorKeepsReportedUsage pins that a CLI turn the CLI itself reports
+// as an error still hands back the usage it consumed, so the runner prices
+// the failed call at what was billed rather than at nothing.
+func TestCLIErrorKeepsReportedUsage(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "claude")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho '{\"result\":\"boom\",\"is_error\":true,\"usage\":{\"input_tokens\":123,\"output_tokens\":4}}'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EVAL_CLAUDE_BIN", script)
+	_, usage, err := NewCLIModel("haiku", "haiku").Propose(context.Background(), "sys", "user")
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("CLI error not surfaced: %v", err)
+	}
+	if usage.InputTokens != 123 || usage.OutputTokens != 4 {
+		t.Fatalf("reported usage dropped on error: %+v", usage)
+	}
+}
+
+// TestCommittedResultsCarryProvenance pins that every committed results file
+// names the wire model behind its label, and marks estimated usage, so a
+// baseline is never ambiguous about what produced it or how its cost was
+// derived.
+func TestCommittedResultsCarryProvenance(t *testing.T) {
+	paths, err := filepath.Glob("results/*.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("no committed results found")
+	}
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+			var rec Record
+			if err := json.Unmarshal([]byte(line), &rec); err != nil {
+				t.Fatalf("%s:%d: %v", path, i+1, err)
+			}
+			if rec.ModelID == "" {
+				t.Fatalf("%s:%d: record has no model_id", path, i+1)
+			}
+			if rec.Model != "oracle" && !rec.UsageEstimated && rec.InTokens == 0 {
+				t.Fatalf("%s:%d: no tokens and not marked estimated", path, i+1)
+			}
+		}
 	}
 }

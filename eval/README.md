@@ -77,11 +77,12 @@ temp-0, n=1. See `results/fizzy-v0.jsonl`:
 
 ```
 model       pass      params    safety    in_tok     out_tok    cost_usd
-haiku       12/12     12/12     12/12     19199      291        $0.0165
+haiku       12/12     12/12     12/12     19199      291        $0.0165 (estimated)
 ```
 
-Under two cents ($0.0165) of estimated model spend proves the whole loop
-turns and the cost story is real. A capable model clears this small, unambiguous corpus cleanly:
+Under two cents ($0.0165, estimated: the CLI backend reports no token counts,
+so they are derived at ~4 characters per token and the records say so) of
+model spend proves the whole loop turns and the cost story is real. A capable model clears this small, unambiguous corpus cleanly:
 v0 proves the machinery, not model discrimination — that is what the hillclimb
 adds.
 

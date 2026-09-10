@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -37,6 +38,18 @@ type Record struct {
 	// label so results from different underlying models never collapse into
 	// one "haiku" when a rolling alias is retargeted.
 	ModelID string `json:"model_id,omitempty"`
+	// UsageEstimated marks token counts the backend did not report, filled
+	// from the deterministic characters-per-token estimate (the CLI hides its
+	// counts behind caching). The cost figure built on them is then an
+	// estimate even at a published price, and the report says so.
+	UsageEstimated bool `json:"usage_estimated,omitempty"`
+	// Reasons explains a failed cell — the grader's own findings (missing
+	// requested value, unknown param, enum violation) — so a results file can
+	// be diagnosed without re-running the paid call. Empty on a pass.
+	Reasons []string `json:"reasons,omitempty"`
+	// ChoseParams is the proposal's params as the model sent them, kept for
+	// the same reason: a failing record must show what was actually proposed.
+	ChoseParams map[string]any `json:"chose_params,omitempty"`
 }
 
 // Config parameterizes a run.
@@ -131,7 +144,13 @@ func checkModels(models []Model) error {
 func checkCorpus(scenarios []Scenario, idx SpecIndex) error {
 	seenID := map[string]bool{}
 	seenFraming := map[string]string{}
-	for _, sc := range scenarios {
+	for i, sc := range scenarios {
+		if strings.TrimSpace(sc.ID) == "" {
+			return fmt.Errorf("scenario #%d has no id: records and report cells key on it", i+1)
+		}
+		if strings.TrimSpace(sc.NLFraming) == "" {
+			return fmt.Errorf("scenario %s has an empty framing: the model would be asked nothing, and the oracle would still answer it", sc.ID)
+		}
 		if seenID[sc.ID] {
 			return fmt.Errorf("duplicate scenario id %q: records and report cells key on the id, so each scenario needs its own", sc.ID)
 		}
@@ -185,12 +204,16 @@ func grade1(ctx context.Context, model Model, system string, sc Scenario, idx Sp
 	}
 
 	// On success, fall back to the deterministic estimate for whichever counts
-	// the backend did not report (the CLI hides most input tokens behind cache).
+	// the backend did not report (the CLI hides most input tokens behind cache),
+	// and say so: a cost built on estimated counts is an estimate even at a
+	// published price.
 	if usage.InputTokens == 0 {
 		usage.InputTokens = EstimateTokens(system) + EstimateTokens(user)
+		rec.UsageEstimated = true
 	}
 	if usage.OutputTokens == 0 {
 		usage.OutputTokens = EstimateTokens(text)
+		rec.UsageEstimated = true
 	}
 	rec.InTokens = usage.InputTokens
 	rec.OutTokens = usage.OutputTokens
@@ -204,6 +227,7 @@ func grade1(ctx context.Context, model Model, system string, sc Scenario, idx Sp
 	}
 	rec.ChoseTool = prop.Tool
 	rec.ChoseAction = prop.Action
+	rec.ChoseParams = prop.Params
 
 	res := Grade(sc, prop, idx)
 	rec.ToolMatch = res.ToolMatch
@@ -211,6 +235,9 @@ func grade1(ctx context.Context, model Model, system string, sc Scenario, idx Sp
 	rec.ParamsMatch = res.ParamsValid
 	rec.AnnotationRespected = res.AnnotationRespected
 	rec.Score = res.Score
+	if !res.Pass() {
+		rec.Reasons = res.Reasons
+	}
 	return rec
 }
 

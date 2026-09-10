@@ -216,7 +216,13 @@ func (m *CLIModel) Propose(ctx context.Context, system, user string) (string, Us
 		return "", Usage{}, fmt.Errorf("claude cli: decode output: %w", err)
 	}
 	if out.IsError {
-		return "", Usage{}, fmt.Errorf("claude cli reported error: %s", out.Result)
+		// The CLI still reports what the failed turn consumed. Hand it back
+		// with the error: the runner records backend-reported usage on a
+		// failure and never estimates, so returning zero here would price a
+		// call the CLI says was billed at nothing. Under caching these counts
+		// are a lower bound, which is still more honest than zero.
+		return "", Usage{InputTokens: out.Usage.InputTokens, OutputTokens: out.Usage.OutputTokens},
+			fmt.Errorf("claude cli reported error: %s", out.Result)
 	}
 	// The CLI's usage counts are unreliable under caching; return zero so the
 	// runner estimates from the exact prompt and answer it controls.
