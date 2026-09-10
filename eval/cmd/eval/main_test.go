@@ -320,3 +320,18 @@ func TestPreflightRejectsBeforeConnect(t *testing.T) {
 		t.Fatalf("preflight returned unexpected state: base=%v scen=%d plan=%v", base != nil, len(scen), plan)
 	}
 }
+
+// TestOracleBackendBuildsOneModel pins that --backend oracle with several
+// labels builds a single oracle instance, not one per label: every oracle
+// reports the same "oracle" label, so one-per-label would make Run reject the
+// run as duplicate and a valid multi-label oracle invocation always fail.
+func TestOracleBackendBuildsOneModel(t *testing.T) {
+	scen := []eval.Scenario{{ID: "t.a", NLFraming: "Do it.", GoldTool: "t", GoldAction: "a"}}
+	models, err := buildModels("oracle", "haiku,sonnet", scen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 || models[0].Label() != "oracle" {
+		t.Fatalf("oracle backend built %d models (want 1 labeled oracle)", len(models))
+	}
+}

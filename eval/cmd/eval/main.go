@@ -514,6 +514,13 @@ func scenarioIDs(scenarios []eval.Scenario) []string {
 // buildModels resolves the backend and model labels into Model backends. The
 // oracle answers from the resolved corpus.
 func buildModels(backend, modelsCSV string, scenarios []eval.Scenario) ([]eval.Model, error) {
+	// The oracle answers from the corpus under a single "oracle" label, so it
+	// is built once regardless of --models. One instance per label would
+	// collide on that shared label and Run would reject the whole run as
+	// duplicate — so a valid multi-label oracle invocation always failed.
+	if backend == "oracle" {
+		return []eval.Model{eval.NewOracleModel(scenarios)}, nil
+	}
 	labels := strings.Split(modelsCSV, ",")
 	var models []eval.Model
 	for _, label := range labels {
@@ -530,8 +537,6 @@ func buildModels(backend, modelsCSV string, scenarios []eval.Scenario) ([]eval.M
 				return nil, err
 			}
 			models = append(models, m)
-		case "oracle":
-			models = append(models, eval.NewOracleModel(scenarios))
 		default:
 			return nil, fmt.Errorf("unknown backend %q (cli, api, oracle)", backend)
 		}
