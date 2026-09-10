@@ -58,6 +58,9 @@ type Report struct {
 // report. The server round-trip touches only list and describe, so no backend
 // or credentials are needed.
 func Run(ctx context.Context, session *mcp.ClientSession, cfg Config) (*Report, error) {
+	if err := checkModels(cfg.Models); err != nil {
+		return nil, err
+	}
 	specs, err := SpecFromSession(ctx, session)
 	if err != nil {
 		return nil, err
@@ -65,6 +68,13 @@ func Run(ctx context.Context, session *mcp.ClientSession, cfg Config) (*Report, 
 	scenarios := cfg.Scenarios
 	if scenarios == nil {
 		scenarios = Generate(specs, cfg.Gen)
+	}
+	// An empty corpus grades nothing, and a run of zero cells must never read
+	// as green. LoadCorpus already refuses an empty cached corpus; hold the same
+	// line here so a live catalog that exposes no actions (or a caller-supplied
+	// empty slice) fails loudly instead of rendering a zero-cell report.
+	if len(scenarios) == 0 {
+		return nil, fmt.Errorf("no scenarios to run: the server catalog exposes no actions, or the corpus is empty")
 	}
 	idx := Index(specs)
 	system := BuildSystem(specs)
@@ -76,6 +86,24 @@ func Run(ctx context.Context, session *mcp.ClientSession, cfg Config) (*Report, 
 		}
 	}
 	return rep, nil
+}
+
+// checkModels refuses a run with no models or with two models sharing a label.
+// Records and the report's cells identify a model by its label alone, so a
+// duplicate (--models haiku,haiku) would overwrite one run's
+// cells with the other's while the totals still counted and charged both.
+func checkModels(models []Model) error {
+	if len(models) == 0 {
+		return fmt.Errorf("no models to run")
+	}
+	seen := map[string]bool{}
+	for _, m := range models {
+		if seen[m.Label()] {
+			return fmt.Errorf("duplicate model label %q: each model in a run needs a distinct label", m.Label())
+		}
+		seen[m.Label()] = true
+	}
+	return nil
 }
 
 // grade1 runs and grades a single (model, scenario) cell.

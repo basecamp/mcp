@@ -52,6 +52,22 @@ func run() error {
 
 	ctx := context.Background()
 
+	outPath := *out
+	if outPath == "" {
+		outPath = fmt.Sprintf("eval/results/%s-v0.jsonl", *server)
+	}
+	// Prove both output destinations are writable before spawning a server or
+	// making a single paid model call: a mistyped --out or a missing directory
+	// would otherwise surface only after the whole experiment had been billed,
+	// with nothing persisted to show for it.
+	for _, path := range []string{outPath, *writeScen} {
+		if path != "" {
+			if err := preflightWritable(path); err != nil {
+				return err
+			}
+		}
+	}
+
 	session, cleanup, err := connect(ctx, *server, *serverCmd)
 	if err != nil {
 		return err
@@ -103,10 +119,6 @@ func run() error {
 		fmt.Fprintf(os.Stderr, "wrote %d scenarios to %s\n", len(rep.Scenarios), *writeScen)
 	}
 
-	outPath := *out
-	if outPath == "" {
-		outPath = fmt.Sprintf("eval/results/%s-v0.jsonl", *server)
-	}
 	f, err := os.Create(outPath)
 	if err != nil {
 		return err
@@ -128,6 +140,17 @@ func run() error {
 		}
 	}
 	return nil
+}
+
+// preflightWritable proves path can be opened for writing — creating it empty
+// when absent, never truncating what is already there — so an unwritable
+// destination fails before any spend rather than after.
+func preflightWritable(path string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		return fmt.Errorf("output %s is not writable: %w", path, err)
+	}
+	return f.Close()
 }
 
 // connect returns a client session to the chosen server plus a cleanup func.

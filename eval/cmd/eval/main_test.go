@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -32,5 +34,31 @@ func TestSplitCommand(t *testing.T) {
 		if !reflect.DeepEqual(got, tc.want) {
 			t.Fatalf("splitCommand(%q) = %v, want %v", tc.in, got, tc.want)
 		}
+	}
+}
+
+func TestPreflightWritable(t *testing.T) {
+	dir := t.TempDir()
+	// A fresh path in a writable directory passes and is created empty.
+	fresh := filepath.Join(dir, "out.jsonl")
+	if err := preflightWritable(fresh); err != nil {
+		t.Fatalf("writable path rejected: %v", err)
+	}
+	if info, err := os.Stat(fresh); err != nil || info.Size() != 0 {
+		t.Fatalf("preflight did not create an empty file: info=%v err=%v", info, err)
+	}
+	// An existing file keeps its contents: preflight must never truncate.
+	if err := os.WriteFile(fresh, []byte("keep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := preflightWritable(fresh); err != nil {
+		t.Fatalf("existing path rejected: %v", err)
+	}
+	if data, _ := os.ReadFile(fresh); string(data) != "keep\n" {
+		t.Fatalf("preflight truncated the existing file: %q", data)
+	}
+	// A missing directory fails before any run.
+	if err := preflightWritable(filepath.Join(dir, "missing", "out.jsonl")); err == nil {
+		t.Fatal("path in a missing directory accepted")
 	}
 }

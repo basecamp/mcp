@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"sort"
@@ -348,19 +349,28 @@ func paramClause(spec ActionSpec, gold map[string]any) string {
 	sort.Strings(names)
 	parts := make([]string, 0, len(names))
 	for _, name := range names {
-		parts = append(parts, fmt.Sprintf("%s %v", strings.ReplaceAll(name, "_", " "), quoteIfString(gold[name])))
+		parts = append(parts, fmt.Sprintf("%s %s", strings.ReplaceAll(name, "_", " "), renderGold(gold[name])))
 	}
 	return "(" + strings.Join(parts, ", ") + ")"
 }
 
-func quoteIfString(v any) any {
-	if v == nil {
+// renderGold renders one gold value in the framing: strings quoted, nil as
+// null, and structured values (objects, arrays) as JSON — the representation
+// the model is asked to reproduce. Go's %v would print `map[]` and `[value]`,
+// shapes no JSON-speaking model would echo back, so an object or array gold
+// would fail on the framing rather than on the model.
+func renderGold(v any) string {
+	switch v := v.(type) {
+	case nil:
 		return "null"
+	case string:
+		return fmt.Sprintf("%q", v)
+	case map[string]any, []any:
+		if data, err := json.Marshal(v); err == nil {
+			return string(data)
+		}
 	}
-	if s, ok := v.(string); ok {
-		return fmt.Sprintf("%q", s)
-	}
-	return v
+	return fmt.Sprint(v)
 }
 
 func lowerFirst(s string) string {

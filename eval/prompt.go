@@ -94,15 +94,18 @@ func BuildUser(s Scenario) string {
 
 // ParseProposal extracts the {tool, action, params} object from the model's raw
 // text, tolerating code fences and surrounding prose. Prose may itself contain a
-// balanced brace block before the answer (an example, a stray note), so it scans
-// every top-level {...} span and returns the first that decodes and names a tool
-// or action, falling back to the first that merely decodes.
+// balanced brace block before the answer (an example, a stray note, an echo of
+// the {"action": ...} call shape from the instructions), so it scans every
+// top-level {...} span and returns the first complete proposal — one naming
+// both tool and action. Only when none is complete does it fall back to the
+// first naming either, and then to the first that merely decodes.
 func ParseProposal(raw string) (Proposal, error) {
 	candidates := extractJSONObjects(raw)
 	if len(candidates) == 0 {
 		return Proposal{}, fmt.Errorf("no JSON object found in model output")
 	}
 	var (
+		partial   *Proposal
 		fallback  *Proposal
 		decodeErr error
 	)
@@ -117,13 +120,23 @@ func ParseProposal(raw string) (Proposal, error) {
 		if p.Params == nil {
 			p.Params = map[string]any{}
 		}
-		if p.Tool != "" || p.Action != "" {
+		switch {
+		case p.Tool != "" && p.Action != "":
 			return p, nil
+		case p.Tool != "" || p.Action != "":
+			if partial == nil {
+				pp := p
+				partial = &pp
+			}
+		default:
+			if fallback == nil {
+				pp := p
+				fallback = &pp
+			}
 		}
-		if fallback == nil {
-			pp := p
-			fallback = &pp
-		}
+	}
+	if partial != nil {
+		return *partial, nil
 	}
 	if fallback != nil {
 		return *fallback, nil

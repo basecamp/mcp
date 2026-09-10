@@ -8,8 +8,10 @@ import (
 	"strings"
 )
 
-// WriteJSONL appends one JSON object per record to w — the append-only results
-// log.
+// WriteJSONL writes one JSON object per record to w, one record per line. A
+// results file holds exactly one run: the CLI writes each run to its own path
+// (the committed results/<server>-v0.jsonl files are run snapshots that double
+// as baselines), so run history lives in git, not in a growing log.
 func WriteJSONL(w io.Writer, records []Record) error {
 	enc := json.NewEncoder(w)
 	for _, r := range records {

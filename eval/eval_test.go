@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // fixtureSpecs is a small hand-built catalog spanning the four classes, used by
@@ -529,5 +531,102 @@ func TestRequirePassRejectsEmptyRun(t *testing.T) {
 	}
 	if err := RequirePass([]Record{{ScenarioID: "t.a", Score: 1, Error: "boom"}}); err == nil {
 		t.Fatal("an errored record passed the gate")
+	}
+}
+
+// TestFramingRendersStructuredValuesAsJSON pins that object and array golds
+// reach the model as JSON, not as Go's `map[]` / `[value]` rendering, which no
+// JSON-speaking model would reproduce.
+func TestFramingRendersStructuredValuesAsJSON(t *testing.T) {
+	spec := ActionSpec{Tool: "t", Action: "set_meta", Summary: "Set the meta",
+		Params: []ParamSpec{
+			{Name: "meta", In: "body", Required: true, Type: "object"},
+			{Name: "tags", In: "body", Required: true, Type: "array"}}}
+	scen := Generate([]ActionSpec{spec}, GenerateOptions{N: 1, Seed: 3})
+	if len(scen) != 1 {
+		t.Fatalf("want 1 scenario, got %d", len(scen))
+	}
+	f := scen[0].NLFraming
+	if strings.Contains(f, "map[") || !strings.Contains(f, "meta {}") {
+		t.Fatalf("object gold not rendered as JSON: %q", f)
+	}
+	if !strings.Contains(f, `tags ["Tags"]`) {
+		t.Fatalf("array gold not rendered as JSON: %q", f)
+	}
+}
+
+// TestParseProposalPrefersCompleteProposal pins that an earlier partial object
+// in prose (an echo of the {"action": ...} call shape, say) does not mask the
+// complete answer that follows it.
+func TestParseProposalPrefersCompleteProposal(t *testing.T) {
+	raw := "The call shape is {\"action\":\"get_board\"}, so:\n" +
+		"```json\n{\"tool\":\"t_boards\",\"action\":\"get_board\",\"params\":{\"board_id\":\"7\"}}\n```"
+	p, err := ParseProposal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Tool != "t_boards" || p.Action != "get_board" || p.Params["board_id"] != "7" {
+		t.Fatalf("partial object masked the complete proposal: %+v", p)
+	}
+	// With no complete candidate, a partial one still beats a bare object.
+	p, err = ParseProposal("{\"note\":1} then {\"action\":\"get_board\"}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Action != "get_board" {
+		t.Fatalf("partial proposal not returned as fallback: %+v", p)
+	}
+}
+
+// TestRunRejectsDuplicateModelLabels pins that two models sharing a label
+// refuse to run: records, report cells, and baseline keys identify a model by
+// label, so a duplicate would overwrite cells while totals charged both.
+func TestRunRejectsDuplicateModelLabels(t *testing.T) {
+	ctx := context.Background()
+	srv, err := NewFakeServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, cleanup, err := ConnectInProcess(ctx, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	specs, err := SpecFromSession(ctx, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scenarios := Generate(specs, GenerateOptions{N: 2, Seed: 1})
+	_, err = Run(ctx, session, Config{
+		Models:    []Model{NewOracleModel(scenarios), NewOracleModel(scenarios)},
+		Scenarios: scenarios,
+	})
+	if err == nil || !strings.Contains(err.Error(), "duplicate model label") {
+		t.Fatalf("duplicate labels accepted: err=%v", err)
+	}
+	if _, err := Run(ctx, session, Config{Scenarios: scenarios}); err == nil {
+		t.Fatal("a run with no models was accepted")
+	}
+}
+
+// TestRunRejectsEmptyCorpus pins the generation-side half of the fail-closed
+// rule: a server whose catalog exposes no actions generates no scenarios, and
+// that must be an error, not a green zero-cell run.
+func TestRunRejectsEmptyCorpus(t *testing.T) {
+	ctx := context.Background()
+	empty := mcp.NewServer(&mcp.Implementation{Name: "empty-mcp-server", Version: "0.0.0"}, nil)
+	session, cleanup, err := ConnectInProcess(ctx, empty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	_, err = Run(ctx, session, Config{Models: []Model{NewOracleModel(nil)}})
+	if err == nil || !strings.Contains(err.Error(), "no scenarios") {
+		t.Fatalf("empty generated corpus accepted: err=%v", err)
+	}
+	// A caller-supplied empty (non-nil) corpus is refused the same way.
+	_, err = Run(ctx, session, Config{Models: []Model{NewOracleModel(nil)}, Scenarios: []Scenario{}})
+	if err == nil || !strings.Contains(err.Error(), "no scenarios") {
+		t.Fatalf("empty supplied corpus accepted: err=%v", err)
 	}
 }
