@@ -27,8 +27,22 @@ clean:
 ready: vet test-race build
 
 # Run the structural eval loop as a hermetic smoke: the in-process fake server
-# with the deterministic oracle backend. No network, no model spend — proves
-# the loop turns. Real model runs use the eval command with --backend cli/api.
+# with the deterministic oracle backend, over a PINNED corpus, compared against
+# a committed baseline. No network, no model spend. The pinned corpus is what
+# makes the gate real: the committed golds are graded against the current fake
+# catalog, so a surface change that invalidates a gold under an unchanged
+# scenario id — a renamed action, an added required param, a changed enum —
+# is refused by the corpus preflight before any cell runs (nonzero exit).
+# Regenerating the corpus instead would let the oracle's answers drift with the
+# schema and hide exactly that. Annotations are the one surface scoring cannot see — the
+# oracle returns the pinned gold either way, so an action that merely loses
+# ReadOnly, or a write that loses Idempotent, still scores 1 — so the run
+# compares the pinned class and readonly_framed against the live catalog and
+# errors on drift. (Idempotent on a read-only action is not pinned: class folds
+# it into "read".) Real model runs use the eval command with --backend cli/api.
 .PHONY: eval-smoke
 eval-smoke:
-	$(GO) run ./eval/cmd/eval --server fake --backend oracle --n 12 --out /tmp/eval-smoke.jsonl --require-pass
+	$(GO) run ./eval/cmd/eval --server fake --backend oracle \
+		--scenarios eval/testdata/scenarios/fake.json \
+		--out /tmp/eval-smoke.jsonl --require-pass \
+		--baseline eval/testdata/results/fake-oracle.jsonl

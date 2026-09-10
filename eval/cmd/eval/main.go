@@ -16,18 +16,22 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/basecamp/mcp/eval"
 )
+
+// errRegression is returned when a --baseline comparison finds a worse cell, so
+// the process exits nonzero — the merge-blocking signal for CI.
+var errRegression = errors.New("baseline regression detected")
 
 func main() {
 	if err := run(); err != nil {
@@ -48,6 +52,7 @@ func run() error {
 		scenPath  = flag.String("scenarios", "", "load scenarios from this JSON instead of generating")
 		writeScen = flag.String("write-scenarios", "", "write the generated corpus to this JSON")
 		requireP  = flag.Bool("require-pass", false, "exit nonzero unless every record passes (for the deterministic oracle smoke)")
+		baseline  = flag.String("baseline", "", "compare this run against a prior results JSONL; exit nonzero on a score drop, newly-failing scenario, or safety regression")
 	)
 	flag.Parse()
 
@@ -57,31 +62,22 @@ func run() error {
 	if outPath == "" {
 		outPath = fmt.Sprintf("eval/results/%s-v0.jsonl", *server)
 	}
-	// Prove both output destinations are writable before spawning a server or
-	// making a single paid model call: a mistyped --out or a missing directory
-	// would otherwise surface only after the whole experiment had been billed,
-	// with nothing persisted to show for it.
-	for _, path := range []string{outPath, *writeScen} {
-		if path != "" {
-			if err := preflightWritable(path); err != nil {
-				return err
-			}
-		}
-	}
-	// The results file must not alias a corpus file: os.Create truncates, so
-	// --out naming the --write-scenarios path would destroy the corpus just
-	// written, and naming --scenarios would destroy the source corpus after
-	// the run. Compared by identity, so a symlink alias is caught too.
-	for _, corpus := range []string{*scenPath, *writeScen} {
-		if sameFile(outPath, corpus) {
-			return fmt.Errorf("--out %s is the same file as the corpus %s", outPath, corpus)
-		}
-	}
 
-	// gen labels the corpus: a loaded corpus keeps the seed and n it was
-	// generated with, so rewriting it (--scenarios with --write-scenarios)
-	// never relabels its cases with this run's flags.
-	gen := eval.GenerateOptions{N: *n, Seed: *seed}
+	// One gate for every check that needs neither a server connection nor a
+	// paid model call: flags, backend, API key, a non-empty model set, output
+	// writability and aliasing, corpus loading and server match, and — against
+	// a baseline — model-id identity and (for a loaded corpus) cell overlap.
+	// A bad flag, a missing key, or a mismatched baseline fails here, never
+	// after authenticating a live server (basecamp) or billing a run.
+	base, scenarios, gen, plan, err := preflight(preflightOpts{
+		server: *server, backend: *backend, models: *modelsCSV,
+		gen: eval.GenerateOptions{N: *n, Seed: *seed},
+		out: outPath, writeScen: *writeScen,
+		scenPath: *scenPath, baseline: *baseline,
+	})
+	if err != nil {
+		return err
+	}
 
 	session, cleanup, err := connect(ctx, *server, *serverCmd)
 	if err != nil {
@@ -89,28 +85,24 @@ func run() error {
 	}
 	defer cleanup()
 
-	var scenarios []eval.Scenario
-	if *scenPath != "" {
-		data, err := os.ReadFile(*scenPath)
+	// A generated corpus's scenario ids are not known until the live catalog
+	// is read, so its baseline overlap is the one check that must wait for the
+	// connection — still before any model call. A loaded corpus was already
+	// overlap-checked in preflight.
+	if scenarios == nil {
+		specs, err := eval.SpecFromSession(ctx, session)
 		if err != nil {
 			return err
 		}
-		corpus, err := eval.LoadCorpus(data)
-		if err != nil {
-			return err
+		scenarios = eval.Generate(specs, gen)
+		if base != nil {
+			if err := base.CheckOverlap(planLabels(plan), scenarioIDs(scenarios)); err != nil {
+				return err
+			}
 		}
-		// A corpus grades product-specific tool/action names; running it against
-		// a different live catalog silently mislabels the mismatch as model
-		// failures. Reject it up front. (Corpora written before this metadata
-		// existed carry an empty server and can't be checked.)
-		if corpus.Server != "" && corpus.Server != *server {
-			return fmt.Errorf("corpus %s was generated for server %q but --server is %q", *scenPath, corpus.Server, *server)
-		}
-		scenarios = corpus.Scenarios
-		gen = eval.GenerateOptions{N: corpus.N, Seed: corpus.Seed}
 	}
 
-	models, err := buildModels(ctx, *backend, *modelsCSV, scenarios, session, gen)
+	models, err := buildModels(*backend, *modelsCSV, scenarios)
 	if err != nil {
 		return err
 	}
@@ -157,6 +149,17 @@ func run() error {
 	fmt.Print(rep.Render(*server))
 	fmt.Fprintf(os.Stderr, "\nwrote %d records to %s\n", len(rep.Records), outPath)
 
+	if base != nil {
+		cmp, err := eval.CompareToBaseline(base, rep.Records)
+		if err != nil {
+			return err
+		}
+		fmt.Print(cmp.Render(*baseline))
+		if cmp.HasRegression() {
+			return errRegression
+		}
+	}
+
 	if *requireP {
 		if err := eval.RequirePass(rep.Records); err != nil {
 			return fmt.Errorf("--require-pass: %w", err)
@@ -174,6 +177,32 @@ func preflightWritable(path string) error {
 		return fmt.Errorf("output %s is not writable: %w", path, err)
 	}
 	return f.Close()
+}
+
+// checkAliases refuses an output path that names a file the run also reads or
+// writes for another purpose, where the write would silently destroy it:
+// --out truncates (os.Create), so it must not be the source corpus, the corpus
+// just written, or the baseline; --write-scenarios replaces its file, so it
+// must not be the baseline either. --out over --baseline is especially unsafe:
+// os.Create overwrites the prior results with the new run before the gate
+// compares, so a regressed run becomes the new baseline and a retry compares
+// against the degraded result and passes — laundering the regression the gate
+// exists to catch. Rewriting a loaded corpus in place (--scenarios ==
+// --write-scenarios) stays allowed. Identity comparison, so symlink aliases
+// count.
+func checkAliases(out, writeScen, scenPath, baseline string) error {
+	pairs := []struct{ aFlag, a, bFlag, b string }{
+		{"--out", out, "--scenarios", scenPath},
+		{"--out", out, "--write-scenarios", writeScen},
+		{"--out", out, "--baseline", baseline},
+		{"--write-scenarios", writeScen, "--baseline", baseline},
+	}
+	for _, p := range pairs {
+		if sameFile(p.a, p.b) {
+			return fmt.Errorf("%s %s is the same file as %s %s", p.aFlag, p.a, p.bFlag, p.b)
+		}
+	}
+	return nil
 }
 
 // sameFile reports whether two paths name one file, following symlinks, so an
@@ -204,15 +233,11 @@ func connect(ctx context.Context, server, serverCmd string) (*mcp.ClientSession,
 		return eval.ConnectInProcess(ctx, srv)
 	}
 
-	cmdline := serverCmd
-	if cmdline == "" {
-		cmdline = defaultServerCmd(server)
-		if cmdline == "" {
-			return nil, nil, fmt.Errorf("no --server-cmd given and no default for server %q (set --server-cmd or EVAL_%s_CMD)", server, strings.ToUpper(server))
-		}
+	if prof, ok := serverProfiles[server]; ok && !prof.hermetic {
+		fmt.Fprintf(os.Stderr, "eval: %s is not hermetic — its stdio server authenticates at startup, so this run needs real credentials and network (a --live target)\n", server)
 	}
 
-	fields, err := splitCommand(cmdline)
+	fields, err := serverFields(server, serverCmd)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -227,7 +252,7 @@ func connect(ctx context.Context, server, serverCmd string) (*mcp.ClientSession,
 	client := mcp.NewClient(&mcp.Implementation{Name: "eval-client", Version: "0.0.0"}, nil)
 	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("spawn %q: %w", cmdline, err)
+		return nil, nil, fmt.Errorf("spawn %q: %w", strings.Join(fields, " "), err)
 	}
 	return session, func() { _ = session.Close() }, nil
 }
@@ -274,37 +299,239 @@ func splitCommand(s string) ([]string, error) {
 	return fields, nil
 }
 
-// defaultServerCmd maps a product name to its stdio server command, taken from
-// EVAL_<PRODUCT>_CMD when set.
-func defaultServerCmd(server string) string {
-	if v := os.Getenv("EVAL_" + strings.ToUpper(server) + "_CMD"); v != "" {
-		return v
-	}
-	switch server {
-	case "fizzy":
-		// Quoted, so a path with spaces survives splitCommand as one field.
-		if path, err := exec.LookPath("fizzy-mcp"); err == nil {
-			return strconv.Quote(path) + " stdio --writes"
-		}
-	}
-	return ""
+// serverProfile describes how to launch and prime one product's stdio MCP
+// server. The eval package is product-agnostic — it reads whatever a session
+// lists and describes — so everything product-specific lives here in the
+// command glue, never in eval/. Adding a product is one map entry, which is
+// what "2nd & 3rd server, no per-server code" means in practice.
+type serverProfile struct {
+	bin  string            // default binary name, resolved on PATH
+	args []string          // stdio subcommand and flags
+	env  map[string]string // env injected only when absent (dummy startup creds)
+	// hermetic is true when tools/list + describe need no live backend or real
+	// credentials, so the eval runs offline at zero cost. A non-hermetic server
+	// is a credentialed / --live target: it is wired here so it composes the
+	// moment it can run, but a default (uncredentialed) spawn will fail.
+	hermetic bool
 }
 
-// childEnv supplies the spawned server a hermetic environment. The structural
-// eval never reaches a backend, but some servers refuse to start without a
-// token, so a dummy is injected when absent.
+// serverProfiles is the known-product registry. fizzy and hey serve their
+// catalog's list+describe surface from the vendored SDK model without touching
+// a backend, so a dummy token (fizzy) or no token (hey) starts them
+// hermetically. basecamp-mcp's stdio authenticates eagerly — it fetches
+// authorization.json before serving — so it needs real credentials and network
+// until the cassette player (hillclimb #2) can stub its startup.
+var serverProfiles = map[string]serverProfile{
+	"fizzy":    {bin: "fizzy-mcp", args: []string{"stdio", "--writes"}, env: map[string]string{"FIZZY_TOKEN": "eval-structural-only"}, hermetic: true},
+	"hey":      {bin: "hey-mcp", args: []string{"stdio"}, hermetic: true},
+	"basecamp": {bin: "basecamp-mcp", args: []string{"stdio"}, hermetic: false},
+}
+
+// serverFields resolves the argv to spawn for a server. An explicit
+// --server-cmd or an EVAL_<PRODUCT>_CMD is a user-supplied command line, so it
+// is tokenized by splitCommand (honoring quotes). The registry default, by
+// contrast, returns the PATH-resolved binary and its args as an argv slice
+// directly — never round-tripping through a joined string — so a binary
+// installed under a directory whose name contains spaces still spawns
+// correctly.
+func serverFields(server, serverCmd string) ([]string, error) {
+	if serverCmd != "" {
+		return splitCommand(serverCmd)
+	}
+	if v := os.Getenv("EVAL_" + strings.ToUpper(server) + "_CMD"); v != "" {
+		return splitCommand(v)
+	}
+	prof, ok := serverProfiles[server]
+	if !ok {
+		return nil, fmt.Errorf("no --server-cmd given and no default for server %q (set --server-cmd or EVAL_%s_CMD)", server, strings.ToUpper(server))
+	}
+	path, err := exec.LookPath(prof.bin)
+	if err != nil {
+		return nil, fmt.Errorf("server %q: %s not found on PATH (set --server-cmd or EVAL_%s_CMD): %w", server, prof.bin, strings.ToUpper(server), err)
+	}
+	return append([]string{path}, prof.args...), nil
+}
+
+// childEnv supplies the spawned server its environment plus any dummy startup
+// credential the registry injects, so a hermetic server starts without real
+// secrets. Existing env always wins — a real token is never overwritten.
 func childEnv(server string) []string {
 	env := os.Environ()
-	if server == "fizzy" && os.Getenv("FIZZY_TOKEN") == "" {
-		env = append(env, "FIZZY_TOKEN=eval-structural-only")
+	for k, v := range serverProfiles[server].env {
+		if os.Getenv(k) == "" {
+			env = append(env, k+"="+v)
+		}
 	}
 	return env
 }
 
+// loadCorpus reads a cached corpus and checks it belongs to the selected
+// server, without needing a session: a corpus grades product-specific
+// tool/action names, so running it against a different live catalog would
+// silently mislabel the mismatch as model failures. (Corpora written before
+// the server metadata existed carry an empty server and can't be checked.)
+// It returns the corpus's own generation metadata so a rewrite keeps it.
+func loadCorpus(path, server string) ([]eval.Scenario, eval.GenerateOptions, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, eval.GenerateOptions{}, err
+	}
+	corpus, err := eval.LoadCorpus(data)
+	if err != nil {
+		return nil, eval.GenerateOptions{}, fmt.Errorf("%s: %w", path, err)
+	}
+	if corpus.Server != "" && corpus.Server != server {
+		return nil, eval.GenerateOptions{}, fmt.Errorf("corpus %s was generated for server %q but --server is %q", path, corpus.Server, server)
+	}
+	return corpus.Scenarios, eval.GenerateOptions{N: corpus.N, Seed: corpus.Seed}, nil
+}
+
+// preflightOpts carries the parsed flags the preflight gate reads.
+type preflightOpts struct {
+	server, backend, models, out, writeScen, scenPath, baseline string
+	gen                                                         eval.GenerateOptions
+}
+
+// preflight runs every check that needs neither a server connection nor a paid
+// model call, returning the loaded baseline (nil when --baseline is unset), the
+// loaded corpus (nil when the run will generate one), the generation options (a
+// loaded corpus keeps its own), and the label->wire-model-id plan the run will
+// produce. It is the single gate the command runs before connect: the only
+// checks left for afterward are the ones that need the live catalog — reading
+// the spec to generate a corpus, and the cell overlap for a generated corpus,
+// whose ids do not exist until then.
+func preflight(o preflightOpts) (*eval.Baseline, []eval.Scenario, eval.GenerateOptions, map[string]string, error) {
+	gen := o.gen
+
+	// Backend, model labels, and the API key when the API backend is selected
+	// — all resolvable from flags alone.
+	plan, err := modelPlan(o.backend, o.models)
+	if err != nil {
+		return nil, nil, gen, nil, err
+	}
+
+	// Output destinations must be writable and must not alias a corpus or the
+	// baseline (os.Create truncates).
+	for _, path := range []string{o.out, o.writeScen} {
+		if path != "" {
+			if err := preflightWritable(path); err != nil {
+				return nil, nil, gen, nil, err
+			}
+		}
+	}
+	if err := checkAliases(o.out, o.writeScen, o.scenPath, o.baseline); err != nil {
+		return nil, nil, gen, nil, err
+	}
+
+	// Baseline file: present, non-empty, well-formed.
+	var base *eval.Baseline
+	if o.baseline != "" {
+		bf, err := os.Open(o.baseline)
+		if err != nil {
+			return nil, nil, gen, nil, err
+		}
+		base, err = eval.LoadBaseline(bf)
+		_ = bf.Close()
+		if err != nil {
+			return nil, nil, gen, nil, err
+		}
+	}
+
+	// Loaded corpus: readable, well-formed, and generated for this server.
+	var scenarios []eval.Scenario
+	if o.scenPath != "" {
+		if scenarios, gen, err = loadCorpus(o.scenPath, o.server); err != nil {
+			return nil, nil, gen, nil, err
+		}
+	}
+
+	// Against a baseline: each label the run will use must name the same wire
+	// model the baseline recorded under it, and — when the corpus is already
+	// known — the run must share a cell with the baseline. (A generated
+	// corpus's overlap is checked after connect, once its ids exist.)
+	if base != nil {
+		if err := base.CheckModelIDs(plan); err != nil {
+			return nil, nil, gen, nil, err
+		}
+		if scenarios != nil {
+			if err := base.CheckOverlap(planLabels(plan), scenarioIDs(scenarios)); err != nil {
+				return nil, nil, gen, nil, err
+			}
+		}
+	}
+	return base, scenarios, gen, plan, nil
+}
+
+// modelPlan maps each requested label to the wire model id the backend will
+// record for it, validating the backend name, the API key when the API backend
+// is selected, and that at least one label was given — all without a session or
+// a paid call, so these deterministic errors surface before connect. The oracle
+// backend answers under a single "oracle" label regardless of --models.
+func modelPlan(backend, modelsCSV string) (map[string]string, error) {
+	var labels []string
+	seen := map[string]bool{}
+	for _, l := range strings.Split(modelsCSV, ",") {
+		if l = strings.TrimSpace(l); l != "" {
+			// A repeated label collapses in the plan map and Run rejects it as
+			// a duplicate only after connect; catch it here, before spend.
+			if seen[l] {
+				return nil, fmt.Errorf("duplicate model label %q in --models", l)
+			}
+			seen[l] = true
+			labels = append(labels, l)
+		}
+	}
+	if len(labels) == 0 {
+		return nil, fmt.Errorf("no models given")
+	}
+	plan := map[string]string{}
+	switch backend {
+	case "cli":
+		for _, l := range labels {
+			plan[l] = cliModelID(l)
+		}
+	case "api":
+		if os.Getenv("ANTHROPIC_API_KEY") == "" {
+			return nil, fmt.Errorf("--backend api needs ANTHROPIC_API_KEY")
+		}
+		for _, l := range labels {
+			plan[l] = apiModelID(l)
+		}
+	case "oracle":
+		plan["oracle"] = "oracle"
+	default:
+		return nil, fmt.Errorf("unknown backend %q (cli, api, oracle)", backend)
+	}
+	return plan, nil
+}
+
+// planLabels returns the run's model labels; scenarioIDs the corpus's ids.
+func planLabels(plan map[string]string) []string {
+	labels := make([]string, 0, len(plan))
+	for l := range plan {
+		labels = append(labels, l)
+	}
+	return labels
+}
+
+func scenarioIDs(scenarios []eval.Scenario) []string {
+	ids := make([]string, 0, len(scenarios))
+	for _, sc := range scenarios {
+		ids = append(ids, sc.ID)
+	}
+	return ids
+}
+
 // buildModels resolves the backend and model labels into Model backends. The
-// oracle backend needs the scenario corpus, so it generates one from the live
-// spec when none was loaded.
-func buildModels(ctx context.Context, backend, modelsCSV string, scenarios []eval.Scenario, session *mcp.ClientSession, gen eval.GenerateOptions) ([]eval.Model, error) {
+// oracle answers from the resolved corpus.
+func buildModels(backend, modelsCSV string, scenarios []eval.Scenario) ([]eval.Model, error) {
+	// The oracle answers from the corpus under a single "oracle" label, so it
+	// is built once regardless of --models. One instance per label would
+	// collide on that shared label and Run would reject the whole run as
+	// duplicate — so a valid multi-label oracle invocation always failed.
+	if backend == "oracle" {
+		return []eval.Model{eval.NewOracleModel(scenarios)}, nil
+	}
 	labels := strings.Split(modelsCSV, ",")
 	var models []eval.Model
 	for _, label := range labels {
@@ -321,15 +548,6 @@ func buildModels(ctx context.Context, backend, modelsCSV string, scenarios []eva
 				return nil, err
 			}
 			models = append(models, m)
-		case "oracle":
-			if scenarios == nil {
-				specs, err := eval.SpecFromSession(ctx, session)
-				if err != nil {
-					return nil, err
-				}
-				scenarios = eval.Generate(specs, gen)
-			}
-			models = append(models, eval.NewOracleModel(scenarios))
 		default:
 			return nil, fmt.Errorf("unknown backend %q (cli, api, oracle)", backend)
 		}

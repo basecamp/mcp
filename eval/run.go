@@ -83,6 +83,7 @@ func Run(ctx context.Context, session *mcp.ClientSession, cfg Config) (*Report, 
 	if err != nil {
 		return nil, err
 	}
+	idx := Index(specs)
 	scenarios := cfg.Scenarios
 	if scenarios == nil {
 		scenarios = Generate(specs, cfg.Gen)
@@ -94,7 +95,6 @@ func Run(ctx context.Context, session *mcp.ClientSession, cfg Config) (*Report, 
 	if len(scenarios) == 0 {
 		return nil, fmt.Errorf("no scenarios to run: the server catalog exposes no actions, or the corpus is empty")
 	}
-	idx := Index(specs)
 	if err := checkCorpus(scenarios, idx); err != nil {
 		return nil, err
 	}

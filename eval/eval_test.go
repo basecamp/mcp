@@ -1496,3 +1496,120 @@ func TestCatalogAdvertisesDynamicBody(t *testing.T) {
 		t.Fatalf("instruction still forbids undeclared params unconditionally:\n%s", out)
 	}
 }
+
+// TestPinnedCorpusGatesAnnotationDrift covers the gap grading cannot see: the
+// oracle answers a pinned corpus with the pinned gold, so an action that only
+// loses a safety annotation still scores 1 and the smoke stays green. The
+// corpus preflight (checkCorpus) must reject the drift instead — this is the
+// smoke-shaped end-to-end check over the whole fake catalog, on top of the
+// per-shape cases in TestRunRejectsSafetyDriftBeforeSpend.
+func TestPinnedCorpusGatesAnnotationDrift(t *testing.T) {
+	ctx := context.Background()
+	srv, err := NewFakeServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, cleanup, err := ConnectInProcess(ctx, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	specs, err := SpecFromSession(ctx, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinned := Generate(specs, GenerateOptions{N: 100, Seed: 1})
+	run := func(scenarios []Scenario) error {
+		_, err := Run(ctx, session, Config{Models: []Model{NewOracleModel(scenarios)}, Scenarios: scenarios})
+		return err
+	}
+
+	// The corpus as pinned matches the live catalog.
+	if err := run(pinned); err != nil {
+		t.Fatalf("matching corpus rejected: %v", err)
+	}
+
+	// An idempotent write that loses its Idempotent annotation grades
+	// identically — same gold, same score — so only the drift check sees it.
+	for _, want := range []Class{ClassIdempotent, ClassRead, ClassDestructive} {
+		drifted := append([]Scenario(nil), pinned...)
+		idx := -1
+		for i, sc := range drifted {
+			if sc.Class == want {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			t.Fatalf("fake catalog has no %s action to drift", want)
+		}
+		// Pin a class the live catalog no longer reports for that action.
+		drifted[idx].Class = ClassWrite
+		if want == ClassWrite {
+			drifted[idx].Class = ClassRead
+		}
+		if err := run(drifted); err == nil {
+			t.Fatalf("%s -> write annotation drift on %s was not gated", want, drifted[idx].ID)
+		} else if !strings.Contains(err.Error(), drifted[idx].ID) {
+			t.Fatalf("drift error does not name the scenario: %v", err)
+		}
+	}
+
+	// A read action that stops being read-only drifts readonly_framed too.
+	drifted := append([]Scenario(nil), pinned...)
+	for i, sc := range drifted {
+		if sc.ReadOnlyFramed {
+			drifted[i].ReadOnlyFramed = false
+			drifted[i].Class = ClassRead // isolate the readonly_framed check
+			break
+		}
+	}
+	if err := run(drifted); err == nil {
+		t.Fatal("readonly_framed drift was not gated")
+	}
+
+	// A scenario whose gold action no longer exists is a corpus/surface
+	// mismatch, refused by the corpus preflight before any cell runs — it is
+	// not a drift finding, and never reaches scoring.
+	gone := append([]Scenario(nil), pinned...)
+	gone[0].GoldAction = "no_such_action"
+	err = run(gone)
+	if err == nil {
+		t.Fatal("removed gold action was not refused")
+	}
+	if strings.Contains(err.Error(), "drifted") || !strings.Contains(err.Error(), "not in the live catalog") {
+		t.Fatalf("removed action must be refused as a corpus mismatch, not reported as drift: %v", err)
+	}
+}
+
+// TestCommittedCorporaLoad loads every corpus in testdata through the real
+// loader. A hand edit to a pinned corpus that breaks its JSON would otherwise
+// surface only when someone ran the documented product invocation, since the
+// smoke pins only the fake corpus.
+func TestCommittedCorporaLoad(t *testing.T) {
+	paths, err := filepath.Glob("testdata/scenarios/*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("no committed corpora found")
+	}
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := LoadCorpus(data)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		// Every framing must be what generation renders for its gold params:
+		// structured values as JSON, never Go's map[]/[value] spelling.
+		for _, sc := range c.Scenarios {
+			if strings.Contains(sc.NLFraming, "map[") {
+				t.Fatalf("%s: %s framing carries Go rendering: %q", path, sc.ID, sc.NLFraming)
+			}
+		}
+	}
+}

@@ -1,0 +1,361 @@
+package eval
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"io"
+	"sort"
+	"strings"
+)
+
+// This file adds the "quickly aware of regressions" half of the loop: a run's
+// JSONL records are the append-only store, and a new run is compared against a
+// prior one cell-for-cell. A score drop or a newly-failing scenario is a
+// regression the caller can gate on (nonzero exit), so a catalog, SDK, or
+// prompt change that quietly degrades routing fails a check instead of merging
+// unnoticed.
+//
+// Comparison is keyed on (model, scenario_id): the same model answering the
+// same framing is the like-for-like cell. Catalog/SDK/API SHAs (the design's
+// three-SHA row) are not yet on the Record, so a corpus regenerated from a
+// changed catalog shows up here as added/removed scenarios rather than a
+// same-cell drop — surfaced, not silently dropped.
+
+// recordKeys are the JSON keys every Record carries (omitempty fields
+// excluded), derived from the type itself so a field added to Record is
+// required of a baseline without a hand-kept list.
+var recordKeys = func() []string {
+	data, err := json.Marshal(Record{})
+	if err != nil {
+		panic(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		panic(err)
+	}
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}()
+
+// baselineKey identifies one comparable cell.
+func baselineKey(model, scenarioID string) string { return model + "\x00" + scenarioID }
+
+// Baseline is a prior run indexed for cell lookup.
+type Baseline struct {
+	cells map[string]Record
+}
+
+// LoadBaseline reads a prior run's JSONL into a comparable baseline. Blank
+// lines are skipped so a hand-edited file still loads.
+func LoadBaseline(r io.Reader) (*Baseline, error) {
+	b := &Baseline{cells: map[string]Record{}}
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(line), &fields); err != nil {
+			return nil, fmt.Errorf("decode baseline record: %w", err)
+		}
+		// A record this tool wrote carries every non-optional Record field. A
+		// line that decodes but lacks one — a hand-written or truncated
+		// baseline, a file from some other tool — would default the missing
+		// grading fields to zero, so every current cell compares as unchanged
+		// or improved and the gate is silently disarmed. Check the whole shape
+		// rather than one field at a time.
+		for _, key := range recordKeys {
+			if _, ok := fields[key]; !ok {
+				return nil, fmt.Errorf("baseline record missing %q: %s", key, line)
+			}
+		}
+		var rec Record
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			return nil, fmt.Errorf("decode baseline record: %w", err)
+		}
+		// A record without identity (a damaged line, or a stray {}) cannot key
+		// a comparison cell — inserting it under a blank key would defeat the
+		// empty-baseline guard below and silently disarm the gate. Reject it so
+		// a corrupt JSONL fails loudly instead.
+		if rec.Model == "" || rec.ScenarioID == "" {
+			return nil, fmt.Errorf("baseline record missing model or scenario_id: %s", line)
+		}
+		key := baselineKey(rec.Model, rec.ScenarioID)
+		// The store is append-only JSONL, so two runs concatenated into one
+		// file put the same cell in twice. Keeping the last silently lets a
+		// later failing run overwrite an earlier passing one — the current run
+		// then compares equal to the failure and clears the gate. There is no
+		// defensible run-selection rule to pick between them here, so name the
+		// cell and refuse.
+		if _, dup := b.cells[key]; dup {
+			return nil, fmt.Errorf("baseline has duplicate cell %s/%s: split the runs into separate files or keep one", rec.Model, rec.ScenarioID)
+		}
+		b.cells[key] = rec
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	// An explicitly requested baseline with no records cannot provide a
+	// regression signal: comparing against it would classify every cell as
+	// "added" and pass a merge gate vacuously. Reject it so an empty or
+	// truncated file fails loudly instead of silently disarming the gate.
+	if len(b.cells) == 0 {
+		return nil, fmt.Errorf("baseline has no records: it cannot provide a regression signal")
+	}
+	return b, nil
+}
+
+// CheckOverlap proves, before any model is invoked, that the run about to
+// happen shares at least one (model, scenario_id) cell with the baseline.
+// CompareToBaseline refuses a zero-overlap comparison, but only after the
+// run — every paid call would already have been made for a --models label the
+// baseline does not carry, or a corpus disjoint from it. Same rule, earlier.
+func (b *Baseline) CheckOverlap(models []string, scenarioIDs []string) error {
+	for _, m := range models {
+		for _, id := range scenarioIDs {
+			if _, ok := b.cells[baselineKey(m, id)]; ok {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("baseline shares no (model, scenario_id) cell with this run: %d model(s) x %d scenario(s) against %d baseline cells — nothing would be compared", len(models), len(scenarioIDs), len(b.cells))
+}
+
+// CheckModelIDs proves, before any model is invoked, that each label this run
+// will use names the same wire model the baseline recorded under it.
+// CompareToBaseline refuses a mismatched cell, but only after the run — the
+// paid calls would already have been made against a baseline that could never
+// be like-for-like. Labels the baseline lacks, and baseline records without a
+// model_id, are not checked here.
+func (b *Baseline) CheckModelIDs(modelIDs map[string]string) error {
+	for _, rec := range b.cells {
+		want, ok := modelIDs[rec.Model]
+		if !ok || rec.ModelID == "" || want == "" || rec.ModelID == want {
+			continue
+		}
+		return fmt.Errorf("label %q: baseline was produced by model %q, this run would use %q — not the same model; regenerate the baseline or run under a distinct label", rec.Model, rec.ModelID, want)
+	}
+	return nil
+}
+
+// RegressionKind names why a cell regressed.
+type RegressionKind string
+
+const (
+	// KindNewlyFailing: the cell passed in the baseline and fails now.
+	KindNewlyFailing RegressionKind = "newly-failing"
+	// KindScoreDrop: the cell's score fell without crossing the pass line
+	// (both runs sub-pass, but worse now).
+	KindScoreDrop RegressionKind = "score-drop"
+	// KindSafety: the cell respected safety in the baseline and violates it
+	// now — a read/lookup framing that newly resolves to a destructive action.
+	KindSafety RegressionKind = "safety"
+	// KindDimension: the pass/fail score did not move (today's grader scores a
+	// binary 0/1, so an already-failing cell keeps score 0), but a correctness
+	// dimension went true->false — the model got the tool, action, or params
+	// right before and gets it wrong now. Strictly worse, and invisible to a
+	// score-only compare, so it gates too.
+	KindDimension RegressionKind = "dimension"
+)
+
+// Regression is one cell that got worse against the baseline.
+type Regression struct {
+	Model      string
+	ScenarioID string
+	Kind       RegressionKind
+	Detail     string // the dimension that regressed, for KindDimension
+	OldScore   float64
+	NewScore   float64
+}
+
+// Comparison is the full diff of a run against a baseline.
+type Comparison struct {
+	Regressions []Regression // score drops, newly-failing, and safety regressions
+	Added       []string     // "model/scenario" present now, absent in baseline
+	Removed     []string     // "model/scenario" present in baseline, absent now
+	Improved    []Regression // cells that got better (reported, never gated)
+}
+
+// HasRegression reports whether any cell got worse — the gate signal.
+func (c Comparison) HasRegression() bool { return len(c.Regressions) > 0 }
+
+// CompareToBaseline diffs the current records against the baseline, cell by
+// cell. Added scenarios are never regressions (there is nothing to compare);
+// removed scenarios are reported so a shrinking corpus is visible but do not
+// gate, since dropping a scenario is a corpus edit, not a model regression.
+//
+// It errors when no cell matches. Added and removed are individually
+// non-gating, so a run with zero (model, scenario_id) overlap — an emptied
+// corpus, or a --models label that does not match the baseline's — would
+// classify every cell as one or the other, report "no regression", and pass a
+// merge gate having compared nothing. A comparison that compares nothing is
+// not a pass.
+func CompareToBaseline(base *Baseline, records []Record) (Comparison, error) {
+	var cmp Comparison
+	matched := 0
+	seen := map[string]bool{}
+	for _, rec := range records {
+		key := baselineKey(rec.Model, rec.ScenarioID)
+		seen[key] = true
+		prev, ok := base.cells[key]
+		if !ok {
+			cmp.Added = append(cmp.Added, rec.Model+"/"+rec.ScenarioID)
+			continue
+		}
+		matched++
+		// A cell is like-for-like only if the same wire model produced both
+		// sides. The label is the key, but a CLI "haiku" (model_id haiku) and
+		// an API "haiku" (claude-3-5-haiku-latest), or the same alias before
+		// and after a retarget, are different models: gating one against the
+		// other would report a model swap as a routing regression. Records
+		// from before model_id existed carry none and are not checked.
+		if prev.ModelID != "" && rec.ModelID != "" && prev.ModelID != rec.ModelID {
+			return cmp, fmt.Errorf("cell %s/%s: baseline was produced by model %q, this run by %q — not the same model; regenerate the baseline or run under a distinct label", rec.Model, rec.ScenarioID, prev.ModelID, rec.ModelID)
+		}
+		// Safety is the sharpest signal: a newly destructive answer to a
+		// read/lookup framing is always a regression, even if the score math
+		// would not otherwise flag it.
+		if prev.AnnotationRespected && !rec.AnnotationRespected {
+			cmp.Regressions = append(cmp.Regressions, Regression{
+				Model: rec.Model, ScenarioID: rec.ScenarioID, Kind: KindSafety,
+				OldScore: prev.Score, NewScore: rec.Score,
+			})
+			continue
+		}
+		switch {
+		case prev.Score >= 1 && rec.Score < 1:
+			cmp.Regressions = append(cmp.Regressions, Regression{
+				Model: rec.Model, ScenarioID: rec.ScenarioID, Kind: KindNewlyFailing,
+				OldScore: prev.Score, NewScore: rec.Score,
+			})
+		case rec.Score < prev.Score:
+			// Only reachable once the grader emits fractional scores (a judge
+			// layer); today's binary 0/1 never lands here, which is why the
+			// dimension check below carries the already-failing case.
+			cmp.Regressions = append(cmp.Regressions, Regression{
+				Model: rec.Model, ScenarioID: rec.ScenarioID, Kind: KindScoreDrop,
+				OldScore: prev.Score, NewScore: rec.Score,
+			})
+		default:
+			// Score unchanged (typically both failing). A correctness dimension
+			// going true->false is still strictly worse and must gate; a pure
+			// improvement is reported, never gated.
+			if dim, ok := dimensionRegressed(prev, rec); ok {
+				cmp.Regressions = append(cmp.Regressions, Regression{
+					Model: rec.Model, ScenarioID: rec.ScenarioID, Kind: KindDimension,
+					Detail: dim, OldScore: prev.Score, NewScore: rec.Score,
+				})
+			} else if rec.Score > prev.Score {
+				cmp.Improved = append(cmp.Improved, Regression{
+					Model: rec.Model, ScenarioID: rec.ScenarioID, Kind: "improved",
+					OldScore: prev.Score, NewScore: rec.Score,
+				})
+			} else if dim, ok := dimensionImproved(prev, rec); ok {
+				// Symmetric to the dimension regression above: an already-failing
+				// cell that fixes a correctness dimension without yet passing is
+				// a real improvement the report should show (it never gates).
+				cmp.Improved = append(cmp.Improved, Regression{
+					Model: rec.Model, ScenarioID: rec.ScenarioID, Kind: "improved",
+					Detail: dim, OldScore: prev.Score, NewScore: rec.Score,
+				})
+			}
+		}
+	}
+	for key, prev := range base.cells {
+		if !seen[key] {
+			cmp.Removed = append(cmp.Removed, prev.Model+"/"+prev.ScenarioID)
+		}
+	}
+	sort.Slice(cmp.Regressions, func(i, j int) bool { return regLess(cmp.Regressions[i], cmp.Regressions[j]) })
+	sort.Slice(cmp.Improved, func(i, j int) bool { return regLess(cmp.Improved[i], cmp.Improved[j]) })
+	sort.Strings(cmp.Added)
+	sort.Strings(cmp.Removed)
+	if matched == 0 {
+		return cmp, fmt.Errorf("baseline comparison matched no cells: %d current and %d baseline (model, scenario_id) cells with no overlap", len(records), len(base.cells))
+	}
+	return cmp, nil
+}
+
+// dimensionRegressed reports the first correctness dimension that held in the
+// baseline and fails now. Safety is handled separately (it is checked before
+// the score switch), so this covers tool, action, and param validity — the
+// dimensions that can degrade while a failing cell's score stays 0.
+func dimensionRegressed(prev, rec Record) (string, bool) {
+	switch {
+	case prev.ToolMatch && !rec.ToolMatch:
+		return "tool_match", true
+	case prev.ActionMatch && !rec.ActionMatch:
+		return "action_match", true
+	case prev.ParamsMatch && !rec.ParamsMatch:
+		return "params_match", true
+	}
+	return "", false
+}
+
+// dimensionImproved is the mirror of dimensionRegressed: the first correctness
+// dimension that failed in the baseline and holds now. Used only to keep the
+// (non-gating) improvement report symmetric with the dimension gate.
+func dimensionImproved(prev, rec Record) (string, bool) {
+	switch {
+	case !prev.ToolMatch && rec.ToolMatch:
+		return "tool_match", true
+	case !prev.ActionMatch && rec.ActionMatch:
+		return "action_match", true
+	case !prev.ParamsMatch && rec.ParamsMatch:
+		return "params_match", true
+	}
+	return "", false
+}
+
+func regLess(a, b Regression) bool {
+	if a.Model != b.Model {
+		return a.Model < b.Model
+	}
+	return a.ScenarioID < b.ScenarioID
+}
+
+// Render renders the comparison as a human- and CI-log-readable block.
+func (c Comparison) Render(baselinePath string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "\nBASELINE COMPARE — vs %s\n", baselinePath)
+	// "No change" means exactly that: no regression, nothing added or removed,
+	// and nothing improved. An improvement-only run falls through so its rows
+	// render with scenario and detail, rather than being summarized away
+	// under a line that says every cell held its score.
+	if !c.HasRegression() && len(c.Added) == 0 && len(c.Removed) == 0 && len(c.Improved) == 0 {
+		b.WriteString("no change: every cell holds its baseline score\n")
+		return b.String()
+	}
+	if c.HasRegression() {
+		fmt.Fprintf(&b, "\nREGRESSIONS (%d):\n", len(c.Regressions))
+		fmt.Fprintf(&b, "%-10s  %-14s  %-32s  %s\n", "model", "kind", "scenario", "detail")
+		for _, r := range c.Regressions {
+			detail := fmt.Sprintf("%.2f -> %.2f", r.OldScore, r.NewScore)
+			if r.Kind == KindDimension {
+				detail = r.Detail + " true -> false"
+			}
+			fmt.Fprintf(&b, "%-10s  %-14s  %-32s  %s\n", r.Model, r.Kind, r.ScenarioID, detail)
+		}
+	}
+	for _, s := range c.Improved {
+		detail := fmt.Sprintf("%.2f -> %.2f", s.OldScore, s.NewScore)
+		if s.Detail != "" {
+			detail = s.Detail + " false -> true"
+		}
+		fmt.Fprintf(&b, "improved   %-10s  %-32s  %s\n", s.Model, s.ScenarioID, detail)
+	}
+	for _, s := range c.Added {
+		fmt.Fprintf(&b, "added      %s\n", s)
+	}
+	for _, s := range c.Removed {
+		fmt.Fprintf(&b, "removed    %s\n", s)
+	}
+	return b.String()
+}
