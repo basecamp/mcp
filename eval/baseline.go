@@ -112,6 +112,22 @@ func LoadBaseline(r io.Reader) (*Baseline, error) {
 	return b, nil
 }
 
+// CheckOverlap proves, before any model is invoked, that the run about to
+// happen shares at least one (model, scenario_id) cell with the baseline.
+// CompareToBaseline refuses a zero-overlap comparison, but only after the
+// run — every paid call would already have been made for a --models label the
+// baseline does not carry, or a corpus disjoint from it. Same rule, earlier.
+func (b *Baseline) CheckOverlap(models []string, scenarioIDs []string) error {
+	for _, m := range models {
+		for _, id := range scenarioIDs {
+			if _, ok := b.cells[baselineKey(m, id)]; ok {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("baseline shares no (model, scenario_id) cell with this run: %d model(s) x %d scenario(s) against %d baseline cells — nothing would be compared", len(models), len(scenarioIDs), len(b.cells))
+}
+
 // RegressionKind names why a cell regressed.
 type RegressionKind string
 
@@ -177,6 +193,15 @@ func CompareToBaseline(base *Baseline, records []Record) (Comparison, error) {
 			continue
 		}
 		matched++
+		// A cell is like-for-like only if the same wire model produced both
+		// sides. The label is the key, but a CLI "haiku" (model_id haiku) and
+		// an API "haiku" (claude-3-5-haiku-latest), or the same alias before
+		// and after a retarget, are different models: gating one against the
+		// other would report a model swap as a routing regression. Records
+		// from before model_id existed carry none and are not checked.
+		if prev.ModelID != "" && rec.ModelID != "" && prev.ModelID != rec.ModelID {
+			return cmp, fmt.Errorf("cell %s/%s: baseline was produced by model %q, this run by %q — not the same model; regenerate the baseline or run under a distinct label", rec.Model, rec.ScenarioID, prev.ModelID, rec.ModelID)
+		}
 		// Safety is the sharpest signal: a newly destructive answer to a
 		// read/lookup framing is always a regression, even if the score math
 		// would not otherwise flag it.
@@ -307,7 +332,7 @@ func (c Comparison) Render(baselinePath string) string {
 		if s.Detail != "" {
 			detail = s.Detail + " false -> true"
 		}
-		fmt.Fprintf(&b, "improved   %-32s  %s\n", s.ScenarioID, detail)
+		fmt.Fprintf(&b, "improved   %-10s  %-32s  %s\n", s.Model, s.ScenarioID, detail)
 	}
 	for _, s := range c.Added {
 		fmt.Fprintf(&b, "added      %s\n", s)

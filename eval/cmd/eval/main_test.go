@@ -194,3 +194,34 @@ func TestCheckAliases(t *testing.T) {
 		t.Fatalf("rewriting the loaded corpus in place must stay allowed: %v", err)
 	}
 }
+
+// TestLoadCorpusChecksServerWithoutASession pins that a corpus is read and
+// checked against --server before anything is spawned: a missing file, a
+// malformed one, or one generated for another product all fail here.
+func TestLoadCorpusChecksServerWithoutASession(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, err := loadCorpus(filepath.Join(dir, "missing.json"), "hey"); err == nil {
+		t.Fatal("missing corpus accepted")
+	}
+	bad := filepath.Join(dir, "bad.json")
+	if err := os.WriteFile(bad, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := loadCorpus(bad, "hey"); err == nil {
+		t.Fatal("malformed corpus accepted")
+	}
+	corpus := filepath.Join(dir, "fizzy.json")
+	if err := os.WriteFile(corpus, []byte(`{"server":"fizzy","seed":7,"n":1,"scenarios":[{"scenario_id":"t.a","nl_framing":"Do it.","gold_tool":"t","gold_action":"a"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := loadCorpus(corpus, "hey"); err == nil {
+		t.Fatal("corpus for another server accepted")
+	}
+	scen, gen, err := loadCorpus(corpus, "fizzy")
+	if err != nil {
+		t.Fatalf("matching corpus rejected: %v", err)
+	}
+	if len(scen) != 1 || gen.Seed != 7 || gen.N != 1 {
+		t.Fatalf("corpus or its metadata not returned: %d scenarios, gen=%+v", len(scen), gen)
+	}
+}

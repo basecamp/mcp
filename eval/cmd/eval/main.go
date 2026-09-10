@@ -98,36 +98,54 @@ func run() error {
 	// never relabels its cases with this run's flags.
 	gen := eval.GenerateOptions{N: *n, Seed: *seed}
 
+	// Load the corpus before spawning a server: a missing, malformed, or
+	// wrong-server --scenarios is a deterministic caller error, and a
+	// non-hermetic server (basecamp authenticates eagerly) would otherwise
+	// make a live authorization call, or fail on credentials, before the
+	// corpus error could be reported.
+	var scenarios []eval.Scenario
+	if *scenPath != "" {
+		var err error
+		if scenarios, gen, err = loadCorpus(*scenPath, *server); err != nil {
+			return err
+		}
+	}
+
 	session, cleanup, err := connect(ctx, *server, *serverCmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	var scenarios []eval.Scenario
-	if *scenPath != "" {
-		data, err := os.ReadFile(*scenPath)
+	// Resolve the corpus once, here, so every preflight below sees the exact
+	// scenarios the run will grade. Run re-validates it against the catalog.
+	if scenarios == nil {
+		specs, err := eval.SpecFromSession(ctx, session)
 		if err != nil {
 			return err
 		}
-		corpus, err := eval.LoadCorpus(data)
-		if err != nil {
-			return err
-		}
-		// A corpus grades product-specific tool/action names; running it against
-		// a different live catalog silently mislabels the mismatch as model
-		// failures. Reject it up front. (Corpora written before this metadata
-		// existed carry an empty server and can't be checked.)
-		if corpus.Server != "" && corpus.Server != *server {
-			return fmt.Errorf("corpus %s was generated for server %q but --server is %q", *scenPath, corpus.Server, *server)
-		}
-		scenarios = corpus.Scenarios
-		gen = eval.GenerateOptions{N: corpus.N, Seed: corpus.Seed}
+		scenarios = eval.Generate(specs, gen)
 	}
 
-	models, err := buildModels(ctx, *backend, *modelsCSV, scenarios, session, gen)
+	models, err := buildModels(*backend, *modelsCSV, scenarios)
 	if err != nil {
 		return err
+	}
+
+	// The baseline must share a cell with this run, or the comparison after
+	// the run would refuse — having already paid for every model call.
+	if base != nil {
+		labels := make([]string, 0, len(models))
+		for _, m := range models {
+			labels = append(labels, m.Label())
+		}
+		ids := make([]string, 0, len(scenarios))
+		for _, sc := range scenarios {
+			ids = append(ids, sc.ID)
+		}
+		if err := base.CheckOverlap(labels, ids); err != nil {
+			return err
+		}
 	}
 
 	rep, err := eval.Run(ctx, session, eval.Config{
@@ -384,10 +402,30 @@ func childEnv(server string) []string {
 	return env
 }
 
+// loadCorpus reads a cached corpus and checks it belongs to the selected
+// server, without needing a session: a corpus grades product-specific
+// tool/action names, so running it against a different live catalog would
+// silently mislabel the mismatch as model failures. (Corpora written before
+// the server metadata existed carry an empty server and can't be checked.)
+// It returns the corpus's own generation metadata so a rewrite keeps it.
+func loadCorpus(path, server string) ([]eval.Scenario, eval.GenerateOptions, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, eval.GenerateOptions{}, err
+	}
+	corpus, err := eval.LoadCorpus(data)
+	if err != nil {
+		return nil, eval.GenerateOptions{}, fmt.Errorf("%s: %w", path, err)
+	}
+	if corpus.Server != "" && corpus.Server != server {
+		return nil, eval.GenerateOptions{}, fmt.Errorf("corpus %s was generated for server %q but --server is %q", path, corpus.Server, server)
+	}
+	return corpus.Scenarios, eval.GenerateOptions{N: corpus.N, Seed: corpus.Seed}, nil
+}
+
 // buildModels resolves the backend and model labels into Model backends. The
-// oracle backend needs the scenario corpus, so it generates one from the live
-// spec when none was loaded.
-func buildModels(ctx context.Context, backend, modelsCSV string, scenarios []eval.Scenario, session *mcp.ClientSession, gen eval.GenerateOptions) ([]eval.Model, error) {
+// oracle answers from the resolved corpus.
+func buildModels(backend, modelsCSV string, scenarios []eval.Scenario) ([]eval.Model, error) {
 	labels := strings.Split(modelsCSV, ",")
 	var models []eval.Model
 	for _, label := range labels {
@@ -405,13 +443,6 @@ func buildModels(ctx context.Context, backend, modelsCSV string, scenarios []eva
 			}
 			models = append(models, m)
 		case "oracle":
-			if scenarios == nil {
-				specs, err := eval.SpecFromSession(ctx, session)
-				if err != nil {
-					return nil, err
-				}
-				scenarios = eval.Generate(specs, gen)
-			}
 			models = append(models, eval.NewOracleModel(scenarios))
 		default:
 			return nil, fmt.Errorf("unknown backend %q (cli, api, oracle)", backend)

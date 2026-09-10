@@ -298,15 +298,72 @@ func TestRenderShowsImprovementOnlyComparison(t *testing.T) {
 	if strings.Contains(out, "no change") {
 		t.Fatalf("improvement-only comparison rendered as no change:\n%s", out)
 	}
-	if !strings.Contains(out, "improved   a.x") || !strings.Contains(out, "0.00 -> 1.00") {
+	if !strings.Contains(out, "improved   haiku") || !strings.Contains(out, "a.x") || !strings.Contains(out, "0.00 -> 1.00") {
 		t.Fatalf("score improvement row missing:\n%s", out)
 	}
-	if !strings.Contains(out, "improved   b.y") || !strings.Contains(out, "tool_match false -> true") {
+	if !strings.Contains(out, "b.y") || !strings.Contains(out, "tool_match false -> true") {
 		t.Fatalf("dimension improvement row missing:\n%s", out)
 	}
 	// A genuinely unchanged run still says so.
 	same := compare(t, baselineFrom(t, prev), prev)
 	if !strings.Contains(same.Render("prior.jsonl"), "no change") {
 		t.Fatalf("unchanged run not rendered as no change:\n%s", same.Render("prior.jsonl"))
+	}
+}
+
+// TestBaselineCheckOverlapBeforeSpend pins the pre-run half of the
+// zero-overlap rule: a --models label the baseline lacks, or a disjoint
+// corpus, is refused before any model call rather than by the comparison
+// after the run has been paid for.
+func TestBaselineCheckOverlapBeforeSpend(t *testing.T) {
+	base := baselineFrom(t, records("haiku", "a.x", 1.0, true, "b.y", 1.0, true))
+	if err := base.CheckOverlap([]string{"sonnet"}, []string{"a.x", "b.y"}); err == nil {
+		t.Fatal("disjoint model label accepted")
+	}
+	if err := base.CheckOverlap([]string{"haiku"}, []string{"c.z"}); err == nil {
+		t.Fatal("disjoint corpus accepted")
+	}
+	if err := base.CheckOverlap(nil, []string{"a.x"}); err == nil {
+		t.Fatal("no models accepted")
+	}
+	if err := base.CheckOverlap([]string{"sonnet", "haiku"}, []string{"c.z", "a.x"}); err != nil {
+		t.Fatalf("one overlapping cell must be enough: %v", err)
+	}
+}
+
+// TestCompareRejectsModelIDMismatch pins that a label shared by two different
+// wire models is not a like-for-like cell: the comparison refuses, naming
+// both ids, instead of gating a model swap as a routing regression. Records
+// without a model_id (written before it existed) are not checked.
+func TestCompareRejectsModelIDMismatch(t *testing.T) {
+	prev := []Record{{Model: "haiku", ScenarioID: "a.x", Score: 1, AnnotationRespected: true, ModelID: "claude-3-5-haiku-latest"}}
+	base := baselineFrom(t, prev)
+	now := []Record{{Model: "haiku", ScenarioID: "a.x", Score: 0, AnnotationRespected: true, ModelID: "haiku"}}
+	_, err := CompareToBaseline(base, now)
+	if err == nil {
+		t.Fatal("different wire models under one label compared as one cell")
+	}
+	if !strings.Contains(err.Error(), "claude-3-5-haiku-latest") || !strings.Contains(err.Error(), `"haiku"`) {
+		t.Fatalf("error does not name both models: %v", err)
+	}
+	same := []Record{{Model: "haiku", ScenarioID: "a.x", Score: 1, AnnotationRespected: true, ModelID: "claude-3-5-haiku-latest"}}
+	if _, err := CompareToBaseline(base, same); err != nil {
+		t.Fatalf("same wire model rejected: %v", err)
+	}
+	legacy := []Record{{Model: "haiku", ScenarioID: "a.x", Score: 1, AnnotationRespected: true}}
+	if _, err := CompareToBaseline(baselineFrom(t, legacy), now); err != nil {
+		t.Fatalf("legacy baseline without model_id must still compare: %v", err)
+	}
+}
+
+// TestRenderImprovementRowsNameTheModel pins that every rendered category
+// carries the model: two models improving one scenario must be two
+// distinguishable rows.
+func TestRenderImprovementRowsNameTheModel(t *testing.T) {
+	prev := append(records("haiku", "a.x", 0.0, true), records("sonnet", "a.x", 0.0, true)...)
+	now := append(records("haiku", "a.x", 1.0, true), records("sonnet", "a.x", 1.0, true)...)
+	out := compare(t, baselineFrom(t, prev), now).Render("prior.jsonl")
+	if !strings.Contains(out, "improved   haiku ") || !strings.Contains(out, "improved   sonnet ") {
+		t.Fatalf("improvement rows do not name the model:\n%s", out)
 	}
 }

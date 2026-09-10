@@ -113,12 +113,14 @@ corpus. Two structurally distinct product catalogs, one unchanged loop:
 
 ```
 server  domains sampled                          model   pass    params  safety  cost_usd
-fizzy   boards, cards, columns, comments,         haiku   12/12   12/12   12/12   $0.0165   results/fizzy-v0.jsonl
+fizzy   boards, cards, columns, comments,         haiku   12/12   12/12   12/12   $0.0165*  results/fizzy-v0.jsonl
         steps, users
-hey     boxes, contacts, threads, todos           haiku   12/12   12/12   12/12   $0.0183   results/hey-v0.jsonl
+hey     boxes, contacts, threads, todos           haiku   12/12   12/12   12/12   $0.0183*  results/hey-v0.jsonl
 ```
 
-Both clear cleanly and cost under two cents: at this size the loop proves the
+\* estimated: both were CLI runs, which report no token counts, so the counts
+are derived at ~4 characters per token and each record says so
+(`usage_estimated`). Both clear cleanly and cost under two cents: at this size the loop proves the
 machinery and the frugality story across products, not model discrimination —
 that is what the harder-scenario hillclimb adds. The point of the second server
 is that landing it took zero eval-package changes: the hey corpus
