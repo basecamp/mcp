@@ -361,23 +361,28 @@ func TestPricing(t *testing.T) {
 	}
 }
 
-func TestDuplicateFramingsDisambiguated(t *testing.T) {
-	// Two actions with identical summaries and no params would frame
-	// identically; generation must keep framings unique so the oracle (keyed by
-	// framing) never maps two scenarios to one answer.
+func TestDuplicateFramingsDropped(t *testing.T) {
+	// Two actions with identical summaries and no params frame identically. A
+	// real model cannot tell them apart from the request, so the corpus keeps
+	// one rather than emitting a coin-flip cell tagged with an ordinal or —
+	// worse — with the gold action name the catalog prompt exposes.
 	specs := []ActionSpec{
 		{Tool: "t", Action: "zephyr", Summary: "Do the thing"},
 		{Tool: "t", Action: "quokka", Summary: "Do the thing"},
+		{Tool: "t", Action: "third", Summary: "Do the last thing"},
 	}
-	scen := Generate(specs, GenerateOptions{N: 2, Seed: 1})
-	if scen[0].NLFraming == scen[1].NLFraming {
-		t.Fatalf("colliding framings not disambiguated: %q", scen[0].NLFraming)
+	scen := Generate(specs, GenerateOptions{N: 3, Seed: 1})
+	if len(scen) != 2 {
+		t.Fatalf("want the collision dropped (2 scenarios), got %d: %+v", len(scen), scen)
 	}
-	// The disambiguator must never name the gold action: the catalog prompt
-	// exposes those names, so leaking one hands the model the answer.
+	seen := map[string]bool{}
 	for _, s := range scen {
-		if strings.Contains(s.NLFraming, s.GoldAction) {
-			t.Fatalf("framing %q leaks its gold action %q", s.NLFraming, s.GoldAction)
+		if seen[s.NLFraming] {
+			t.Fatalf("duplicate framing survived: %q", s.NLFraming)
+		}
+		seen[s.NLFraming] = true
+		if strings.Contains(s.NLFraming, s.GoldAction) || strings.HasSuffix(s.NLFraming, ")") {
+			t.Fatalf("framing %q was disguised instead of the collision being dropped", s.NLFraming)
 		}
 	}
 }
@@ -628,5 +633,21 @@ func TestRunRejectsEmptyCorpus(t *testing.T) {
 	_, err = Run(ctx, session, Config{Models: []Model{NewOracleModel(nil)}, Scenarios: []Scenario{}})
 	if err == nil || !strings.Contains(err.Error(), "no scenarios") {
 		t.Fatalf("empty supplied corpus accepted: err=%v", err)
+	}
+}
+
+// TestCatalogRendersEnumMembersAsJSON pins that the catalog shows enum members
+// as the JSON values the grader compares against: a string "1" and a number 1
+// must not both read as 1.
+func TestCatalogRendersEnumMembersAsJSON(t *testing.T) {
+	out := BuildSystem([]ActionSpec{{Tool: "t", Action: "a", Summary: "Do it", Params: []ParamSpec{
+		{Name: "mode", In: "body", Type: "string", Enum: []any{"1", "fast"}},
+		{Name: "level", In: "body", Type: "integer", Enum: []any{1.0, 2.0}},
+	}}})
+	if !strings.Contains(out, `mode(enum: "1"|"fast")`) {
+		t.Fatalf("string enum members not quoted as JSON:\n%s", out)
+	}
+	if !strings.Contains(out, `level(enum: 1|2)`) {
+		t.Fatalf("numeric enum members not rendered as JSON numbers:\n%s", out)
 	}
 }

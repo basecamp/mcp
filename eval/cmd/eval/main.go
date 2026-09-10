@@ -67,6 +67,20 @@ func run() error {
 			}
 		}
 	}
+	// The results file must not alias a corpus file: os.Create truncates, so
+	// --out naming the --write-scenarios path would destroy the corpus just
+	// written, and naming --scenarios would destroy the source corpus after
+	// the run. Compared by identity, so a symlink alias is caught too.
+	for _, corpus := range []string{*scenPath, *writeScen} {
+		if sameFile(outPath, corpus) {
+			return fmt.Errorf("--out %s is the same file as the corpus %s", outPath, corpus)
+		}
+	}
+
+	// gen labels the corpus: a loaded corpus keeps the seed and n it was
+	// generated with, so rewriting it (--scenarios with --write-scenarios)
+	// never relabels its cases with this run's flags.
+	gen := eval.GenerateOptions{N: *n, Seed: *seed}
 
 	session, cleanup, err := connect(ctx, *server, *serverCmd)
 	if err != nil {
@@ -92,9 +106,10 @@ func run() error {
 			return fmt.Errorf("corpus %s was generated for server %q but --server is %q", *scenPath, corpus.Server, *server)
 		}
 		scenarios = corpus.Scenarios
+		gen = eval.GenerateOptions{N: corpus.N, Seed: corpus.Seed}
 	}
 
-	models, err := buildModels(ctx, *backend, *modelsCSV, scenarios, session, eval.GenerateOptions{N: *n, Seed: *seed})
+	models, err := buildModels(ctx, *backend, *modelsCSV, scenarios, session, gen)
 	if err != nil {
 		return err
 	}
@@ -102,14 +117,14 @@ func run() error {
 	rep, err := eval.Run(ctx, session, eval.Config{
 		Models:    models,
 		Scenarios: scenarios,
-		Gen:       eval.GenerateOptions{N: *n, Seed: *seed},
+		Gen:       gen,
 	})
 	if err != nil {
 		return err
 	}
 
 	if *writeScen != "" {
-		data, err := eval.MarshalScenarios(*server, eval.GenerateOptions{N: *n, Seed: *seed}, rep.Scenarios)
+		data, err := eval.MarshalScenarios(*server, gen, rep.Scenarios)
 		if err != nil {
 			return err
 		}
@@ -151,6 +166,24 @@ func preflightWritable(path string) error {
 		return fmt.Errorf("output %s is not writable: %w", path, err)
 	}
 	return f.Close()
+}
+
+// sameFile reports whether two paths name one file, following symlinks, so an
+// alias is caught as well as a literal repeat. A path that does not exist
+// names nothing and so aliases nothing.
+func sameFile(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	ia, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	ib, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(ia, ib)
 }
 
 // connect returns a client session to the chosen server plus a cleanup func.

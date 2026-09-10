@@ -181,12 +181,18 @@ func extractJSONObjects(s string) []string {
 	return objs
 }
 
-// joinEnum renders enum members (which may be strings, numbers, or booleans)
-// as a delimited list.
+// joinEnum renders enum members as a delimited list of JSON values, so the
+// model sees the exact value the grader requires: "1" and 1 stay distinct
+// (fmt.Sprint would print both as 1), and a structured member reads as JSON
+// rather than Go's map[...] spelling.
 func joinEnum(values []any, sep string) string {
 	parts := make([]string, len(values))
 	for i, v := range values {
-		parts[i] = fmt.Sprint(v)
+		if data, err := json.Marshal(v); err == nil {
+			parts[i] = string(data)
+		} else {
+			parts[i] = fmt.Sprint(v)
+		}
 	}
 	return strings.Join(parts, sep)
 }

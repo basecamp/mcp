@@ -62,3 +62,30 @@ func TestPreflightWritable(t *testing.T) {
 		t.Fatal("path in a missing directory accepted")
 	}
 }
+
+func TestSameFile(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.jsonl")
+	b := filepath.Join(dir, "b.jsonl")
+	for _, p := range []string{a, b} {
+		if err := os.WriteFile(p, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(dir, "link.jsonl")
+	if err := os.Symlink(a, link); err != nil {
+		t.Fatal(err)
+	}
+	if !sameFile(a, a) {
+		t.Fatal("a path does not alias itself")
+	}
+	if !sameFile(a, link) {
+		t.Fatal("a symlink alias was not detected")
+	}
+	if sameFile(a, b) {
+		t.Fatal("distinct files reported as one")
+	}
+	if sameFile(a, filepath.Join(dir, "missing.jsonl")) || sameFile(a, "") {
+		t.Fatal("a missing or empty path aliased a file")
+	}
+}

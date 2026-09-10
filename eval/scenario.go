@@ -73,7 +73,9 @@ type GenerateOptions struct {
 // Generate builds a deterministic, seedable scenario corpus from the action
 // specs, sampling distinct actions weighted toward the destructive and
 // idempotent classes. It is a pure function of (specs, opts): no clock, no
-// global rand, no network.
+// global rand, no network. Actions whose framing collides with an earlier
+// one's are dropped (see dropCollidingFramings), so the corpus can come up
+// short of N.
 func Generate(specs []ActionSpec, opts GenerateOptions) []Scenario {
 	if opts.N <= 0 {
 		opts.N = 12
@@ -94,33 +96,27 @@ func Generate(specs []ActionSpec, opts GenerateOptions) []Scenario {
 	for _, spec := range chosen {
 		scenarios = append(scenarios, buildScenario(rng, spec))
 	}
-	disambiguateFramings(scenarios)
-	return scenarios
+	return dropCollidingFramings(scenarios)
 }
 
-// disambiguateFramings guarantees every scenario's NL framing is unique, so a
-// framing-keyed consumer (the oracle) can never map two distinct actions to one
-// answer. Collisions are rare — two actions with identical summaries and params.
-// The disambiguator is a neutral ordinal, never the gold action name: the
-// catalog prompt exposes those names, so naming one in the request would hand
-// the model the answer and inflate that cell.
-func disambiguateFramings(scenarios []Scenario) {
+// dropCollidingFramings keeps one scenario per distinct framing. Two actions
+// with identical summaries and params frame identically, and no rendering
+// trick fixes that: an ordinal or any other neutral tag makes the framing
+// unique for the oracle but tells a real model nothing about which action is
+// meant, so the cell is a coin flip graded as a failure; naming the gold
+// action would hand it the answer instead. Neither is an evaluable task, so
+// the later collision is dropped rather than disguised.
+func dropCollidingFramings(scenarios []Scenario) []Scenario {
 	seen := map[string]bool{}
-	for i := range scenarios {
-		f := scenarios[i].NLFraming
-		if !seen[f] {
-			seen[f] = true
+	kept := scenarios[:0]
+	for _, s := range scenarios {
+		if seen[s.NLFraming] {
 			continue
 		}
-		for n := 2; ; n++ {
-			alt := fmt.Sprintf("%s (%d)", f, n)
-			if !seen[alt] {
-				scenarios[i].NLFraming = alt
-				seen[alt] = true
-				break
-			}
-		}
+		seen[s.NLFraming] = true
+		kept = append(kept, s)
 	}
+	return kept
 }
 
 // weightedSampleDistinct draws up to n distinct actions without replacement,
