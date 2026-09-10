@@ -1151,6 +1151,11 @@ func TestCommittedResultsCarryProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	pinned, err := filepath.Glob("testdata/results/*.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths = append(paths, pinned...)
 	if len(paths) == 0 {
 		t.Fatal("no committed results found")
 	}

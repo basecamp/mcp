@@ -124,6 +124,13 @@ func run() error {
 		return err
 	}
 
+	// A generated corpus can come up short of --n: the catalog has fewer
+	// distinct actions, or colliding framings were dropped. Say so, or a
+	// smaller experiment than asked for reads as the one that was requested.
+	if *scenPath == "" && len(rep.Scenarios) < gen.N {
+		fmt.Fprintf(os.Stderr, "note: generated %d of the %d scenarios requested (fewer distinct actions in the catalog, or colliding framings dropped)\n", len(rep.Scenarios), gen.N)
+	}
+
 	if *writeScen != "" {
 		data, err := eval.MarshalScenarios(*server, gen, rep.Scenarios)
 		if err != nil {
