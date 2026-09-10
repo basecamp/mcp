@@ -1575,3 +1575,34 @@ func TestPinnedCorpusGatesAnnotationDrift(t *testing.T) {
 		t.Fatalf("removed action must fall through to scoring, got drift error: %v", err)
 	}
 }
+
+// TestCommittedCorporaLoad loads every corpus in testdata through the real
+// loader. A hand edit to a pinned corpus that breaks its JSON would otherwise
+// surface only when someone ran the documented product invocation, since the
+// smoke pins only the fake corpus.
+func TestCommittedCorporaLoad(t *testing.T) {
+	paths, err := filepath.Glob("testdata/scenarios/*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("no committed corpora found")
+	}
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := LoadCorpus(data)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		// Every framing must be what generation renders for its gold params:
+		// structured values as JSON, never Go's map[]/[value] spelling.
+		for _, sc := range c.Scenarios {
+			if strings.Contains(sc.NLFraming, "map[") {
+				t.Fatalf("%s: %s framing carries Go rendering: %q", path, sc.ID, sc.NLFraming)
+			}
+		}
+	}
+}

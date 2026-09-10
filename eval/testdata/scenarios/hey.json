@@ -6,7 +6,7 @@
     {
       "scenario_id": "hey_boxes.create_box_group",
       "class": "write",
-      "nl_framing": "Please create a Set Aside group out of a selection of postings (boxId 562, posting ids ["Posting ids"]).",
+      "nl_framing": "Please create a Set Aside group out of a selection of postings (boxId 562, posting ids [\"Posting ids\"]).",
       "gold_tool": "hey_boxes",
       "gold_action": "create_box_group",
       "gold_params": {
