@@ -236,11 +236,24 @@ func asFloat(v any) (float64, bool) {
 	}
 }
 
-// hasBody reports whether params carry any body property.
+// hasBody reports whether params carry any body content — a declared body
+// property, or, on an open (additionalProperties) body, any undeclared field.
+// The dynamic case matters because a proposal that supplies only an additional
+// field is still sending a body, so the body's RequiredWithBody properties
+// must be enforced rather than skipped.
 func hasBody(spec ActionSpec, params map[string]any) bool {
+	declared := map[string]bool{}
 	for _, p := range spec.Params {
+		declared[p.Name] = true
 		if _, present := params[p.Name]; present && p.In == "body" {
 			return true
+		}
+	}
+	if spec.BodyDynamic {
+		for name := range params {
+			if !declared[name] {
+				return true
+			}
 		}
 	}
 	return false

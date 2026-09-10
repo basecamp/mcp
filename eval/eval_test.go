@@ -3,6 +3,7 @@ package eval
 import (
 	"context"
 	"encoding/json"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1361,5 +1362,137 @@ func TestDynamicBodyAcceptsAdditionalProperties(t *testing.T) {
 	spec.BodyDynamic = false
 	if ok, _ := validateParams(spec, map[string]any{"id": 1, "anything": "x"}); ok {
 		t.Fatal("a closed body accepted an undeclared field")
+	}
+}
+
+// omitLiar drops its first action from the domain listing while the tools/list
+// input schema still enumerates it — a server whose describe surface hides a
+// routed action.
+type omitLiar struct{ *fakeDomain }
+
+func (d omitLiar) Describe(action string) (any, error) {
+	if action == "" {
+		acts := make([]map[string]any, 0, len(d.ops))
+		for _, o := range d.ops[1:] { // omit the first action from the listing
+			acts = append(acts, map[string]any{
+				"action": o.Action, "summary": o.Summary,
+				"readonly": o.ReadOnly, "destructive": o.Destructive,
+			})
+		}
+		return map[string]any{"domain": d.key, "actions": acts}, nil
+	}
+	return d.fakeDomain.Describe(action)
+}
+
+// TestSpecRejectsToolEnumActionOmittedByDomain pins that a route advertised in
+// the tools/list schema but missing from the domain describe fails spec
+// derivation, rather than silently dropping from the corpus and never being
+// evaluated.
+func TestSpecRejectsToolEnumActionOmittedByDomain(t *testing.T) {
+	honest, ok := fakeDomains()[0].(*fakeDomain)
+	if !ok {
+		t.Fatal("fakeDomains()[0] is not a *fakeDomain")
+	}
+	gw, err := gateway.New([]gateway.Domain{omitLiar{honest}}, gateway.Config{
+		Handler: func(context.Context, gateway.Domain, gateway.Operation, map[string]any) (*mcp.CallToolResult, error) {
+			return gateway.JSONResult(map[string]any{"ok": true})
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := gw.BuildMCPServer(&mcp.Implementation{Name: "omit-liar", Version: "0.0.0"}, nil)
+	ctx := context.Background()
+	session, cleanup, err := ConnectInProcess(ctx, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if _, err := SpecFromSession(ctx, session); err == nil || !strings.Contains(err.Error(), "omits it") {
+		t.Fatalf("omitted routed action accepted: err=%v", err)
+	}
+}
+
+// TestGenerateEnumHonorsDeclaredType pins that generation only ever chooses an
+// enum member that satisfies the declared type, so no seed produces a gold
+// that its own grader (which now type-checks enum members) would reject.
+func TestGenerateEnumHonorsDeclaredType(t *testing.T) {
+	if v, ok := pickEnum(newRand(1), ParamSpec{Type: "integer", Enum: []any{1.0, 1.5}}); !ok || v != 1.0 {
+		t.Fatalf("pickEnum returned %v (ok=%v), want the only integral member 1", v, ok)
+	}
+	if _, ok := pickEnum(newRand(1), ParamSpec{Type: "integer", Enum: []any{1.5, 2.5}}); ok {
+		t.Fatal("pickEnum returned a member though none satisfy the integer type")
+	}
+	spec := ActionSpec{Tool: "t", Action: "set_level", Summary: "Set the level", Idempotent: true,
+		Params: []ParamSpec{{Name: "level", In: "body", Required: true, Type: "integer", Enum: []any{1.0, 1.5, 2.0}}}}
+	idx := Index([]ActionSpec{spec})
+	for seed := int64(0); seed < 50; seed++ {
+		for _, sc := range Generate([]ActionSpec{spec}, GenerateOptions{N: 1, Seed: seed}) {
+			if v := sc.GoldParams["level"]; v == 1.5 {
+				t.Fatalf("seed %d generated the non-integral enum member 1.5", seed)
+			}
+			if !Grade(sc, Proposal{Tool: sc.GoldTool, Action: sc.GoldAction, Params: sc.GoldParams}, idx).Pass() {
+				t.Fatalf("seed %d gold failed its own grading: %v", seed, sc.GoldParams)
+			}
+		}
+	}
+}
+
+// newRand is a tiny helper mirroring the generator's rng construction.
+func newRand(seed int64) *rand.Rand { return rand.New(rand.NewSource(seed)) }
+
+// TestGenerateMutatesDictionaryBody pins that a write action with an open
+// dictionary body and no named properties still gets a body mutation, so its
+// scenario exercises body routing instead of passing empty.
+func TestGenerateMutatesDictionaryBody(t *testing.T) {
+	spec := ActionSpec{Tool: "t", Action: "set_meta", Summary: "Set the metadata", Idempotent: true, BodyDynamic: true,
+		Params: []ParamSpec{{Name: "id", In: "path", Required: true, Type: "integer"}}}
+	idx := Index([]ActionSpec{spec})
+	scen := Generate([]ActionSpec{spec}, GenerateOptions{N: 1, Seed: 1})
+	if len(scen) != 1 {
+		t.Fatalf("want 1 scenario, got %d", len(scen))
+	}
+	body := false
+	for name := range scen[0].GoldParams {
+		if name != "id" {
+			body = true
+		}
+	}
+	if !body {
+		t.Fatalf("dictionary-body write generated no mutation: %v", scen[0].GoldParams)
+	}
+	if !Grade(scen[0], Proposal{Tool: "t", Action: "set_meta", Params: scen[0].GoldParams}, idx).Pass() {
+		t.Fatal("dictionary-body gold did not pass its own grading")
+	}
+}
+
+// TestOpenBodyEnforcesRequiredWhenDynamicFieldSent pins that a proposal
+// supplying only an additional field on an open body still counts as sending a
+// body, so the body's RequiredWithBody properties are enforced.
+func TestOpenBodyEnforcesRequiredWhenDynamicFieldSent(t *testing.T) {
+	spec := ActionSpec{Tool: "t", Action: "put", Summary: "Put", BodyDynamic: true,
+		Params: []ParamSpec{{Name: "kind", In: "body", RequiredWithBody: true, Type: "string"}}}
+	if ok, _ := validateParams(spec, map[string]any{"extra": "x"}); ok {
+		t.Fatal("an open-body proposal missing its required property was accepted")
+	}
+	if ok, r := validateParams(spec, map[string]any{}); !ok {
+		t.Fatalf("no body should not require the property: %v", r)
+	}
+	if ok, r := validateParams(spec, map[string]any{"kind": "k", "extra": "y"}); !ok {
+		t.Fatalf("a complete open-body proposal was rejected: %v", r)
+	}
+}
+
+// TestCatalogAdvertisesDynamicBody pins that the model catalog tells the model
+// an open-body action accepts additional fields, and that the instruction no
+// longer forbids them unconditionally.
+func TestCatalogAdvertisesDynamicBody(t *testing.T) {
+	out := BuildSystem([]ActionSpec{{Tool: "t", Action: "set_meta", Summary: "Set meta", BodyDynamic: true,
+		Params: []ParamSpec{{Name: "id", In: "path", Required: true, Type: "integer"}}}})
+	if !strings.Contains(out, "additional body fields allowed") {
+		t.Fatalf("catalog does not advertise the open body:\n%s", out)
+	}
+	if !strings.Contains(out, "unless it notes additional body fields") {
+		t.Fatalf("instruction still forbids undeclared params unconditionally:\n%s", out)
 	}
 }

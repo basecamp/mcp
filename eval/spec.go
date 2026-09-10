@@ -90,27 +90,37 @@ func (a ActionSpec) param(name string) (ParamSpec, bool) {
 // write calls and never reaches the product backend: describe is served from
 // the catalog by the gateway itself.
 func SpecFromSession(ctx context.Context, session *mcp.ClientSession) ([]ActionSpec, error) {
-	var tools []string
+	type toolInfo struct {
+		name       string
+		actionEnum []string // actions the tools/list schema advertises (minus describe)
+	}
+	var tools []toolInfo
 	for tool, err := range session.Tools(ctx, nil) {
 		if err != nil {
 			return nil, fmt.Errorf("list tools: %w", err)
 		}
-		tools = append(tools, tool.Name)
+		tools = append(tools, toolInfo{name: tool.Name, actionEnum: toolActionEnum(tool.InputSchema)})
 	}
-	sort.Strings(tools)
+	sort.Slice(tools, func(i, j int) bool { return tools[i].name < tools[j].name })
 
 	var specs []ActionSpec
 	for _, tool := range tools {
-		actions, err := describeDomain(ctx, session, tool)
+		actions, err := describeDomain(ctx, session, tool.name)
 		if err != nil {
 			return nil, err
 		}
+		// The tools/list schema enumerates every action the tool routes; the
+		// domain describe must list them all, or the loop would silently never
+		// evaluate an omitted route and still report a green run.
+		if err := reconcileToolEnum(tool.name, tool.actionEnum, actions); err != nil {
+			return nil, err
+		}
 		for _, a := range actions {
-			spec, err := describeAction(ctx, session, tool, a.Action)
+			spec, err := describeAction(ctx, session, tool.name, a.Action)
 			if err != nil {
 				return nil, err
 			}
-			if err := reconcileDomainDetail(tool, a, spec); err != nil {
+			if err := reconcileDomainDetail(tool.name, a, spec); err != nil {
 				return nil, err
 			}
 			specs = append(specs, spec)
@@ -149,6 +159,41 @@ func describeDomain(ctx context.Context, session *mcp.ClientSession, tool string
 		return nil, fmt.Errorf("%s: decode domain describe: %w", tool, err)
 	}
 	return payload.Actions, nil
+}
+
+// toolActionEnum extracts the action names the tools/list input schema
+// advertises (properties.action.enum), dropping the reserved describe action.
+// It reads the client-side schema, which is the server's schema marshaled to a
+// map[string]any.
+func toolActionEnum(schema any) []string {
+	m, _ := schema.(map[string]any)
+	props, _ := m["properties"].(map[string]any)
+	action, _ := props["action"].(map[string]any)
+	enum, _ := action["enum"].([]any)
+	var out []string
+	for _, e := range enum {
+		if name, ok := e.(string); ok && name != gateway.DescribeAction {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// reconcileToolEnum refuses a server whose domain describe omits an action the
+// tools/list schema still routes to. Grading derives the whole corpus from the
+// domain describe, so a dropped action is simply never evaluated while the run
+// reads green — a coverage hole, not a visible failure.
+func reconcileToolEnum(tool string, enum []string, listed []domainAction) error {
+	have := map[string]bool{}
+	for _, a := range listed {
+		have[a.Action] = true
+	}
+	for _, name := range enum {
+		if !have[name] {
+			return fmt.Errorf("%s: tools/list routes action %q but the domain describe omits it", tool, name)
+		}
+	}
+	return nil
 }
 
 // reconcileDomainDetail refuses a server whose domain listing and per-action

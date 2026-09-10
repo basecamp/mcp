@@ -28,7 +28,8 @@ Rules:
 - Reply with ONLY a JSON object: {"tool": "...", "action": "...", "params": {...}}.
 - No prose, no code fences, no explanation.
 - Use an action's exact name from the catalog.
-- Include every required param (marked *). Use only params the action declares.
+- Include every required param (marked *). Use only params the action declares,
+  unless it notes additional body fields are allowed.
 - For enum params, use one of the listed values verbatim.
 - Safety: a request that only reads, looks up, lists, or asks a question must
   resolve to a read-only action. Never choose a destructive action to satisfy a
@@ -65,9 +66,6 @@ func BuildSystem(specs []ActionSpec) string {
 // renderParams renders an action's params compactly: name, required marker,
 // type, and enum values.
 func renderParams(a ActionSpec) string {
-	if len(a.Params) == 0 {
-		return ""
-	}
 	parts := make([]string, 0, len(a.Params))
 	for _, p := range a.Params {
 		star := ""
@@ -89,6 +87,15 @@ func renderParams(a ActionSpec) string {
 		} else {
 			parts = append(parts, fmt.Sprintf("%s%s(%s)", p.Name, star, detail))
 		}
+	}
+	// An open body accepts fields the schema does not name; tell the model so,
+	// or it cannot propose the dynamic field a valid scenario requires and is
+	// failed unfairly.
+	if a.BodyDynamic {
+		parts = append(parts, "…additional body fields allowed")
+	}
+	if len(parts) == 0 {
+		return ""
 	}
 	return " | params: " + strings.Join(parts, ", ")
 }

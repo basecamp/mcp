@@ -191,17 +191,24 @@ func goldParams(rng *rand.Rand, spec ActionSpec) map[string]any {
 	}
 
 	// A write must carry a mutation: if no body field is set yet and the action
-	// offers optional body fields, add one (preferring an enum field).
+	// offers optional body fields, add one (preferring an enum field). An open
+	// dictionary body names no field, so synthesize an allowed dynamic one —
+	// otherwise the write scenario carries no mutation and the cell passes
+	// without exercising body routing.
 	if !spec.ReadOnly && !hasIn(out, spec, "body") {
 		if p, ok := firstOptional(spec, "body"); ok {
 			out[p.Name] = syntheticValue(rng, p)
+		} else if spec.BodyDynamic {
+			out["value"] = niceString("value")
 		}
 	}
 
 	// Exercise an enum when nothing chosen so far constrains one.
 	if !hasEnum(out, spec) {
 		if p, ok := firstOptionalEnum(spec, out); ok {
-			out[p.Name] = p.Enum[rng.Intn(len(p.Enum))]
+			if v, ok := pickEnum(rng, p); ok {
+				out[p.Name] = v
+			}
 		}
 	}
 
@@ -268,10 +275,32 @@ func firstOptionalEnum(spec ActionSpec, chosen map[string]any) (ParamSpec, bool)
 	return ParamSpec{}, false
 }
 
+// pickEnum returns a random enum member that also satisfies the param's
+// declared type. An enum member of the wrong type (integer enum with a
+// fractional member, string enum with a numeric one) is invalid under the
+// grader's type check, so generating it would produce a gold that always
+// fails checkCorpus; skip such members, and report no usable enum when none
+// remain so the caller falls back to a typed synthetic value.
+func pickEnum(rng *rand.Rand, p ParamSpec) (any, bool) {
+	if len(p.Enum) == 0 {
+		return nil, false
+	}
+	valid := make([]any, 0, len(p.Enum))
+	for _, m := range p.Enum {
+		if typeMatches(p.Type, m) {
+			valid = append(valid, m)
+		}
+	}
+	if len(valid) == 0 {
+		return nil, false
+	}
+	return valid[rng.Intn(len(valid))], true
+}
+
 // syntheticValue produces a stable, type-appropriate gold value for one param.
 func syntheticValue(rng *rand.Rand, p ParamSpec) any {
-	if len(p.Enum) > 0 {
-		return p.Enum[rng.Intn(len(p.Enum))]
+	if v, ok := pickEnum(rng, p); ok {
+		return v
 	}
 	idLike := strings.HasSuffix(p.Name, "_id") || strings.HasSuffix(p.Name, "_number")
 	switch p.Type {
