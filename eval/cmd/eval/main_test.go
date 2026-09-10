@@ -149,3 +149,48 @@ func TestServerProfilesRecordHermeticity(t *testing.T) {
 		t.Fatalf("basecamp stdio authenticates eagerly; it must be marked non-hermetic")
 	}
 }
+
+// TestCheckAliases pins which flag pairs may not name one file: the write
+// would destroy the other. The two allowed overlaps — compare-then-overwrite
+// (--out over --baseline) and rewriting a loaded corpus in place — must stay
+// allowed.
+func TestCheckAliases(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(name string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	out, corpus, results := mk("out.jsonl"), mk("corpus.json"), mk("prior.jsonl")
+	link := filepath.Join(dir, "link.jsonl")
+	if err := os.Symlink(results, link); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := checkAliases(out, corpus, "", results); err != nil {
+		t.Fatalf("distinct files refused: %v", err)
+	}
+	// --out must not be the source corpus or the corpus being written.
+	if err := checkAliases(corpus, "", corpus, ""); err == nil {
+		t.Fatal("--out aliasing --scenarios accepted")
+	}
+	if err := checkAliases(out, out, "", ""); err == nil {
+		t.Fatal("--out aliasing --write-scenarios accepted")
+	}
+	// --write-scenarios must not replace the baseline, through a symlink too.
+	if err := checkAliases(out, results, "", results); err == nil {
+		t.Fatal("--write-scenarios aliasing --baseline accepted")
+	}
+	if err := checkAliases(out, link, "", results); err == nil {
+		t.Fatal("--write-scenarios aliasing --baseline via symlink accepted")
+	}
+	// Allowed: compare-then-overwrite, and rewriting a loaded corpus in place.
+	if err := checkAliases(results, "", "", results); err != nil {
+		t.Fatalf("--out over --baseline must stay allowed: %v", err)
+	}
+	if err := checkAliases(out, corpus, corpus, ""); err != nil {
+		t.Fatalf("rewriting the loaded corpus in place must stay allowed: %v", err)
+	}
+}

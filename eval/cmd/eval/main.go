@@ -89,14 +89,8 @@ func run() error {
 			}
 		}
 	}
-	// The results file must not alias a corpus file: os.Create truncates, so
-	// --out naming the --write-scenarios path would destroy the corpus just
-	// written, and naming --scenarios would destroy the source corpus after
-	// the run. Compared by identity, so a symlink alias is caught too.
-	for _, corpus := range []string{*scenPath, *writeScen} {
-		if sameFile(outPath, corpus) {
-			return fmt.Errorf("--out %s is the same file as the corpus %s", outPath, corpus)
-		}
+	if err := checkAliases(outPath, *writeScen, *scenPath, *baseline); err != nil {
+		return err
 	}
 
 	// gen labels the corpus: a loaded corpus keeps the seed and n it was
@@ -206,6 +200,28 @@ func preflightWritable(path string) error {
 		return fmt.Errorf("output %s is not writable: %w", path, err)
 	}
 	return f.Close()
+}
+
+// checkAliases refuses an output path that names a file the run also reads or
+// writes for another purpose, where the write would silently destroy it:
+// --out truncates (os.Create), so it must not be the source corpus or the
+// corpus just written; --write-scenarios replaces its file, so it must not be
+// the baseline (loaded earlier, so the comparison would still run and report
+// nothing about the results it just overwrote). --out over --baseline is the
+// documented compare-then-overwrite flow and stays allowed, as does rewriting
+// a loaded corpus in place. Identity comparison, so symlink aliases count.
+func checkAliases(out, writeScen, scenPath, baseline string) error {
+	pairs := []struct{ aFlag, a, bFlag, b string }{
+		{"--out", out, "--scenarios", scenPath},
+		{"--out", out, "--write-scenarios", writeScen},
+		{"--write-scenarios", writeScen, "--baseline", baseline},
+	}
+	for _, p := range pairs {
+		if sameFile(p.a, p.b) {
+			return fmt.Errorf("%s %s is the same file as %s %s", p.aFlag, p.a, p.bFlag, p.b)
+		}
+	}
+	return nil
 }
 
 // sameFile reports whether two paths name one file, following symlinks, so an
