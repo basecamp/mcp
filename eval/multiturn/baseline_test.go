@@ -92,6 +92,7 @@ func TestLoadBaselineRejectsBrokenFiles(t *testing.T) {
 		"missing key": `{"model":"haiku","arm":"bare","task_id":"a"}`,
 		"duplicate":   line + "\n" + line,
 		"no identity": strings.Replace(line, `"task_id":"a"`, `"task_id":""`, 1),
+		"no model id": strings.Replace(line, `"model_id":"haiku-id"`, `"model_id":""`, 1),
 	} {
 		_, err := LoadBaseline(strings.NewReader(input))
 		assert.Error(t, err, name)

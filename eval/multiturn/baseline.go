@@ -66,8 +66,10 @@ func LoadBaseline(r io.Reader) (*Baseline, error) {
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			return nil, fmt.Errorf("decode baseline record: %w", err)
 		}
-		if rec.Model == "" || rec.Arm == "" || rec.TaskID == "" {
-			return nil, fmt.Errorf("baseline record missing model, arm, or task_id: %s", truncate(line, 200))
+		if rec.Model == "" || rec.ModelID == "" || rec.Arm == "" || rec.TaskID == "" {
+			// model_id included: without it the like-for-like model check
+			// would silently skip the cell.
+			return nil, fmt.Errorf("baseline record missing model, model_id, arm, or task_id: %s", truncate(line, 200))
 		}
 		k := cellKey(rec.Model, rec.Arm, rec.TaskID)
 		if _, dup := b.cells[k]; dup {
