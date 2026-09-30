@@ -718,3 +718,14 @@ func TestIsGateway(t *testing.T) {
 	assert.True(t, isGateway(gw))
 	assert.False(t, isGateway(flat), "an action argument alone does not make a gateway")
 }
+
+func TestWriteGroupsNeedOneWriteForAllPatterns(t *testing.T) {
+	w := func(body string) cassette.Exchange {
+		return cassette.Exchange{Method: "POST", Path: "/todos.json", Body: body, Status: 201, Matched: true}
+	}
+	task := Task{ID: "t", Expect: Expect{WriteGroups: [][]string{{`"assignee":1002`, `"due":"fri"`}}}}
+	split := &Episode{Task: task, Steps: []Step{{Op: "create", Requests: []cassette.Exchange{w(`{"assignee":1002}`), w(`{"due":"fri"}`)}}}, attributedAt: map[int]bool{}}
+	assert.False(t, grade(split, func(string) bool { return false }).Pass, "two writes each half right are not one right write")
+	whole := &Episode{Task: task, Steps: []Step{{Op: "create", Requests: []cassette.Exchange{w(`{"assignee":1002,"due":"fri"}`)}}}, attributedAt: map[int]bool{}}
+	assert.True(t, grade(whole, func(string) bool { return false }).Pass)
+}

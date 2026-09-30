@@ -67,8 +67,14 @@ func (s *Scrubber) Bytes(in []byte) []byte {
 		// Case-insensitively (hosts are), in the plain spelling and with the
 		// slashes a JSON encoder may escape.
 		forms := []string{s.upstream}
-		if u, err := url.Parse(s.upstream); err == nil && u.Port() == "" {
-			forms = append(forms, s.upstream+":443") // the same origin, default port spelled out
+		if u, err := url.Parse(s.upstream); err == nil {
+			// The network-path spelling (//host/…) names the same origin;
+			// the longer https:// form is replaced first, so this only
+			// catches the bare reference.
+			forms = append(forms, "//"+u.Host)
+			if u.Port() == "" {
+				forms = append(forms, s.upstream+":443", "//"+u.Host+":443") // default port spelled out
+			}
 		}
 		for _, f := range append([]string(nil), forms...) {
 			forms = append(forms, strings.ReplaceAll(f, "/", `\/`))

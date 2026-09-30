@@ -878,5 +878,6 @@ func TestCrossStateShadowingAndNetworkPathRedirects(t *testing.T) {
 	h := http.Header{}
 	h.Set("Location", "//api.example/next")
 	assert.Empty(t, r.offOrigin(h), "a same-origin network-path reference")
+	assert.Equal(t, "</1/x>; rel=next, <{{base}}/next>", NewScrubber("https://api.example", nil, "k").String("</1/x>; rel=next, <//api.example/next>"), "and it is rewritten to {{base}}")
 	assert.True(t, r.leaksRedacted([]byte(`{"n":"Alice \u0026 Bob"}`)))
 }
