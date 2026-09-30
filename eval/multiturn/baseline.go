@@ -72,10 +72,10 @@ func LoadBaseline(r io.Reader) (*Baseline, error) {
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			return nil, fmt.Errorf("decode baseline record: %w", err)
 		}
-		if rec.Server == "" || rec.Backend == "" || rec.Model == "" || rec.ModelID == "" || rec.Arm == "" || rec.TaskID == "" {
+		if rec.Server == "" || rec.Backend == "" || rec.Model == "" || rec.ModelID == "" || rec.Arm == "" || rec.TaskID == "" || rec.TaskDigest == "" {
 			// model_id included: without it the like-for-like model check
 			// would silently skip the cell.
-			return nil, fmt.Errorf("baseline record missing server, backend, model, model_id, arm, or task_id: %s", truncate(line, 200))
+			return nil, fmt.Errorf("baseline record missing server, backend, model, model_id, arm, task_id, or task_digest: %s", truncate(line, 200))
 		}
 		k := cellKey(rec.Model, rec.Arm, rec.TaskID)
 		if _, dup := b.cells[k]; dup {
@@ -110,6 +110,17 @@ func (b *Baseline) CheckExperiment(server, backend string) error {
 	for _, rec := range b.cells {
 		if rec.Server != server || rec.Backend != backend {
 			return fmt.Errorf("baseline is %s via %s, this run would be %s via %s — not the same experiment", rec.Server, rec.Backend, server, backend)
+		}
+	}
+	return nil
+}
+
+// CheckDigests refuses, before spend, a baseline graded under a different
+// definition of a task this run will grade.
+func (b *Baseline) CheckDigests(digests map[string]string) error {
+	for _, rec := range b.cells {
+		if d, ok := digests[rec.TaskID]; ok && d != rec.TaskDigest {
+			return fmt.Errorf("task %s changed since the baseline (prompt, cassettes, or grading): regenerate the baseline or rename the task", rec.TaskID)
 		}
 	}
 	return nil
@@ -162,6 +173,9 @@ func Compare(base *Baseline, records []Record) (Comparison, error) {
 			continue
 		}
 		matched++
+		if prev.TaskDigest != r.TaskDigest {
+			return cmp, fmt.Errorf("task %s changed since the baseline (prompt, cassettes, or grading): regenerate the baseline or rename the task", r.TaskID)
+		}
 		if prev.Server != r.Server || prev.Backend != r.Backend {
 			return cmp, fmt.Errorf("cell %s/%s/%s: baseline is %s via %s, this run %s via %s — not the same experiment", r.Model, r.Arm, r.TaskID, prev.Server, prev.Backend, r.Server, r.Backend)
 		}

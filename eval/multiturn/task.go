@@ -18,6 +18,9 @@
 package multiturn
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -210,6 +213,23 @@ func (c *Corpus) validate() error {
 		}
 	}
 	return nil
+}
+
+// Digest identifies what a task asks and how it is graded — prompt,
+// cassettes, turn budget, read-only flag, expectations, rejections — so a
+// baseline cell is only compared with a run of the same task definition.
+// The gold script is left out: it proves the corpus, it does not grade.
+func (t Task) Digest() string {
+	data, _ := json.Marshal(struct {
+		Prompt    string
+		Cassettes []string
+		MaxTurns  int
+		ReadOnly  bool
+		Expect    Expect
+		Reject    Reject
+	}{t.Prompt, t.Cassettes, t.MaxTurns, t.ReadOnly, t.Expect, t.Reject})
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:8])
 }
 
 // CheckCassettes proves every task's cassettes exist and load — checked

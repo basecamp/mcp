@@ -77,6 +77,9 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	if err := preflightArms(ctx, cfg); err != nil {
 		return nil, err
 	}
+	if err := proveScripts(ctx, cfg); err != nil {
+		return nil, err
+	}
 
 	rep := &Report{Server: cfg.Corpus.Server, Tasks: cfg.Corpus.Tasks, Arms: cfg.Arms.Arms}
 	type job struct {
@@ -189,6 +192,38 @@ func preflightArms(ctx context.Context, cfg Config) error {
 	return nil
 }
 
+// proveScripts plays every task's gold script under every arm before a paid
+// agent runs: a server build that renamed an action or changed a required
+// param would otherwise surface as model failures, after the spend. Skipped
+// when every agent is the script itself (it is the run) and when recording.
+func proveScripts(ctx context.Context, cfg Config) error {
+	if cfg.Record != nil {
+		return nil
+	}
+	paid := false
+	for _, a := range cfg.Agents {
+		if backendOf(a) != "script" {
+			paid = true
+		}
+	}
+	if !paid {
+		return nil
+	}
+	for _, arm := range cfg.Arms.Arms {
+		for _, task := range cfg.Corpus.Tasks {
+			r := runEpisode(ctx, cfg, ScriptAgent{}, arm, task)
+			if !r.Pass || r.Error != "" {
+				why := r.Error
+				if why == "" && len(r.Reasons) > 0 {
+					why = r.Reasons[0]
+				}
+				return fmt.Errorf("gold script for %s under arm %q fails against this server build (%s): the corpus or cassettes have drifted; fix them before a paid run", task.ID, arm.Name, why)
+			}
+		}
+	}
+	return nil
+}
+
 // backend is a started player or recorder.
 type backend interface {
 	Backend
@@ -197,7 +232,7 @@ type backend interface {
 
 func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task) Record {
 	fail := func(err error) Record {
-		r := Record{Model: agent.Label(), ModelID: agent.ModelID(), Arm: arm.Name, TaskID: task.ID, Error: err.Error()}
+		r := Record{Model: agent.Label(), ModelID: agent.ModelID(), Arm: arm.Name, TaskID: task.ID, TaskDigest: task.Digest(), Error: err.Error()}
 		if cfg.Record != nil {
 			// In a recording run, any failure means no cassette: fatal.
 			r.Error, r.detail = recordErrPrefix+"episode could not start, nothing saved", err.Error()

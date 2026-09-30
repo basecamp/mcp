@@ -613,3 +613,15 @@ func TestGradeSeesWritesOutsideToolCallsAndOnlySuccessfulExpectedCalls(t *testin
 	assert.Equal(t, 1, grade(ep, func(string) bool { return false }).WrongID, "a miss outside tool calls counts too")
 	assert.Contains(t, strings.Join(r.Reasons, "\n"), "missing call", "the failed list_todos does not satisfy expect.calls")
 }
+
+func TestPaidRunsProveGoldScriptsFirst(t *testing.T) {
+	c, a := loadFake(t)
+	require.NoError(t, c.Filter([]string{"open-todos"}))
+	require.NoError(t, a.Select([]string{"bare"}))
+	c.Tasks[0].Script[1].Arguments = map[string]any{"action": "list_todos", "params": map[string]any{"project_id": 404}}
+	var ran bool
+	agent := agentFunc(func(context.Context, *Episode) error { ran = true; return nil })
+	_, err := Run(context.Background(), Config{Corpus: c, Arms: a, Agents: []Agent{agent}, Launch: ConnectFake})
+	assert.ErrorContains(t, err, "gold script for open-todos")
+	assert.False(t, ran, "no paid episode after a broken gold path")
+}

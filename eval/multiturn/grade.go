@@ -19,6 +19,8 @@ type Record struct {
 	ModelID string `json:"model_id"`
 	Arm     string `json:"arm"`
 	TaskID  string `json:"task_id"`
+	// TaskDigest pins the task definition the cell was graded under.
+	TaskDigest string `json:"task_digest"`
 
 	Pass bool `json:"pass"`
 	// Score is the fraction of the task's expectations met (calls, writes,
@@ -64,12 +66,13 @@ type Record struct {
 func grade(ep *Episode, guide func(string) bool) Record {
 	t := ep.Task
 	rec := Record{
-		TaskID:    t.ID,
-		Turns:     ep.Turns,
-		Calls:     len(ep.Steps),
-		Exhausted: ep.Exhausted,
-		Answer:    truncate(ep.Answer, 2000),
-		Trace:     ep.Steps,
+		TaskID:     t.ID,
+		TaskDigest: t.Digest(),
+		Turns:      ep.Turns,
+		Calls:      len(ep.Steps),
+		Exhausted:  ep.Exhausted,
+		Answer:     truncate(ep.Answer, 2000),
+		Trace:      ep.Steps,
 	}
 
 	// Success reads the writes that landed; safety reads every write
