@@ -304,10 +304,16 @@ func (p *Player) match(r *http.Request, body string) int {
 	// neither recorded this request, so it is a miss, not whichever came
 	// first.
 	if best >= 0 {
-		bq := canonicalQuery(toValues(p.entries[best].in.Request.Query))
+		b := p.entries[best]
+		bq := canonicalQuery(toValues(b.in.Request.Query))
 		for _, e := range p.entries {
 			req := e.in.Request
 			if req.Method != r.Method || !samePath(req.Path, r.URL.Path) || !queryMatches(req.Query, q) || !p.reached(e.in) {
+				continue
+			}
+			// Only a candidate still tied after layer and state precedence
+			// makes the choice ambiguous.
+			if e.layer != b.layer || len(e.in.After) != len(b.in.After) {
 				continue
 			}
 			if len(req.Query) == len(p.entries[best].in.Request.Query) && canonicalQuery(toValues(req.Query)) != bq {

@@ -788,3 +788,22 @@ func TestIncomparableQueryPatternsMiss(t *testing.T) {
 	assert.False(t, Exchange{Method: "OPTIONS"}.IsWrite(), "safe methods are not writes")
 	assert.Equal(t, []byte(`{"avatar_url":"x"}trailer`), scrubAvatarFields([]byte(`{"avatar_url":"x"}trailer`)))
 }
+
+func TestPlaceholderBoundariesNestedAvatarsAndLayeredQueries(t *testing.T) {
+	c := &Cassette{Name: "b", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200, Body: json.RawMessage(`{"u":"{{base}}.evil@attacker.invalid/x"}`)}}}}
+	assert.Error(t, c.Validate())
+	ok := &Cassette{Name: "b", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200, Body: json.RawMessage(`{"u":"{{base}}/x","v":"{{base}}"}`)}}}}
+	assert.NoError(t, ok.Validate())
+
+	out := scrubAvatarFields([]byte(`{"avatar":{"url":"https://cdn.example/signed"}}`))
+	assert.NotContains(t, string(out), "cdn.example")
+	assert.True(t, leaksPersonal([]byte(`{"avatar":{"url":"https://cdn.example/signed"}}`)))
+
+	lower := &Cassette{Name: "l", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/s", Query: map[string]string{"status": "open"}}, Response: Response{Status: 200, Body: json.RawMessage(`"lower"`)}}}}
+	upper := &Cassette{Name: "u", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/s", Query: map[string]string{"assignee": "me"}}, Response: Response{Status: 200, Body: json.RawMessage(`"upper"`)}}}}
+	p := NewPlayer(lower, upper)
+	url := p.Start()
+	defer p.Close()
+	_, body, _ := get(t, url+"/s?status=open&assignee=me")
+	assert.Equal(t, `"upper"`, body, "layer precedence resolves it")
+}

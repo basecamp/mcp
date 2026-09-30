@@ -107,7 +107,7 @@ func scrubAvatarFields(body []byte) []byte {
 			return t
 		case map[string]any:
 			for k, c := range t {
-				t[k] = walk(c, strings.HasPrefix(k, "avatar"))
+				t[k] = walk(c, under || strings.HasPrefix(k, "avatar")) // nested under an avatar key stays under it
 			}
 			return t
 		case []any:

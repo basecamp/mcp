@@ -208,6 +208,9 @@ func (c *Cassette) Validate() error {
 		if len(r.Body) > 0 && !json.Valid(r.Body) {
 			return fmt.Errorf("interaction #%d (%s %s): request body is not JSON (the Player refuses non-JSON bodies)", i+1, r.Method, r.Path)
 		}
+		if placeholderAuthority.MatchString(string(in.Response.Body) + in.Response.BodyText) {
+			return fmt.Errorf("interaction #%d (%s %s): %s runs on into a longer authority", i+1, r.Method, r.Path, BasePlaceholder)
+		}
 		if len(in.Response.Body) > 0 && !json.Valid(in.Response.Body) {
 			return fmt.Errorf("interaction #%d (%s %s): response body is not JSON (use body_text)", i+1, r.Method, r.Path)
 		}
