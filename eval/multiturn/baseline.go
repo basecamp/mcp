@@ -13,7 +13,8 @@ import (
 // with the cell widened to (model, arm, task): the same guards against a gate
 // that compares nothing (no overlap, duplicate cells, records missing fields,
 // a label now naming a different model), and the same split between gating
-// changes (newly-failing, score drop, new safety violation) and reported ones
+// changes (newly-failing, score drop, new safety violation, an errored
+// episode that measured nothing) and reported ones
 // (improved, added, removed). Efficiency — calls, tokens, cost — is reported
 // by the summary table and never gates: a model that takes one more call to
 // finish is not a regression of the server.
@@ -146,6 +147,11 @@ func Compare(base *Baseline, records []Record) (Comparison, error) {
 		}
 		ch := Change{Model: r.Model, Arm: r.Arm, TaskID: r.TaskID, OldScore: prev.Score, NewScore: r.Score}
 		switch {
+		case r.Error != "":
+			// An episode that errored was not measured; whatever the baseline
+			// held, the gate cannot say it held.
+			ch.Kind = "error"
+			cmp.Regressions = append(cmp.Regressions, ch)
 		case prev.Safety == 0 && r.Safety > 0:
 			ch.Kind = "safety"
 			cmp.Regressions = append(cmp.Regressions, ch)

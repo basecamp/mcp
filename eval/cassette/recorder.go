@@ -122,6 +122,7 @@ type Recorder struct {
 	mu           sync.Mutex
 	interactions []Interaction
 	log          []Exchange
+	writes       int // writes landed upstream so far
 	base         string
 	srv          *httptest.Server
 }
@@ -332,7 +333,9 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// somewhere the recorder cannot see or scrub (a CDN, a signed URL); it is
 	// refused rather than handed on or recorded.
 	if loc := resp.Header.Get("Location"); loc != "" {
-		if u, err := url.Parse(loc); err != nil || (u.IsAbs() && strings.TrimSuffix(u.Scheme+"://"+u.Host, "/") != strings.TrimSuffix(r.profile.Upstream, "/")) {
+		// Any Location naming a host — absolute or network-path (//host/…) —
+		// must name the upstream's own origin.
+		if u, err := url.Parse(loc); err != nil || (u.Host != "" && (u.Scheme != "https" || "https://"+u.Host != strings.TrimSuffix(r.profile.Upstream, "/"))) {
 			ex.Status = http.StatusBadGateway
 			r.appendLog(ex)
 			http.Error(w, `{"error":"recorder: upstream redirected off its origin"}`, http.StatusBadGateway)
@@ -364,6 +367,11 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// wrong id), exactly as it was live.
 	if resp.StatusCode != http.StatusNotFound {
 		r.record(req, body, resp.StatusCode, headers, scrubbed)
+	}
+	if req.Method != http.MethodGet && req.Method != http.MethodHead && resp.StatusCode < 400 {
+		r.mu.Lock()
+		r.writes++
+		r.mu.Unlock()
 	}
 	ex.Status, ex.Matched = resp.StatusCode, resp.StatusCode != http.StatusNotFound
 	r.appendLog(ex)
@@ -416,21 +424,15 @@ func (r *Recorder) record(req *http.Request, reqBody []byte, status int, headers
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	// A repeated read is kept only when the answer changed — a read after a
-	// write sees new state, and the Player serves identical patterns in
-	// sequence, so the replay walks the same states the recording did. An
-	// unchanged repeat adds nothing.
-	if req.Method == http.MethodGet {
-		key := patternKey(in.Request)
-		for i := len(r.interactions) - 1; i >= 0; i-- {
-			prev := r.interactions[i]
-			if patternKey(prev.Request) != key {
-				continue
-			}
-			if prev.Response.Status == in.Response.Status && bytes.Equal(prev.Response.Body, in.Response.Body) && prev.Response.BodyText == in.Response.BodyText {
-				return
-			}
-			break
+	in.AfterWrites = r.writes
+	// Each pattern keeps one answer per backend state: the first seen after
+	// a given number of writes. A read repeated with no write between adds
+	// nothing; a read after a write is a new state the Player serves once
+	// its own replay has landed as many writes.
+	key := patternKey(in.Request)
+	for _, prev := range r.interactions {
+		if patternKey(prev.Request) == key && prev.AfterWrites == in.AfterWrites {
+			return
 		}
 	}
 	r.interactions = append(r.interactions, in)
@@ -446,23 +448,29 @@ func compactRaw(b []byte) json.RawMessage {
 
 // Merge folds src's interactions into dst — so recording the same task under
 // several models or arms accumulates the union of what they asked for. Per
-// request pattern, dst's recorded states stand and src contributes the states
-// beyond them: a later recording that saw a read's pre- and post-write
-// answers extends a cassette that only had the first.
+// request pattern and backend state (AfterWrites), dst's answer stands and
+// src adds the states dst lacks.
 func Merge(dst, src *Cassette) {
-	have := map[string]int{}
-	for _, in := range dst.Interactions {
-		have[patternKey(in.Request)]++
+	type state struct {
+		key    string
+		writes int
 	}
-	seen := map[string]int{}
+	have := map[state]bool{}
+	for _, in := range dst.Interactions {
+		have[state{patternKey(in.Request), in.AfterWrites}] = true
+	}
 	for _, in := range src.Interactions {
-		k := patternKey(in.Request)
-		seen[k]++
-		if seen[k] > have[k] {
+		k := state{patternKey(in.Request), in.AfterWrites}
+		if !have[k] {
 			dst.Interactions = append(dst.Interactions, in)
+			have[k] = true
 		}
 	}
 	sort.SliceStable(dst.Interactions, func(i, j int) bool {
-		return dst.Interactions[i].Request.Path < dst.Interactions[j].Request.Path
+		a, b := dst.Interactions[i], dst.Interactions[j]
+		if a.Request.Path != b.Request.Path {
+			return a.Request.Path < b.Request.Path
+		}
+		return a.AfterWrites < b.AfterWrites
 	})
 }
