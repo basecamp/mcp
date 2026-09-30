@@ -566,3 +566,27 @@ func TestRecorderRefusesARedactionThatBreaksJSON(t *testing.T) {
 	assert.Empty(t, rec.Cassette("x", "").Interactions)
 	assert.Len(t, rec.Faults(), 2)
 }
+
+func TestOnPlayerTargetsAndLayers(t *testing.T) {
+	ok := &Cassette{Name: "ok", Interactions: []Interaction{
+		{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200, Headers: map[string]string{"Link": `<{{base}}/a?page=2>; rel="next", </a?page=3>; rel="last"`}}},
+		{Request: Request{Method: "GET", Path: "/b"}, Response: Response{Status: 200}, After: []string{"POST /x"}},
+	}}
+	require.NoError(t, ok.Validate())
+	assert.ErrorContains(t, ValidateLayers(ok), `waits on "POST /x"`)
+	failing := &Cassette{Name: "w", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x.json"}, Response: Response{Status: 422}}}}
+	assert.Error(t, ValidateLayers(ok, failing), "a write answered only with a failure never lands")
+	landing := &Cassette{Name: "w", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x.json"}, Response: Response{Status: 201}}}}
+	assert.NoError(t, ValidateLayers(ok, landing))
+}
+
+func TestPlayerComparesBodiesWithItsOriginAsBase(t *testing.T) {
+	c := &Cassette{Name: "b", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/1/links.json", Body: json.RawMessage(`{"url":"https://elsewhere/x"}`)}, Response: Response{Status: 422}},
+		{Request: Request{Method: "POST", Path: "/1/links.json", Body: json.RawMessage(`{"url":"{{base}}/1/todos/5.json"}`)}, Response: Response{Status: 201}},
+	}}
+	p := NewPlayer(c)
+	url := p.Start()
+	defer p.Close()
+	assert.Equal(t, 201, do(t, "POST", url+"/1/links.json", `{"url":"`+url+`/1/todos/5.json"}`))
+}

@@ -487,7 +487,16 @@ func (r *Recorder) record(req *http.Request, reqBody []byte, status int, headers
 		Request:  Request{Method: req.Method, Path: req.URL.Path, Query: q},
 		Response: Response{Status: status, Headers: headers},
 	}
-	if s := r.scrubber.Bytes(reqBody); len(bytes.TrimSpace(s)) > 0 && json.Valid(s) {
+	r.mu.Lock()
+	base := r.base
+	r.mu.Unlock()
+	s := r.scrubber.Bytes(reqBody)
+	if base != "" {
+		// A URL the server copied from an answer points at this run's
+		// recorder; store it as {{base}}, as the Player will compare it.
+		s = bytes.ReplaceAll(s, []byte(base), []byte(BasePlaceholder))
+	}
+	if len(bytes.TrimSpace(s)) > 0 && json.Valid(s) {
 		in.Request.Body = compactRaw(s)
 	}
 	if len(in.Response.Headers) == 0 {
