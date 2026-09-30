@@ -244,21 +244,29 @@ func ValidateLayers(cassettes ...*Cassette) error {
 	// Later layers shadow earlier ones, as in the Player: a write whose
 	// request and state a later layer answers counts only as that layer
 	// answers it.
+	// The Player ranks layer above body, so a later layer's answer for a
+	// request and state shadows every body an earlier layer recorded for it.
 	var writes []write
 	shadowed := map[string]bool{}
 	for li := len(cassettes) - 1; li >= 0; li-- {
+		var inLayer []string
 		for _, in := range cassettes[li].Interactions {
 			if in.Request.Method == "GET" || in.Request.Method == "HEAD" {
 				continue
 			}
-			k := in.stateKey() + "\x00" + canonicalQuery(toValues(in.Request.Query))
+			after := append([]string(nil), in.After...)
+			sort.Strings(after)
+			k := patternKey(in.Request) + "\x00" + strings.Join(after, "\x00")
 			if shadowed[k] {
 				continue
 			}
-			shadowed[k] = true
+			inLayer = append(inLayer, k)
 			if Landed(in.Response.Status) {
 				writes = append(writes, write{writeKey(in.Request.Method, in.Request.Path), in.After})
 			}
+		}
+		for _, k := range inLayer {
+			shadowed[k] = true
 		}
 	}
 	landed := map[string]int{}
