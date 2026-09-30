@@ -263,6 +263,12 @@ func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task
 		if err := saveRecording(cfg, task, rec); err != nil {
 			r.Error, r.Pass = recordErrPrefix+err.Error(), false
 		}
+		// A recording run's product is the scrubbed cassette. Its results
+		// record keeps the scores but drops what carries free text from the
+		// live account or the prompt — the trace (arguments and results),
+		// the answer, the reasons — so no path out of a recording bypasses
+		// the scrubber.
+		r.Trace, r.Answer, r.Reasons = nil, "", nil
 	}
 	return r
 }

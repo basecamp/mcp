@@ -450,3 +450,57 @@ func TestAPIAgentRejectsATruncatedTurn(t *testing.T) {
 	assert.False(t, r.Pass)
 	assert.Contains(t, r.Error, "max_tokens")
 }
+
+// TestRecordThenReplay records a task through the recorder against a live-ish
+// upstream (the fake world served over TLS), then replays the recorded
+// cassette, and checks the recording run's results carry no free text.
+func TestRecordThenReplay(t *testing.T) {
+	base, err := cassette.Load(filepath.Join(fakeDir, "cassettes", "base.json"))
+	require.NoError(t, err)
+	world := cassette.NewPlayer(base)
+	upstream := httptest.NewTLSServer(world)
+	defer upstream.Close()
+	world.SetBase(upstream.URL)
+	prev := http.DefaultTransport
+	http.DefaultTransport = upstream.Client().Transport
+	defer func() { http.DefaultTransport = prev }()
+
+	dir := t.TempDir()
+	t.Setenv("EVAL_RT_TOKEN", "tok")
+	c, a := loadFake(t)
+	require.NoError(t, c.Filter([]string{"complete-todo"}))
+	require.NoError(t, a.Select([]string{"bare"}))
+	c.Tasks[0].Cassettes = []string{"complete-todo"}
+	prof := &cassette.Profile{Name: "rt", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"1"}, TokenEnv: "EVAL_RT_TOKEN"}
+	rep, err := Run(context.Background(), Config{Corpus: c, Arms: a, Agents: []Agent{ScriptAgent{}}, Launch: ConnectFake, Record: prof, RecordDir: dir})
+	require.NoError(t, err)
+	r := rep.Records[0]
+	assert.True(t, r.Pass, r.Reasons)
+	assert.Nil(t, r.Trace, "a recording's results carry no trace")
+	assert.Empty(t, r.Answer)
+
+	// Replay the recording from its own directory.
+	c.CassetteDir = ""
+	recorded, err := cassette.Load(filepath.Join(dir, "complete-todo.json"))
+	require.NoError(t, err)
+	require.NotEmpty(t, recorded.Interactions)
+	c2 := *c
+	c2.dir = dir
+	rep, err = Run(context.Background(), Config{Corpus: &c2, Arms: a, Agents: []Agent{ScriptAgent{}}, Launch: ConnectFake})
+	require.NoError(t, err)
+	assert.True(t, rep.Records[0].Pass, rep.Records[0].Reasons)
+	assert.NotNil(t, rep.Records[0].Trace)
+
+	// More than one task is refused before anything runs.
+	c3, _ := loadFake(t)
+	_, err = Run(context.Background(), Config{Corpus: c3, Arms: a, Agents: []Agent{ScriptAgent{}}, Launch: ConnectFake, Record: prof, RecordDir: dir})
+	assert.ErrorContains(t, err, "one task")
+}
+
+func TestSkillFileStaysBesideTheArmsFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "arms.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"server":"s","guide_tools":[],"skill_file":"../../.env","arms":[{"name":"skill","skill":true}]}`), 0o644))
+	_, err := LoadArms(path)
+	assert.ErrorContains(t, err, "beneath")
+}

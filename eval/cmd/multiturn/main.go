@@ -218,6 +218,18 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 			return fail(fmt.Errorf("--out %s is the same file as %s: the run would overwrite it", o.out, in.flag))
 		}
 	}
+	if cfg.Record != nil {
+		// Each recorded cassette lands at <record-dir>/<task>.json; it must
+		// not replace a file the run reads.
+		for _, t := range corpus.Tasks {
+			target := filepath.Join(o.recordDir, t.ID+".json")
+			for _, in := range []string{o.tasks, o.armsFile, o.recordProfile, o.out} {
+				if sameFile(target, in) {
+					return fail(fmt.Errorf("task %s would record over %s", t.ID, in))
+				}
+			}
+		}
+	}
 	if o.recordDir != "" && filepath.Dir(filepath.Clean(o.out)) == filepath.Clean(o.recordDir) && strings.HasSuffix(o.out, ".json") {
 		return fail(fmt.Errorf("--out %s would land among the recorded cassettes in %s", o.out, o.recordDir))
 	}

@@ -244,6 +244,8 @@ func TestRecorderRedirectsQueriesAndRepeatedReads(t *testing.T) {
 	state := "before"
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/123/offsite":
+			http.Redirect(w, r, "https://cdn.example/signed?sig=SECRET", http.StatusFound)
 		case r.URL.Path == "/123/moved":
 			http.Redirect(w, r, "/999/secret.json", http.StatusFound)
 		case r.URL.Path == "/999/secret.json":
@@ -272,6 +274,11 @@ func TestRecorderRedirectsQueriesAndRepeatedReads(t *testing.T) {
 	_ = resp.Body.Close()
 	assert.Equal(t, http.StatusFound, resp.StatusCode)
 	assert.Equal(t, 403, do(t, "GET", url+"/999/secret.json", ""))
+	resp, err = noFollow.Get(url + "/123/offsite")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusBadGateway, resp.StatusCode, "an off-origin redirect is refused")
+	assert.Empty(t, resp.Header.Get("Location"))
 
 	// Query values are scrubbed in the cassette and the log.
 	get(t, url+"/123/search.json?q=someone@corp.example")
@@ -285,6 +292,7 @@ func TestRecorderRedirectsQueriesAndRepeatedReads(t *testing.T) {
 	data, _ := json.Marshal(c)
 	assert.NotContains(t, string(data), "someone@corp.example")
 	assert.NotContains(t, string(data), "someone%40corp.example")
+	assert.NotContains(t, string(data), "SECRET")
 	for _, ex := range rec.Since(0) {
 		assert.NotContains(t, ex.Query, "someone@corp.example")
 		assert.NotContains(t, ex.Query, "someone%40corp.example", "scrubbed before encoding")
