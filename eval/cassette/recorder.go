@@ -355,7 +355,7 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// another account once something upstream normalizes the path, past the
 	// allowlist that read it un-normalized: refused outright.
 	if hasDotSegment(req.URL.Path) || strings.Contains(strings.ToLower(req.URL.EscapedPath()), "%2e") {
-		refuse(http.StatusBadRequest, "dot segments in the path")
+		refuse(http.StatusBadRequest, "dot or empty segments in the path")
 		return
 	}
 	if !r.allowed(req.URL.Path) {
@@ -423,7 +423,7 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			headers[h] = r.scrubber.String(strings.Join(vs, ", "))
 		}
 	}
-	scrubbed := r.scrubber.Bytes(respBody)
+	scrubbed := scrubAvatarFields(r.scrubber.Bytes(respBody))
 	if !json.Valid(scrubbed) && !utf8.Valid(scrubbed) {
 		// body_text is a JSON string: invalid UTF-8 would be replaced on
 		// save and replay different bytes.
@@ -438,6 +438,10 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	if r.leaksOrigin(scrubbed) {
 		refuse(http.StatusBadGateway, "the upstream origin survives scrubbing in an encoded form")
+		return
+	}
+	if leaksPersonal(scrubbed) {
+		refuse(http.StatusBadGateway, "an email or avatar URL survives scrubbing in an encoded form")
 		return
 	}
 	if json.Valid(respBody) && !json.Valid(scrubbed) {
@@ -544,10 +548,52 @@ func (r *Recorder) leaksOrigin(body []byte) bool {
 	return walk(doc)
 }
 
-// hasDotSegment reports whether a path has a "." or ".." segment.
+// leaksPersonal reports whether a scrubbed JSON body still carries, once
+// decoded (\u0040, \u005f and the like undone), an email address outside
+// example.com or an avatar URL other than the placeholder: the byte-level
+// scrubber missed a spelling, so the recording is refused, not saved.
+func leaksPersonal(body []byte) bool {
+	var doc any
+	if json.Unmarshal(body, &doc) != nil {
+		return false
+	}
+	var walk func(key string, v any) bool
+	walk = func(key string, v any) bool {
+		switch t := v.(type) {
+		case string:
+			if strings.HasPrefix(key, "avatar") && t != "" && t != "https://example.com/avatar.png" {
+				return true
+			}
+			for _, m := range emailRE.FindAllString(t, -1) {
+				if !strings.HasSuffix(strings.ToLower(m), "@example.com") {
+					return true
+				}
+			}
+		case map[string]any:
+			for k, c := range t {
+				if walk(k, c) {
+					return true
+				}
+			}
+		case []any:
+			for _, c := range t {
+				if walk(key, c) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return walk("", doc)
+}
+
+// hasDotSegment reports whether a path has a "." or ".." segment, or an
+// empty one (//): anything a router upstream might normalize into another
+// account's path after the allowlist has read it.
 func hasDotSegment(p string) bool {
-	for _, seg := range strings.Split(p, "/") {
-		if seg == "." || seg == ".." {
+	segs := strings.Split(p, "/")
+	for i, seg := range segs {
+		if seg == "." || seg == ".." || (seg == "" && i > 0 && i < len(segs)-1) {
 			return true
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -77,6 +78,54 @@ func (s *Scrubber) Bytes(in []byte) []byte {
 		out = bytes.ReplaceAll(out, []byte(r[0]), []byte(r[1]))
 	}
 	return out
+}
+
+// scrubAvatarFields replaces every string under a key beginning "avatar"
+// (avatar_url, avatars_sample, …) with the placeholder, on the decoded
+// document — so escaped key spellings and arrays of URLs are covered, which
+// the byte-level pattern cannot see. A body with nothing to replace, or
+// that is not JSON, is returned unchanged.
+func scrubAvatarFields(body []byte) []byte {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var doc any
+	if dec.Decode(&doc) != nil {
+		return body
+	}
+	changed := false
+	var walk func(v any, under bool) any
+	walk = func(v any, under bool) any {
+		switch t := v.(type) {
+		case string:
+			if under && t != "" && t != "https://example.com/avatar.png" {
+				changed = true
+				return "https://example.com/avatar.png"
+			}
+			return t
+		case map[string]any:
+			for k, c := range t {
+				t[k] = walk(c, strings.HasPrefix(k, "avatar"))
+			}
+			return t
+		case []any:
+			for i, c := range t {
+				t[i] = walk(c, under)
+			}
+			return t
+		}
+		return v
+	}
+	doc = walk(doc, false)
+	if !changed {
+		return body
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if enc.Encode(doc) != nil {
+		return body
+	}
+	return bytes.TrimSpace(buf.Bytes())
 }
 
 // fakeEmail maps a real address to a stable placeholder: an HMAC of the

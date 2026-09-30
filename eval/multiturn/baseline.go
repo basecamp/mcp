@@ -72,10 +72,10 @@ func LoadBaseline(r io.Reader) (*Baseline, error) {
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			return nil, fmt.Errorf("decode baseline record: %w", err)
 		}
-		if rec.Server == "" || rec.Backend == "" || rec.Model == "" || rec.ModelID == "" || rec.Arm == "" || rec.TaskID == "" || rec.TaskDigest == "" {
+		if rec.Server == "" || rec.Backend == "" || rec.Model == "" || rec.ModelID == "" || rec.Arm == "" || rec.TaskID == "" || rec.TaskDigest == "" || rec.ArmDigest == "" {
 			// model_id included: without it the like-for-like model check
 			// would silently skip the cell.
-			return nil, fmt.Errorf("baseline record missing server, backend, model, model_id, arm, task_id, or task_digest: %s", truncate(line, 200))
+			return nil, fmt.Errorf("baseline record missing server, backend, model, model_id, arm, task_id, task_digest, or arm_digest: %s", truncate(line, 200))
 		}
 		k := cellKey(rec.Model, rec.Arm, rec.TaskID)
 		if _, dup := b.cells[k]; dup {
@@ -121,6 +121,17 @@ func (b *Baseline) CheckDigests(digests map[string]string) error {
 	for _, rec := range b.cells {
 		if d, ok := digests[rec.TaskID]; ok && d != rec.TaskDigest {
 			return fmt.Errorf("task %s changed since the baseline (prompt, cassettes, or grading): regenerate the baseline or rename the task", rec.TaskID)
+		}
+	}
+	return nil
+}
+
+// CheckArmDigests refuses, before spend, a baseline taken under a different
+// definition of an arm this run will use.
+func (b *Baseline) CheckArmDigests(digests map[string]string) error {
+	for _, rec := range b.cells {
+		if d, ok := digests[rec.Arm]; ok && d != rec.ArmDigest {
+			return fmt.Errorf("arm %s changed since the baseline (switches, server args, guide tools, or skill): regenerate the baseline or rename the arm", rec.Arm)
 		}
 	}
 	return nil
@@ -173,6 +184,9 @@ func Compare(base *Baseline, records []Record) (Comparison, error) {
 			continue
 		}
 		matched++
+		if prev.ArmDigest != r.ArmDigest {
+			return cmp, fmt.Errorf("arm %s changed since the baseline (switches, server args, guide tools, or skill): regenerate the baseline or rename the arm", r.Arm)
+		}
 		if prev.TaskDigest != r.TaskDigest {
 			return cmp, fmt.Errorf("task %s changed since the baseline (prompt, cassettes, or grading): regenerate the baseline or rename the task", r.TaskID)
 		}
