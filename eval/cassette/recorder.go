@@ -73,8 +73,12 @@ func (p *Profile) Validate() error {
 		return fmt.Errorf("profile %q does not declare test_account: true — recording is only for seeded test accounts, never production data", p.Name)
 	}
 	u, err := url.Parse(p.Upstream)
-	if err != nil || u.Scheme != "https" || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil || defaultPort(u.Port()) {
-		return fmt.Errorf("profile %q: upstream %q must be a bare https origin", p.Name, p.Upstream)
+	// One canonical spelling: https://host[:port], lowercase, nothing after
+	// — no path, no ?, no #, not even empty ones (forwarding concatenates
+	// the profile string with the request URI, so a stray ? or # would
+	// swallow the account path).
+	if err != nil || u.Scheme != "https" || u.Host == "" || p.Upstream != "https://"+strings.ToLower(u.Host) || u.User != nil || defaultPort(u.Port()) {
+		return fmt.Errorf("profile %q: upstream %q must be a bare, lowercase https origin (https://host or https://host:port)", p.Name, p.Upstream)
 	}
 	if len(p.AccountIDs) == 0 {
 		return fmt.Errorf("profile %q lists no account_ids: the recorder forwards only to named test accounts", p.Name)
@@ -440,6 +444,12 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			headers[h] = r.scrubber.String(strings.Join(vs, ", "))
 		}
 	}
+	if bytes.Contains(respBody, []byte(BasePlaceholder)) {
+		// The literal is the cassette's own placeholder; upstream content
+		// carrying it could not be told from a scrubbed origin.
+		refuse(http.StatusBadGateway, "the upstream answer contains the literal "+BasePlaceholder)
+		return
+	}
 	scrubbed := scrubAvatarFields(r.scrubber.Bytes(respBody))
 	if !json.Valid(scrubbed) && !utf8.Valid(scrubbed) {
 		// body_text is a JSON string: invalid UTF-8 would be replaced on
@@ -519,7 +529,7 @@ func (r *Recorder) offOrigin(h http.Header) string {
 	origin := strings.TrimSuffix(r.profile.Upstream, "/")
 	bad := func(raw string) bool {
 		u, err := url.Parse(strings.TrimSpace(raw))
-		return err != nil || u.User != nil || (u.Host != "" && (u.Scheme != "https" || "https://"+u.Host != origin))
+		return err != nil || u.User != nil || (u.Host != "" && (u.Scheme != "https" || "https://"+strings.ToLower(u.Host) != origin))
 	}
 	if loc := h.Get("Location"); loc != "" && bad(loc) {
 		return "a redirect"
@@ -557,8 +567,8 @@ func (r *Recorder) leaksOrigin(body []byte) bool {
 		switch t := v.(type) {
 		case string:
 			// Decoded, so \u0040 and friends are plain here: the origin
-			// itself, or {{base}}@ (the replay origin turned userinfo).
-			return strings.Contains(strings.ToLower(t), host) || strings.Contains(t, BasePlaceholder+"@")
+			// itself, or {{base}} running on into a longer authority.
+			return strings.Contains(strings.ToLower(t), host) || placeholderAuthority.MatchString(t)
 		case map[string]any:
 			for k, c := range t {
 				if strings.Contains(strings.ToLower(k), host) || walk(c) {
