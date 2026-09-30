@@ -71,6 +71,39 @@ func (in Interaction) stateKey() string {
 	return k
 }
 
+// decodedContains reports whether any string in a JSON body, decoded (so
+// \u0040 is @), contains s.
+func decodedContains(body json.RawMessage, s string) bool {
+	if len(body) == 0 {
+		return false
+	}
+	var doc any
+	if json.Unmarshal(body, &doc) != nil {
+		return false
+	}
+	var walk func(any) bool
+	walk = func(v any) bool {
+		switch t := v.(type) {
+		case string:
+			return strings.Contains(t, s)
+		case map[string]any:
+			for k, c := range t {
+				if strings.Contains(k, s) || walk(c) {
+					return true
+				}
+			}
+		case []any:
+			for _, c := range t {
+				if walk(c) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return walk(doc)
+}
+
 // validHeaderValue reports whether net/http can send v as a field value: no
 // control characters but tab (RFC 9110 field-value).
 func validHeaderValue(v string) bool {
@@ -169,7 +202,7 @@ func (c *Cassette) Validate() error {
 		if in.Response.Status < 200 || in.Response.Status > 599 {
 			return fmt.Errorf("interaction #%d (%s %s): response status %d", i+1, r.Method, r.Path, in.Response.Status)
 		}
-		if strings.Contains(string(in.Response.Body)+in.Response.BodyText, BasePlaceholder+"@") {
+		if strings.Contains(string(in.Response.Body)+in.Response.BodyText, BasePlaceholder+"@") || decodedContains(in.Response.Body, BasePlaceholder+"@") {
 			return fmt.Errorf("interaction #%d (%s %s): %s@ in a body would make the Player's origin userinfo", i+1, r.Method, r.Path, BasePlaceholder)
 		}
 		if len(in.Response.Body) > 0 && !json.Valid(in.Response.Body) {

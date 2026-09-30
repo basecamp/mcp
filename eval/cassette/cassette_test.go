@@ -689,6 +689,8 @@ func TestRecorderRefusesRepeatedQueryKeys(t *testing.T) {
 func TestOriginUserinfoIsRefused(t *testing.T) {
 	c := &Cassette{Name: "u", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200, Body: json.RawMessage(`{"url":"{{base}}@evil.example/x"}`)}}}}
 	assert.Error(t, c.Validate())
+	c.Interactions[0].Response.Body = json.RawMessage(`{"url":"{{base}}\u0040evil.example/x"}`)
+	assert.Error(t, c.Validate(), "escaped @ too")
 	assert.Empty(t, foreignAccounts([]byte(`{"accounts":[{"id":9007199254740992}]}`), []string{"9007199254740992"}))
 	assert.Equal(t, []string{"9007199254740993"}, foreignAccounts([]byte(`{"accounts":[{"id":9007199254740993}]}`), []string{"9007199254740992"}), "no float rounding")
 }

@@ -111,7 +111,13 @@ func grade(ep *Episode, guide func(string) bool) Record {
 	// attempts, and on a read-only task, violations.
 	if ep.backend != nil {
 		for i, ex := range ep.backend.Since(0) {
-			if ex.IsWrite() && !ep.attributedAt[i] {
+			if ep.attributedAt[i] {
+				continue
+			}
+			if !ex.Matched {
+				rec.WrongID++
+			}
+			if ex.IsWrite() {
 				attempted = append(attempted, ex.Line())
 			}
 		}
