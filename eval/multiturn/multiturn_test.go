@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -709,4 +710,11 @@ func TestStartupReadsAreNotAnswerEvidence(t *testing.T) {
 	}
 	r := grade(ep, func(string) bool { return false })
 	assert.False(t, r.Pass, "the server's own startup read is not the agent consulting the account")
+}
+
+func TestIsGateway(t *testing.T) {
+	gw := &mcp.Tool{Name: "x_todos", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"action": map[string]any{"type": "string", "enum": []any{"list"}}}}}
+	flat := &mcp.Tool{Name: "workflow_update", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"action": map[string]any{"type": "string"}}}}
+	assert.True(t, isGateway(gw))
+	assert.False(t, isGateway(flat), "an action argument alone does not make a gateway")
 }

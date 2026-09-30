@@ -246,12 +246,24 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 			}
 		}
 	}
+	// The harness itself and, under --backend cli, the claude executable.
+	self, _ := os.Executable()
+	cliBin := ""
+	if o.backend == "cli" {
+		bin := os.Getenv("EVAL_CLAUDE_BIN")
+		if bin == "" {
+			bin = "claude"
+		}
+		if p, err := exec.LookPath(bin); err == nil {
+			cliBin = p
+		}
+	}
 	skillPath := ""
 	if arms.SkillFile != "" {
 		skillPath = filepath.Join(filepath.Dir(o.armsFile), arms.SkillFile)
 	}
 	for _, in := range []struct{ flag, path string }{
-		{"--baseline", o.baseline}, {"--tasks", o.tasks}, {"--arms-file", o.armsFile}, {"--record-profile", o.recordProfile}, {"the skill file", skillPath}, {"the server executable", serverBin},
+		{"--baseline", o.baseline}, {"--tasks", o.tasks}, {"--arms-file", o.armsFile}, {"--record-profile", o.recordProfile}, {"the skill file", skillPath}, {"the server executable", serverBin}, {"this harness", self}, {"the claude executable", cliBin},
 	} {
 		if sameFile(o.out, in.path) {
 			return fail(fmt.Errorf("--out %s is the same file as %s: the run would overwrite it", o.out, in.flag))

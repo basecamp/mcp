@@ -828,3 +828,9 @@ func TestDecodedAuthorityRunOnAndLiteralPlaceholders(t *testing.T) {
 	status, _, _ := get(t, url+"/1/doc.json")
 	assert.Equal(t, http.StatusBadGateway, status, "a literal placeholder in upstream content")
 }
+
+func TestScrubberRewritesTheOriginCaseInsensitively(t *testing.T) {
+	out := NewScrubber("https://api.example", nil, "k").String(`{"next":"https://API.EXAMPLE/p","esc":"https:\/\/Api.Example\/q"}`)
+	assert.NotContains(t, strings.ToLower(out), "api.example")
+	assert.Contains(t, out, "{{base}}/p")
+}
