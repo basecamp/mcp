@@ -598,3 +598,26 @@ func TestPlayerComparesBodiesWithItsOriginAsBase(t *testing.T) {
 	defer p.Close()
 	assert.Equal(t, 201, do(t, "POST", url+"/1/links.json", `{"url":"`+url+`/1/todos/5.json"}`))
 }
+
+func TestEscapedOriginsAndNonJSONBodies(t *testing.T) {
+	c := &Cassette{Name: "b", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/1/links.json", Body: json.RawMessage(`{"url":"x"}`)}, Response: Response{Status: 422}},
+		{Request: Request{Method: "POST", Path: "/1/links.json", Body: json.RawMessage(`{"url":"{{base}}/1/a"}`)}, Response: Response{Status: 201}},
+	}}
+	p := NewPlayer(c)
+	url := p.Start()
+	defer p.Close()
+	escaped := strings.ReplaceAll(url, "/", `\/`) // http:\/\/127.0.0.1:…
+	assert.Equal(t, 201, do(t, "POST", url+"/1/links.json", `{"url":"`+escaped+`/1/a"}`))
+
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	rurl := rec.Start()
+	defer rec.Close()
+	assert.Equal(t, http.StatusUnsupportedMediaType, do(t, "POST", rurl+"/1/form", "a=1&b=2"))
+	assert.Len(t, rec.Faults(), 1)
+}

@@ -161,7 +161,7 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Bodies are compared with this Player's origin as {{base}}, as the
 	// recorder stores them: a URL the server copied from an answer into a
 	// write carries a per-run origin.
-	idx := p.match(r, strings.ReplaceAll(ex.Body, p.base, BasePlaceholder))
+	idx := p.match(r, string(toPlaceholder([]byte(ex.Body), p.base)))
 	var resp Response
 	if idx >= 0 {
 		resp = p.entries[idx].in.Response

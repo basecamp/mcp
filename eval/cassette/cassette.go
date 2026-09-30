@@ -71,6 +71,16 @@ func (in Interaction) stateKey() string {
 	return k
 }
 
+// toPlaceholder rewrites an origin to BasePlaceholder in a body, in both the
+// plain and the slash-escaped JSON spelling (http:\/\/127.0.0.1:…).
+func toPlaceholder(body []byte, origin string) []byte {
+	if origin == "" {
+		return body
+	}
+	body = bytes.ReplaceAll(body, []byte(origin), []byte(BasePlaceholder))
+	return bytes.ReplaceAll(body, []byte(strings.ReplaceAll(origin, "/", `\/`)), []byte(BasePlaceholder))
+}
+
 // writeKey is how a landed write is named in After: method and path, the
 // ".json" suffix dropped, so both spellings name one write.
 func writeKey(method, path string) string {

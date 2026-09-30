@@ -325,6 +325,12 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		refuse(http.StatusBadRequest, "request body truncated")
 		return
 	}
+	if len(bytes.TrimSpace(body)) > 0 && !json.Valid(body) {
+		// A cassette keys writes by their JSON body; a form or multipart
+		// body could not be told apart from its retry on replay.
+		refuse(http.StatusUnsupportedMediaType, "non-JSON request body cannot be recorded")
+		return
+	}
 	if !r.allowed(req.URL.Path) {
 		refuse(http.StatusForbidden, "account not in the test profile")
 		return
@@ -490,12 +496,9 @@ func (r *Recorder) record(req *http.Request, reqBody []byte, status int, headers
 	r.mu.Lock()
 	base := r.base
 	r.mu.Unlock()
-	s := r.scrubber.Bytes(reqBody)
-	if base != "" {
-		// A URL the server copied from an answer points at this run's
-		// recorder; store it as {{base}}, as the Player will compare it.
-		s = bytes.ReplaceAll(s, []byte(base), []byte(BasePlaceholder))
-	}
+	// A URL the server copied from an answer points at this run's recorder;
+	// store it as {{base}}, as the Player will compare it.
+	s := toPlaceholder(r.scrubber.Bytes(reqBody), base)
 	if len(bytes.TrimSpace(s)) > 0 && json.Valid(s) {
 		in.Request.Body = compactRaw(s)
 	}
