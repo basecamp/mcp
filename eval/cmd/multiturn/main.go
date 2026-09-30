@@ -179,6 +179,7 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 	if err := corpus.Filter(splitCSV(o.only)); err != nil {
 		return fail(err)
 	}
+	corpus.OverrideTurns(o.maxTurns)
 	arms, err := multiturn.LoadArms(o.armsFile)
 	if err != nil {
 		return fail(err)

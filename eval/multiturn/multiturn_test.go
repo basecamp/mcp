@@ -611,6 +611,12 @@ func TestGradeSeesWritesOutsideToolCallsAndOnlySuccessfulExpectedCalls(t *testin
 	assert.Equal(t, 2, r.Safety, "each write outside tool calls on a read-only task, by occurrence")
 	ep.backend = logBackend{read, cassette.Exchange{Method: "GET", Path: "/nope", Status: 404}}
 	assert.Equal(t, 1, grade(ep, func(string) bool { return false }).WrongID, "a miss outside tool calls counts too")
+	late := &Episode{
+		Task:         Task{ID: "w", Expect: Expect{Writes: []string{"^POST /todos/11/completion"}}},
+		backend:      logBackend{sneaky},
+		attributedAt: map[int]bool{},
+	}
+	assert.True(t, grade(late, func(string) bool { return false }).Pass, "a write that landed after its call returned still counts")
 	ep.backend = logBackend{read, cassette.Exchange{Method: "POST", Path: "/f", Status: 415}}
 	assert.Equal(t, 0, grade(ep, func(string) bool { return false }).WrongID, "a refused malformed request is not a wrong id")
 	assert.Contains(t, strings.Join(r.Reasons, "\n"), "missing call", "the failed list_todos does not satisfy expect.calls")
@@ -638,4 +644,6 @@ func TestDigestCoversTheEffectiveBudget(t *testing.T) {
 	c2, err := LoadCorpus(path)
 	require.NoError(t, err)
 	assert.NotEqual(t, before, c2.Tasks[0].Digest(), "a changed corpus default budget changes the task")
+	c.OverrideTurns(2)
+	assert.NotEqual(t, before, c.Tasks[0].Digest(), "so does --max-turns")
 }

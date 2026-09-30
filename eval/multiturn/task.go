@@ -71,9 +71,11 @@ type Task struct {
 	ScriptAnswer string       `json:"script_answer"`
 
 	// The corpus-level settings the task runs under, filled at load, so the
-	// digest covers what actually governs the episode.
-	effTurns int
-	today    string
+	// digest covers what actually governs the episode: the effective turn
+	// budget, the pinned date, and the contents of its cassettes.
+	effTurns       int
+	today          string
+	cassetteDigest string
 }
 
 // Expect lists what a passing trace must contain. Each pattern is a Go regexp
@@ -121,6 +123,15 @@ func LoadCorpus(path string) (*Corpus, error) {
 	}
 	for i := range c.Tasks {
 		c.Tasks[i].effTurns, c.Tasks[i].today = c.turns(c.Tasks[i]), c.Today
+		h := sha256.New()
+		for _, name := range c.Tasks[i].Cassettes {
+			data, err := os.ReadFile(c.CassettePath(name))
+			if err != nil {
+				data = []byte("absent") // a recording run creates it
+			}
+			fmt.Fprintf(h, "%s\x00%x\x00", name, sha256.Sum256(data))
+		}
+		c.Tasks[i].cassetteDigest = hex.EncodeToString(h.Sum(nil)[:8])
 	}
 	return &c, nil
 }
@@ -128,6 +139,17 @@ func LoadCorpus(path string) (*Corpus, error) {
 // CassettePath resolves a cassette name to its file.
 func (c *Corpus) CassettePath(name string) string {
 	return filepath.Join(c.dir, c.CassetteDir, name+".json")
+}
+
+// OverrideTurns applies a run-wide turn budget (--max-turns) to every task,
+// digests included: a baseline run under another budget is another task.
+func (c *Corpus) OverrideTurns(n int) {
+	if n <= 0 {
+		return
+	}
+	for i := range c.Tasks {
+		c.Tasks[i].effTurns = n
+	}
 }
 
 // Filter narrows the corpus to the named task ids, refusing unknown ones.
@@ -234,10 +256,11 @@ func (t Task) Digest() string {
 		Cassettes []string
 		MaxTurns  int
 		Today     string
+		Data      string
 		ReadOnly  bool
 		Expect    Expect
 		Reject    Reject
-	}{t.Prompt, t.Cassettes, t.effTurns, t.today, t.ReadOnly, t.Expect, t.Reject})
+	}{t.Prompt, t.Cassettes, t.effTurns, t.today, t.cassetteDigest, t.ReadOnly, t.Expect, t.Reject})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:8])
 }

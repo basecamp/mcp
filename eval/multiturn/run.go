@@ -74,6 +74,7 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	} else if err := cfg.Corpus.CheckCassettes(); err != nil {
 		return nil, err
 	}
+	cfg.Corpus.OverrideTurns(cfg.MaxTurns)
 	if err := preflightArms(ctx, cfg); err != nil {
 		return nil, err
 	}
@@ -212,6 +213,12 @@ func proveScripts(ctx context.Context, cfg Config) error {
 	for _, arm := range cfg.Arms.Arms {
 		for _, task := range cfg.Corpus.Tasks {
 			r := runEpisode(ctx, cfg, ScriptAgent{}, arm, task)
+			// A gold path that asked the backend for something the cassette
+			// lacks (a server may mask the 404 as an empty success) is not a
+			// proof of the cassette, even if the canned answer grades.
+			if r.WrongID > 0 && r.Error == "" {
+				r.Error = fmt.Sprintf("%d backend request(s) the cassettes could not answer", r.WrongID)
+			}
 			if !r.Pass || r.Error != "" {
 				why := r.Error
 				if why == "" && len(r.Reasons) > 0 {
@@ -275,7 +282,10 @@ func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task
 	if err != nil {
 		return fail(err)
 	}
-	turns := cfg.Corpus.turns(task)
+	turns := task.effTurns
+	if turns <= 0 {
+		turns = cfg.Corpus.turns(task)
+	}
 	if cfg.MaxTurns > 0 {
 		turns = cfg.MaxTurns
 	}
