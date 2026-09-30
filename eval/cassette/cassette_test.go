@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -194,10 +195,14 @@ func TestRecorderProxiesScrubsAndRefusesOtherAccounts(t *testing.T) {
 		assert.NotContains(t, s, leaked)
 	}
 	assert.Contains(t, s, BasePlaceholder+"/123/people/1.json")
-	assert.Contains(t, s, "person1@example.com")
+	alias := regexp.MustCompile(`person-[0-9a-f]{10}@example\.com`).FindString(s)
+	require.NotEmpty(t, alias)
 	assert.Contains(t, s, "Fixture Person")
 	require.Len(t, c.Interactions, 2)
-	assert.JSONEq(t, `{"content":"hi person1@example.com"}`, string(c.Interactions[1].Request.Body))
+	assert.JSONEq(t, `{"content":"hi `+alias+`"}`, string(c.Interactions[1].Request.Body))
+	// The live answer the server saw was scrubbed too.
+	assert.NotContains(t, string(live), "real.person@corp.example")
+	assert.Contains(t, string(live), alias)
 
 	// The recorder keeps the same exchange log a player does.
 	log := rec.Since(0)
@@ -219,14 +224,87 @@ func TestNewRecorderNeedsToken(t *testing.T) {
 	assert.ErrorContains(t, err, "EVAL_MISSING_TOKEN is not set")
 }
 
+func TestRecorderRedirectsQueriesAndRepeatedReads(t *testing.T) {
+	state := "before"
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/123/moved":
+			http.Redirect(w, r, "/999/secret.json", http.StatusFound)
+		case r.URL.Path == "/999/secret.json":
+			t.Error("the upstream was asked for an account outside the profile")
+		case r.Method == "POST":
+			state = "after"
+			w.WriteHeader(204)
+		default:
+			_, _ = io.WriteString(w, `{"state":"`+state+`"}`)
+		}
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"123"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	tr := upstream.Client().Transport
+	rec.client.Transport = tr
+	url := rec.Start()
+	defer rec.Close()
+
+	// The redirect is handed back, not followed; following it through the
+	// recorder is refused.
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := noFollow.Get(url + "/123/moved")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusFound, resp.StatusCode)
+	assert.Equal(t, 403, do(t, "GET", url+"/999/secret.json", ""))
+
+	// Query values are scrubbed in the cassette and the log.
+	get(t, url+"/123/search.json?q=someone@corp.example")
+	// read, read (unchanged: dropped), write, read (changed: kept).
+	get(t, url+"/123/thing.json")
+	get(t, url+"/123/thing.json")
+	do(t, "POST", url+"/123/thing/touch.json", "")
+	get(t, url+"/123/thing.json")
+
+	c := rec.Cassette("x", "")
+	data, _ := json.Marshal(c)
+	assert.NotContains(t, string(data), "someone@corp.example")
+	for _, ex := range rec.Since(0) {
+		assert.NotContains(t, ex.Query, "someone@corp.example")
+	}
+	var reads []string
+	for _, in := range c.Interactions {
+		if in.Request.Path == "/123/thing.json" {
+			reads = append(reads, string(in.Response.Body))
+		}
+	}
+	assert.Equal(t, []string{`{"state":"before"}`, `{"state":"after"}`}, reads)
+
+	// Replay walks the same states.
+	p := NewPlayer(c)
+	purl := p.Start()
+	defer p.Close()
+	_, b1, _ := get(t, purl+"/123/thing.json")
+	_, b2, _ := get(t, purl+"/123/thing.json")
+	assert.JSONEq(t, `{"state":"before"}`, b1)
+	assert.JSONEq(t, `{"state":"after"}`, b2)
+}
+
+func TestScrubberAliasesAreKeyedAndStable(t *testing.T) {
+	a := NewScrubber("", nil, "k1").String("x@corp.example")
+	assert.Equal(t, a, NewScrubber("", nil, "k1").String("X@corp.example"))
+	assert.NotEqual(t, a, NewScrubber("", nil, "k2").String("x@corp.example"))
+	assert.Equal(t, "keep@example.com", NewScrubber("", nil, "k1").String("keep@example.com"))
+}
+
 func TestMergeKeepsFirstAnswerPerPattern(t *testing.T) {
 	a := &Cassette{Name: "a", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/x"}, Response: Response{Status: 200, Body: json.RawMessage(`1`)}}}}
 	b := &Cassette{Name: "b", Interactions: []Interaction{
 		{Request: Request{Method: "GET", Path: "/x.json"}, Response: Response{Status: 200, Body: json.RawMessage(`2`)}},
 		{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200, Body: json.RawMessage(`3`)}},
 	}}
+	b.Interactions = append(b.Interactions, Interaction{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200, Body: json.RawMessage(`4`)}})
 	Merge(a, b)
-	require.Len(t, a.Interactions, 2)
+	require.Len(t, a.Interactions, 3, "every recorded state of a new pattern")
 	assert.Equal(t, json.RawMessage(`1`), a.Interactions[0].Response.Body)
 	assert.Equal(t, "/y", a.Interactions[1].Request.Path)
 }

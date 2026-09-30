@@ -2,16 +2,17 @@ package cassette
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 )
 
 // Scrubber removes what a cassette must not carry: the live API origin
 // (replaced with BasePlaceholder), email addresses (replaced with stable
-// per-address fakes, so one person stays one person across a cassette),
+// keyed per-address aliases, so one person stays one person across a cassette),
 // avatar URLs (which embed signed CDN tokens), and caller-listed literals.
 // It works on raw text as well as JSON so request bodies, response bodies and
 // header values are all covered by the same rules.
@@ -19,8 +20,7 @@ type Scrubber struct {
 	upstream string
 	redact   [][2]string // longest first, so a full name replaces before a first name
 
-	mu     sync.Mutex
-	emails map[string]string
+	key []byte
 }
 
 var (
@@ -28,9 +28,12 @@ var (
 	avatarRE = regexp.MustCompile(`"(avatar_url|avatar_url_large|avatar_thumbnail_url)"\s*:\s*"[^"]*"`)
 )
 
-// NewScrubber builds a scrubber for an upstream origin and literal redactions.
-func NewScrubber(upstream string, redact map[string]string) *Scrubber {
-	s := &Scrubber{upstream: strings.TrimSuffix(upstream, "/"), emails: map[string]string{}}
+// NewScrubber builds a scrubber for an upstream origin and literal
+// redactions. key seeds the email aliases: the same key maps an address to
+// the same alias every time, and without the key an alias cannot be walked
+// back to its address.
+func NewScrubber(upstream string, redact map[string]string, key string) *Scrubber {
+	s := &Scrubber{upstream: strings.TrimSuffix(upstream, "/"), key: []byte(key)}
 	for from, to := range redact {
 		if from != "" {
 			s.redact = append(s.redact, [2]string{from, to})
@@ -76,15 +79,13 @@ func (s *Scrubber) Bytes(in []byte) []byte {
 	return out
 }
 
-// fakeEmail maps a real address to a stable placeholder.
+// fakeEmail maps a real address to a stable placeholder: an HMAC of the
+// lowercased address under the scrubber key.
 func (s *Scrubber) fakeEmail(addr string) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	key := strings.ToLower(addr)
-	if f, ok := s.emails[key]; ok {
-		return f
+	if strings.HasSuffix(strings.ToLower(addr), "@example.com") {
+		return addr // already a fixture (or already scrubbed)
 	}
-	f := fmt.Sprintf("person%d@example.com", len(s.emails)+1)
-	s.emails[key] = f
-	return f
+	m := hmac.New(sha256.New, s.key)
+	m.Write([]byte(strings.ToLower(addr)))
+	return fmt.Sprintf("person-%x@example.com", m.Sum(nil)[:5])
 }

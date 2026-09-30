@@ -419,3 +419,33 @@ func TestAPIAgentSurfacesAPIErrors(t *testing.T) {
 	assert.False(t, r.Pass)
 	assert.Error(t, RequirePass([]Record{r}))
 }
+
+func TestScriptAgentFailsOnABrokenGoldPath(t *testing.T) {
+	c, a := loadFake(t)
+	require.NoError(t, c.Filter([]string{"open-todos"}))
+	require.NoError(t, a.Select([]string{"bare"}))
+	c.Tasks[0].Script[1].Arguments = map[string]any{"action": "list_todos", "params": map[string]any{"project_id": 404}}
+	rep, err := Run(context.Background(), Config{Corpus: c, Arms: a, Agents: []Agent{ScriptAgent{}}, Launch: ConnectFake})
+	require.NoError(t, err)
+	r := rep.Records[0]
+	assert.False(t, r.Pass, "the canned answer alone must not pass")
+	assert.Contains(t, r.Error, "gold script failed: step 2")
+}
+
+func TestFilterRejectsDuplicates(t *testing.T) {
+	c, _ := loadFake(t)
+	assert.ErrorContains(t, c.Filter([]string{"add-todo", "add-todo"}), "twice")
+}
+
+func TestAPIAgentRejectsATruncatedTurn(t *testing.T) {
+	fa := &fakeAnthropic{responses: []string{`{"content":[{"type":"text","text":"Marked it do"}],"stop_reason":"max_tokens","usage":{"input_tokens":1,"output_tokens":1}}`}}
+	srv := httptest.NewServer(fa)
+	defer srv.Close()
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	t.Setenv("ANTHROPIC_BASE_URL", srv.URL)
+	agent, err := NewAPIAgent("haiku", ModelID("haiku"))
+	require.NoError(t, err)
+	r := runOne(t, "complete-todo", "bare", agent)
+	assert.False(t, r.Pass)
+	assert.Contains(t, r.Error, "max_tokens")
+}

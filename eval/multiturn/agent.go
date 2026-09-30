@@ -34,8 +34,17 @@ func (ScriptAgent) ModelID() string { return "script" }
 
 func (ScriptAgent) Run(ctx context.Context, ep *Episode) error {
 	ep.Turns = 1
-	for _, s := range ep.Task.Script {
-		ep.Call(ctx, s.Tool, s.Arguments)
+	// The canned answer is only earned by a clean gold path: a gold call
+	// that errors (an action renamed, a cassette endpoint gone) fails the
+	// episode, or answer-graded tasks would pass on the canned text alone.
+	var failed []string
+	for i, s := range ep.Task.Script {
+		if text, isErr := ep.Call(ctx, s.Tool, s.Arguments); isErr {
+			failed = append(failed, fmt.Sprintf("step %d (%s): %s", i+1, s.Tool, truncate(text, 200)))
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("gold script failed: %s", strings.Join(failed, "; "))
 	}
 	ep.Finish(ep.Task.ScriptAnswer)
 	return nil
@@ -155,6 +164,11 @@ func (a *APIAgent) Run(ctx context.Context, ep *Episode) error {
 			lastText = text.String()
 		}
 		if len(results) == 0 {
+			// Only a turn the model ended itself is an answer; one cut off by
+			// max_tokens (or stopped for any other reason) is not.
+			if resp.StopReason != "end_turn" && resp.StopReason != "stop_sequence" {
+				return fmt.Errorf("model stopped without finishing (stop_reason %q)", resp.StopReason)
+			}
 			ep.Finish(lastText)
 			return nil
 		}

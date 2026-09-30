@@ -76,3 +76,10 @@ func TestSortedLabels(t *testing.T) {
 	assert.Equal(t, []string{"haiku", "sonnet", "opus", "a-raw-id"},
 		sortedLabels(map[string]string{"opus": "", "a-raw-id": "", "sonnet": "", "haiku": ""}))
 }
+
+func TestLauncherHonorsQuotes(t *testing.T) {
+	_, err := launcher("basecamp", `"/path with spaces/basecamp-mcp" stdio`)
+	assert.NoError(t, err)
+	_, err = launcher("basecamp", `"unbalanced stdio`)
+	assert.Error(t, err)
+}

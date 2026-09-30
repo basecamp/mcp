@@ -124,6 +124,13 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	}
 	close(queue)
 	wg.Wait()
+	// A recording run exists to write cassettes; one it failed to write
+	// fails the run, whatever the episodes scored.
+	for _, r := range rep.Records {
+		if strings.HasPrefix(r.Error, recordErrPrefix) {
+			return rep, fmt.Errorf("%s/%s/%s: %s", r.Model, r.Arm, r.TaskID, r.Error)
+		}
+	}
 	return rep, nil
 }
 
@@ -247,12 +254,14 @@ func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task
 	}
 
 	if rec != nil {
-		if err := saveRecording(cfg, task, rec); err != nil && r.Error == "" {
-			r.Error = "record: " + err.Error()
+		if err := saveRecording(cfg, task, rec); err != nil {
+			r.Error, r.Pass = recordErrPrefix+err.Error(), false
 		}
 	}
 	return r
 }
+
+const recordErrPrefix = "record: "
 
 // saveRecording merges what one episode recorded into the task's cassette in
 // RecordDir.
