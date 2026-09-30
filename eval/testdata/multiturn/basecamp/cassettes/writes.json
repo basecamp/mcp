@@ -1,0 +1,807 @@
+{
+ "name": "writes",
+ "description": "Write endpoints for the world cassette: the correct targets each task asks for, plus plausible wrong ones (other cards, other todos, permanent deletes) so a wrong write is answered like the real API would and lands in the exchange log for grading.",
+ "interactions": [
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/recordings/4001/comments.json"
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "id": 4102,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-29T17:00:00.000Z",
+     "updated_at": "2026-09-29T17:00:00.000Z",
+     "title": "Re: Launch plan",
+     "inherits_status": true,
+     "type": "Comment",
+     "url": "{{base}}/9999999/comments/4102.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/comments/4102",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL4102.json",
+     "subscription_url": "{{base}}/9999999/recordings/4102/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/4102/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 4001,
+      "title": "Launch plan",
+      "type": "Message",
+      "url": "{{base}}/9999999/messages/4001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/messages/4001"
+     },
+     "content": "<div>ok</div>"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/recordings/6101/comments.json"
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "id": 4103,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-29T17:00:00.000Z",
+     "updated_at": "2026-09-29T17:00:00.000Z",
+     "title": "Re: Launch plan",
+     "inherits_status": true,
+     "type": "Comment",
+     "url": "{{base}}/9999999/comments/4102.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/comments/4102",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL4102.json",
+     "subscription_url": "{{base}}/9999999/recordings/4102/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/4102/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 6101,
+      "title": "Fix the login redirect loop",
+      "type": "Kanban::Card",
+      "url": "{{base}}/9999999/card_tables/cards/6101.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/cards/6101"
+     },
+     "content": "<div>ok</div>"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/recordings/4101/comments.json"
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "id": 4104,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-29T17:00:00.000Z",
+     "updated_at": "2026-09-29T17:00:00.000Z",
+     "title": "Re: Launch plan",
+     "inherits_status": true,
+     "type": "Comment",
+     "url": "{{base}}/9999999/comments/4102.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/comments/4102",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL4102.json",
+     "subscription_url": "{{base}}/9999999/recordings/4102/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/4102/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 4001,
+      "title": "Launch plan",
+      "type": "Message",
+      "url": "{{base}}/9999999/messages/4001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/messages/4001"
+     },
+     "content": "<div>ok</div>"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/message_boards/3001/messages.json"
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "id": 4003,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-29T17:00:00.000Z",
+     "updated_at": "2026-09-29T17:00:00.000Z",
+     "title": "Week 39 status",
+     "inherits_status": true,
+     "type": "Message",
+     "url": "{{base}}/9999999/messages/4003.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/messages/4003",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL4003.json",
+     "subscription_url": "{{base}}/9999999/recordings/4003/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/4003/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 3001,
+      "title": "Message Board",
+      "type": "Message::Board",
+      "url": "{{base}}/9999999/message_boards/3001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/message_boards/3001"
+     },
+     "subject": "Week 39 status",
+     "content": "<div>ok</div>"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/card_tables/cards/6101/moves.json"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/card_tables/cards/6102/moves.json"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/card_tables/cards/6103/moves.json"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "PUT",
+    "path": "/9999999/recordings/5101/status/trashed.json"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/todos/5101/completion.json"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "DELETE",
+    "path": "/9999999/todos/5101"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "DELETE",
+    "path": "/9999999/recordings/5101"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "PUT",
+    "path": "/9999999/recordings/5102/status/trashed.json"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/todos/5102/completion.json"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "DELETE",
+    "path": "/9999999/todos/5102"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "DELETE",
+    "path": "/9999999/recordings/5102"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "PUT",
+    "path": "/9999999/recordings/5103/status/trashed.json"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/todos/5103/completion.json"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "DELETE",
+    "path": "/9999999/todos/5103"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "DELETE",
+    "path": "/9999999/recordings/5103"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "PUT",
+    "path": "/9999999/recordings/5104/status/trashed.json"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/todos/5104/completion.json"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "DELETE",
+    "path": "/9999999/todos/5104"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "DELETE",
+    "path": "/9999999/recordings/5104"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "PUT",
+    "path": "/9999999/recordings/5201/status/trashed.json"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/todos/5201/completion.json"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "DELETE",
+    "path": "/9999999/todos/5201"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "DELETE",
+    "path": "/9999999/recordings/5201"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "PUT",
+    "path": "/9999999/recordings/5202/status/trashed.json"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/todos/5202/completion.json"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "DELETE",
+    "path": "/9999999/todos/5202"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "DELETE",
+    "path": "/9999999/recordings/5202"
+   },
+   "response": {
+    "status": 204
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/todolists/5001/todos.json"
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "id": 5106,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-10T17:00:00.000Z",
+     "updated_at": "2026-09-27T17:00:00.000Z",
+     "title": "Draft the FAQ",
+     "inherits_status": true,
+     "type": "Todo",
+     "url": "{{base}}/9999999/todos/5104.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5104",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5104.json",
+     "subscription_url": "{{base}}/9999999/recordings/5104/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/5104/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 5001,
+      "title": "Launch",
+      "type": "Todolist",
+      "url": "{{base}}/9999999/todolists/5001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001"
+     },
+     "content": "Draft the FAQ",
+     "description": "",
+     "completed": false,
+     "due_on": "2026-10-02",
+     "starts_on": null,
+     "assignees": [
+      {
+       "id": 1002,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+       "name": "Annie Ames",
+       "email_address": "annie1002@example.com",
+       "personable_type": "User",
+       "title": "Designer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      }
+     ],
+     "completion_subscribers": [],
+     "completion_url": "{{base}}/9999999/todos/5104/completion.json",
+     "position": 1
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/todolists/5002/todos.json"
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "id": 5107,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-10T17:00:00.000Z",
+     "updated_at": "2026-09-27T17:00:00.000Z",
+     "title": "Draft the FAQ",
+     "inherits_status": true,
+     "type": "Todo",
+     "url": "{{base}}/9999999/todos/5104.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5104",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5104.json",
+     "subscription_url": "{{base}}/9999999/recordings/5104/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/5104/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 5001,
+      "title": "Launch",
+      "type": "Todolist",
+      "url": "{{base}}/9999999/todolists/5001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001"
+     },
+     "content": "Draft the FAQ",
+     "description": "",
+     "completed": false,
+     "due_on": "2026-10-02",
+     "starts_on": null,
+     "assignees": [
+      {
+       "id": 1002,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+       "name": "Annie Ames",
+       "email_address": "annie1002@example.com",
+       "personable_type": "User",
+       "title": "Designer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      }
+     ],
+     "completion_subscribers": [],
+     "completion_url": "{{base}}/9999999/todos/5104/completion.json",
+     "position": 1
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/schedules/3003/entries.json"
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "id": 9101,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-29T17:00:00.000Z",
+     "updated_at": "2026-09-29T17:00:00.000Z",
+     "title": "Launch review",
+     "inherits_status": true,
+     "type": "Schedule::Entry",
+     "url": "{{base}}/9999999/schedule_entries/9101.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/schedule_entries/9101",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL9101.json",
+     "subscription_url": "{{base}}/9999999/recordings/9101/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/9101/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 3003,
+      "title": "Schedule",
+      "type": "Schedule",
+      "url": "{{base}}/9999999/schedules/3003.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/schedules/3003"
+     },
+     "summary": "Launch review",
+     "starts_at": "2026-10-06T21:00:00.000Z",
+     "ends_at": "2026-10-06T22:00:00.000Z",
+     "all_day": false,
+     "participants": [],
+     "description": ""
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "POST",
+    "path": "/9999999/chats/3006/lines.json"
+   },
+   "response": {
+    "status": 201,
+    "body": {
+     "id": 9201,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-29T17:00:00.000Z",
+     "updated_at": "2026-09-29T17:00:00.000Z",
+     "title": "ok",
+     "inherits_status": true,
+     "type": "Chat::Lines::Text",
+     "url": "{{base}}/9999999/chats/3006/lines/9201.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/chats/3006/lines/9201",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL9201.json",
+     "subscription_url": "{{base}}/9999999/recordings/9201/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/9201/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 3006,
+      "title": "Chat",
+      "type": "Chat::Transcript",
+      "url": "{{base}}/9999999/chats/3006.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/chats/3006"
+     },
+     "content": "ok"
+    }
+   }
+  }
+ ]
+}

@@ -1,0 +1,14 @@
+{
+  "server": "fake",
+  "guide_tools": ["fake_guide"],
+  "skill_resource": "skill://fake/SKILL.md",
+  "arms": [
+    {"name": "bare", "instructions": false, "guide": false, "skill": false},
+    {"name": "instructions", "instructions": true, "guide": false, "skill": false,
+     "server_args": ["--instructions"]},
+    {"name": "guide", "instructions": true, "guide": true, "skill": false,
+     "server_args": ["--instructions", "--guide"]},
+    {"name": "skill", "instructions": true, "guide": true, "skill": true,
+     "server_args": ["--instructions", "--guide", "--skill"]}
+  ]
+}

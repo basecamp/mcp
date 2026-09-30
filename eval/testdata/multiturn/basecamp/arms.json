@@ -1,0 +1,11 @@
+{
+  "server": "basecamp",
+  "guide_tools": ["get_basecamp_guide"],
+  "skill_file": "skill.md",
+  "arms": [
+    {"name": "bare", "instructions": false, "guide": false, "skill": false},
+    {"name": "instructions", "instructions": true, "guide": false, "skill": false},
+    {"name": "guide", "instructions": true, "guide": true, "skill": false},
+    {"name": "skill", "instructions": true, "guide": true, "skill": true}
+  ]
+}
