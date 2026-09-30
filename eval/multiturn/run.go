@@ -317,6 +317,11 @@ func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task
 		r.Error = runErr.Error()
 		r.Pass = false
 	}
+	// A gold script that hit a backend miss (a server may mask the 404 as an
+	// empty success) does not prove its cassettes, whatever it graded.
+	if backendOf(agent) == "script" && r.WrongID > 0 && r.Error == "" {
+		r.Error, r.Pass = fmt.Sprintf("gold path hit %d backend request(s) the cassettes could not answer", r.WrongID), false
+	}
 
 	if rec != nil {
 		// Only a whole episode is a recording: one that errored part-way

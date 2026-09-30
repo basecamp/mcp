@@ -153,6 +153,7 @@ func TestProfileValidation(t *testing.T) {
 		"upstream query":     func(p *Profile) { p.Upstream = "https://3.basecampapi.com?tenant=x" },
 		"upstream fragment":  func(p *Profile) { p.Upstream = "https://3.basecampapi.com#x" },
 		"default port":       func(p *Profile) { p.Upstream = "https://3.basecampapi.com:443" },
+		"padded port":        func(p *Profile) { p.Upstream = "https://3.basecampapi.com:0443" },
 		"control in redact":  func(p *Profile) { p.Redact = map[string]string{"A": "B\nC"} },
 		"numeric redact":     func(p *Profile) { p.Redact = map[string]string{"123": "456"} },
 		"literal redact":     func(p *Profile) { p.Redact = map[string]string{"true": "false"} },

@@ -647,3 +647,16 @@ func TestDigestCoversTheEffectiveBudget(t *testing.T) {
 	c.OverrideTurns(2)
 	assert.NotEqual(t, before, c.Tasks[0].Digest(), "so does --max-turns")
 }
+
+func TestScriptRunsFailOnBackendMisses(t *testing.T) {
+	c, a := loadFake(t)
+	require.NoError(t, c.Filter([]string{"open-todos"}))
+	require.NoError(t, a.Select([]string{"bare"}))
+	// An extra read the cassette lacks: the fake server errors on it, but a
+	// server that masked the 404 would not — the miss itself fails the proof.
+	c.Tasks[0].Script = append(c.Tasks[0].Script, ScriptCall{Tool: "fake_todos", Arguments: map[string]any{"action": "get_todo", "params": map[string]any{"todo_id": 999}}})
+	rep, err := Run(context.Background(), Config{Corpus: c, Arms: a, Agents: []Agent{ScriptAgent{}}, Launch: ConnectFake})
+	require.NoError(t, err)
+	assert.False(t, rep.Records[0].Pass)
+	assert.NotEmpty(t, rep.Records[0].Error)
+}
