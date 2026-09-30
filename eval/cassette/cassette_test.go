@@ -369,7 +369,7 @@ func TestHeadIsAValidMethod(t *testing.T) {
 	assert.NoError(t, c.Validate())
 }
 
-func TestRecorderRefusesForeignAccountsAndSkips404s(t *testing.T) {
+func TestRecorderRefusesForeignAccountsAndRecords404sAsMisses(t *testing.T) {
 	accounts := `[{"id":123,"name":"Seed"}]`
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -392,13 +392,22 @@ func TestRecorderRefusesForeignAccountsAndSkips404s(t *testing.T) {
 	assert.Equal(t, 200, status)
 	status, _, _ = get(t, url+"/123/todos/999")
 	assert.Equal(t, 404, status)
-	require.Len(t, rec.Cassette("x", "").Interactions, 1, "the 404 is not recorded")
+	recorded := rec.Cassette("x", "")
+	require.Len(t, recorded.Interactions, 2, "the 404 is recorded: it may override a lower layer")
+	// Replayed, it answers 404 and is still a miss, over a stale lower layer.
+	stale := &Cassette{Name: "stale", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/123/todos/999"}, Response: Response{Status: 200, Body: json.RawMessage(`{"id":999}`)}}}}
+	pl := NewPlayer(stale, recorded)
+	purl := pl.Start()
+	defer pl.Close()
+	status, _, _ = get(t, purl+"/123/todos/999")
+	assert.Equal(t, 404, status)
+	assert.False(t, pl.Log()[0].Matched)
 
 	accounts = `[{"id":123,"name":"Seed"},{"id":456,"name":"Production"}]`
 	status, body, _ := get(t, url+"/authorization.json")
 	assert.Equal(t, 403, status)
 	assert.NotContains(t, body, "Production")
-	require.Len(t, rec.Cassette("x", "").Interactions, 1, "nothing recorded from a token that reaches other accounts")
+	require.Len(t, rec.Cassette("x", "").Interactions, 2, "nothing more recorded from a token that reaches other accounts")
 }
 
 func TestReplayStateFollowsTheWritesThatProducedIt(t *testing.T) {
@@ -675,4 +684,11 @@ func TestRecorderRefusesRepeatedQueryKeys(t *testing.T) {
 	status, _, _ := get(t, url+"/1/x.json?id=1&id=2")
 	assert.Equal(t, http.StatusBadRequest, status)
 	assert.Len(t, rec.Faults(), 1)
+}
+
+func TestOriginUserinfoIsRefused(t *testing.T) {
+	c := &Cassette{Name: "u", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200, Body: json.RawMessage(`{"url":"{{base}}@evil.example/x"}`)}}}}
+	assert.Error(t, c.Validate())
+	assert.Empty(t, foreignAccounts([]byte(`{"accounts":[{"id":9007199254740992}]}`), []string{"9007199254740992"}))
+	assert.Equal(t, []string{"9007199254740993"}, foreignAccounts([]byte(`{"accounts":[{"id":9007199254740993}]}`), []string{"9007199254740992"}), "no float rounding")
 }

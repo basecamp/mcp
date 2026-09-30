@@ -169,6 +169,9 @@ func (c *Cassette) Validate() error {
 		if in.Response.Status < 200 || in.Response.Status > 599 {
 			return fmt.Errorf("interaction #%d (%s %s): response status %d", i+1, r.Method, r.Path, in.Response.Status)
 		}
+		if strings.Contains(string(in.Response.Body)+in.Response.BodyText, BasePlaceholder+"@") {
+			return fmt.Errorf("interaction #%d (%s %s): %s@ in a body would make the Player's origin userinfo", i+1, r.Method, r.Path, BasePlaceholder)
+		}
 		if len(in.Response.Body) > 0 && !json.Valid(in.Response.Body) {
 			return fmt.Errorf("interaction #%d (%s %s): response body is not JSON (use body_text)", i+1, r.Method, r.Path)
 		}

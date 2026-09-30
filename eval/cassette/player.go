@@ -188,7 +188,9 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var resp Response
 	if idx >= 0 {
 		resp = p.entries[idx].in.Response
-		ex.Matched = true
+		// A recorded 404 answers (it can override a lower layer) but is
+		// still a miss: the id was not there.
+		ex.Matched = resp.Status != http.StatusNotFound
 	} else {
 		resp = Response{Status: http.StatusNotFound, Body: json.RawMessage(`{"status":404,"error":"Not Found"}`)}
 	}
