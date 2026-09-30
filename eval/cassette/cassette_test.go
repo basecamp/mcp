@@ -119,6 +119,7 @@ func TestLoadValidates(t *testing.T) {
 		"query.json":    `{"name":"x","interactions":[{"request":{"method":"GET","path":"/a?b=1"},"response":{"status":200}}]}`,
 		"status.json":   `{"name":"x","interactions":[{"request":{"method":"GET","path":"/a"},"response":{"status":0}}]}`,
 		"unknown.json":  `{"name":"x","interactions":[],"extra":1}`,
+		"trailing.json": `{"name":"x","interactions":[]} {"name":"y"}`,
 		"bothbody.json": `{"name":"x","interactions":[{"request":{"method":"GET","path":"/a"},"response":{"status":200,"body":{},"body_text":"x"}}]}`,
 	} {
 		_, err := Load(write(name, body))
@@ -494,4 +495,20 @@ func TestACorrectedRetryIsAnsweredByItsOwnBody(t *testing.T) {
 	defer p.Close()
 	assert.Equal(t, 422, do(t, "POST", url+"/1/todos.json", `{"due_on":"Friday"}`))
 	assert.Equal(t, 201, do(t, "POST", url+"/1/todos.json", `{"due_on": "2026-10-02"}`))
+}
+
+func TestRecorderRefusesARedactionThatBreaksJSON(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"id":123}`)
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN", Redact: map[string]string{"123": "fixture"}})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+	status, _, _ := get(t, url+"/1/thing.json")
+	assert.Equal(t, http.StatusBadGateway, status)
+	assert.Empty(t, rec.Cassette("x", "").Interactions)
 }

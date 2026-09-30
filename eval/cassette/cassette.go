@@ -16,8 +16,10 @@
 package cassette
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -106,9 +108,7 @@ func Load(path string) (*Cassette, error) {
 		return nil, err
 	}
 	var c Cassette
-	dec := json.NewDecoder(strings.NewReader(string(data)))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&c); err != nil {
+	if err := DecodeStrict(data, &c); err != nil {
 		return nil, fmt.Errorf("cassette %s: %w", path, err)
 	}
 	if err := c.Validate(); err != nil {
@@ -146,6 +146,22 @@ func (c *Cassette) Validate() error {
 		if len(in.Response.Body) > 0 && in.Response.BodyText != "" {
 			return fmt.Errorf("interaction #%d (%s %s): both body and body_text set", i+1, r.Method, r.Path)
 		}
+	}
+	return nil
+}
+
+// DecodeStrict decodes exactly one JSON document into v: unknown fields are
+// an error (a typo'd key must not silently drop a setting), and so is
+// anything after the document (an append-edited or concatenated file must not
+// run on its stale first half).
+func DecodeStrict(data []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	if err := dec.Decode(&json.RawMessage{}); err != io.EOF {
+		return fmt.Errorf("unexpected data after the JSON document")
 	}
 	return nil
 }
