@@ -73,7 +73,7 @@ type Task struct {
 type Expect struct {
 	// Calls match call lines: `<op> <params JSON, keys sorted>`.
 	Calls []string `json:"calls,omitempty"`
-	// Writes match the backend writes that landed (answered, status < 400):
+	// Writes match the backend writes that landed (answered with a 2xx):
 	// `METHOD /path?query <body JSON>`.
 	Writes []string `json:"writes,omitempty"`
 	// Answer patterns match the agent's final reply.
@@ -186,8 +186,14 @@ func (c *Corpus) validate() error {
 		}
 		for _, group := range [][]string{t.Expect.Calls, t.Expect.Writes, t.Expect.Answer, t.Reject.Calls, t.Reject.Writes} {
 			for _, p := range group {
-				if _, err := regexp.Compile(p); err != nil {
+				re, err := regexp.Compile(p)
+				if err != nil {
 					return fmt.Errorf("task %s: pattern %q: %w", t.ID, p, err)
+				}
+				// A pattern that matches nothing at all matches everything:
+				// an empty answer would satisfy it, a vacuous check.
+				if re.MatchString("") {
+					return fmt.Errorf("task %s: pattern %q matches the empty string, so it checks nothing", t.ID, p)
 				}
 			}
 		}

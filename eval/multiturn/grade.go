@@ -3,6 +3,8 @@ package multiturn
 import (
 	"fmt"
 	"regexp"
+
+	"github.com/basecamp/mcp/eval/cassette"
 )
 
 // Record is one graded (model, arm, task) episode — the unit of the JSONL
@@ -87,7 +89,7 @@ func grade(ep *Episode, guide func(string) bool) Record {
 				continue
 			}
 			attempted = append(attempted, ex.Line())
-			if ex.Matched && ex.Status < 400 {
+			if ex.Matched && cassette.Landed(ex.Status) {
 				landed = append(landed, ex.Line())
 			}
 		}

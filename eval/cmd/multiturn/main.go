@@ -241,6 +241,8 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 				if _, err := cassette.Load(target); err != nil {
 					return fail(fmt.Errorf("existing recording target: %w", err))
 				}
+			} else if !os.IsNotExist(err) {
+				return fail(fmt.Errorf("recording target %s: %w", target, err))
 			}
 			for _, in := range []string{o.tasks, o.armsFile, o.recordProfile, o.out} {
 				if sameFile(target, in) {
@@ -491,6 +493,13 @@ func splitCSV(s string) []string {
 // sameDir reports whether two directories are one, symlinks resolved, so a
 // symlinked alias of --record-dir is caught too.
 func sameDir(a, b string) bool {
+	// Existing directories compare by identity, which also catches
+	// case-insensitive filesystems' alternate spellings.
+	if sa, err := os.Stat(a); err == nil {
+		if sb, err := os.Stat(b); err == nil {
+			return os.SameFile(sa, sb)
+		}
+	}
 	resolve := func(p string) string {
 		if r, err := filepath.EvalSymlinks(p); err == nil {
 			p = r

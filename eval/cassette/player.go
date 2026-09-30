@@ -149,12 +149,23 @@ func toValues(m map[string]string) map[string][]string {
 
 // ServeHTTP answers one request from the cassettes, logging it either way.
 func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(r.Body)
+	body, readErr := io.ReadAll(r.Body)
 	ex := Exchange{
 		Method: r.Method,
 		Path:   r.URL.Path,
 		Query:  canonicalQuery(r.URL.Query()),
 		Body:   compactJSON(body),
+	}
+
+	if readErr != nil {
+		// A request cut off in transit did not arrive: unmatched, and it
+		// neither lands a write nor advances state.
+		ex.Status = http.StatusBadRequest
+		p.mu.Lock()
+		p.log = append(p.log, ex)
+		p.mu.Unlock()
+		http.Error(w, `{"error":"request body truncated"}`, http.StatusBadRequest)
+		return
 	}
 
 	p.mu.Lock()
@@ -170,7 +181,7 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		resp = Response{Status: http.StatusNotFound, Body: json.RawMessage(`{"status":404,"error":"Not Found"}`)}
 	}
 	ex.Status = resp.Status
-	if ex.Matched && ex.IsWrite() && ex.Status < 400 {
+	if ex.Matched && ex.IsWrite() && Landed(ex.Status) {
 		p.landed[writeKey(ex.Method, ex.Path)]++
 	}
 	p.log = append(p.log, ex)

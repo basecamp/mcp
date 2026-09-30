@@ -413,7 +413,7 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if resp.StatusCode != http.StatusNotFound {
 		r.record(req, body, resp.StatusCode, headers, scrubbed)
 	}
-	if req.Method != http.MethodGet && req.Method != http.MethodHead && resp.StatusCode < 400 {
+	if req.Method != http.MethodGet && req.Method != http.MethodHead && Landed(resp.StatusCode) {
 		// Every occurrence counts: two comments posted to one recording are
 		// two writes, and a read after the second is a state of its own.
 		r.mu.Lock()
