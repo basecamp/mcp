@@ -77,7 +77,7 @@ func (p *Profile) Validate() error {
 	// — no path, no ?, no #, not even empty ones (forwarding concatenates
 	// the profile string with the request URI, so a stray ? or # would
 	// swallow the account path).
-	if err != nil || u.Scheme != "https" || u.Host == "" || p.Upstream != "https://"+strings.ToLower(u.Host) || u.User != nil || defaultPort(u.Port()) {
+	if err != nil || u.Scheme != "https" || u.Host == "" || p.Upstream != "https://"+strings.ToLower(u.Host) || u.User != nil || defaultPort(u.Port()) || strings.HasSuffix(u.Host, ":") {
 		return fmt.Errorf("profile %q: upstream %q must be a bare, lowercase https origin (https://host or https://host:port)", p.Name, p.Upstream)
 	}
 	if len(p.AccountIDs) == 0 {
@@ -444,7 +444,11 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			headers[h] = r.scrubber.String(strings.Join(vs, ", "))
 		}
 	}
-	if bytes.Contains(respBody, []byte(BasePlaceholder)) || strings.Contains(resp.Header.Get("Location")+strings.Join(resp.Header.Values("Link"), ""), BasePlaceholder) {
+	retained := ""
+	for _, h := range keptResponseHeaders {
+		retained += strings.Join(resp.Header.Values(h), "\n")
+	}
+	if bytes.Contains(respBody, []byte(BasePlaceholder)) || strings.Contains(retained, BasePlaceholder) {
 		// The literal is the cassette's own placeholder; upstream content
 		// carrying it could not be told from a scrubbed origin.
 		refuse(http.StatusBadGateway, "the upstream answer contains the literal "+BasePlaceholder)
