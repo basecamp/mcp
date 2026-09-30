@@ -86,6 +86,7 @@ func grade(ep *Episode, guide func(string) bool) Record {
 	// schema-invalid call to the right op retrieved nothing. Reject
 	// patterns see every attempt.
 	var callLines, okCalls, landed, attempted []string
+	readAnswered := false
 	for _, s := range ep.Steps {
 		callLines = append(callLines, s.Line())
 		if !s.Unknown && !s.IsError {
@@ -102,6 +103,9 @@ func grade(ep *Episode, guide func(string) bool) Record {
 				rec.WrongID++
 			}
 			if !ex.IsWrite() {
+				if ex.Matched && ex.Status < 300 {
+					readAnswered = true
+				}
 				continue
 			}
 			attempted = append(attempted, ex.Line())
@@ -147,6 +151,17 @@ func grade(ep *Episode, guide func(string) bool) Record {
 	check("call", t.Expect.Calls, okCalls)
 	check("write", t.Expect.Writes, landed)
 	check("answer", t.Expect.Answer, []string{ep.Answer})
+	// A read task's answer must come from the account: at least one read the
+	// backend answered. Fixture strings recalled without calling anything
+	// would otherwise pass as the server's work.
+	if t.ReadOnly {
+		total++
+		if readAnswered {
+			met++
+		} else {
+			rec.Reasons = append(rec.Reasons, "missing backend read: the answer did not come from the account")
+		}
+	}
 
 	for _, p := range t.Reject.Calls {
 		if l, ok := firstMatch(p, callLines); ok {
