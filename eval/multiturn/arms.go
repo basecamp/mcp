@@ -2,6 +2,9 @@ package multiturn
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -90,6 +93,33 @@ func LoadArms(path string) (*ArmSet, error) {
 		}
 	}
 	return &s, nil
+}
+
+// Digest identifies the condition an arm runs under — its switches, server
+// args and env, the guide tools it shows or hides, and for a skill arm where
+// the skill comes from (with a local file's contents) — so a baseline cell
+// is only compared under the same arm definition, not merely the same name.
+// What the server itself sends (instructions, a served skill) is what the
+// eval measures, so it is not part of the arm.
+func (s *ArmSet) Digest(a Arm) string {
+	skill := ""
+	if a.Skill {
+		skill = "resource:" + s.SkillResource
+		if s.SkillResource == "" {
+			data, err := os.ReadFile(filepath.Join(s.dir, s.SkillFile))
+			if err != nil {
+				data = []byte("absent")
+			}
+			skill = fmt.Sprintf("file:%s:%x", s.SkillFile, sha256.Sum256(data))
+		}
+	}
+	data, _ := json.Marshal(struct {
+		Arm        Arm
+		GuideTools []string
+		Skill      string
+	}{a, s.GuideTools, skill})
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:8])
 }
 
 // Select narrows the set to the named arms, in the order given.

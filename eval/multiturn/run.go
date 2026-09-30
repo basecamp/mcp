@@ -113,7 +113,7 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 			defer wg.Done()
 			for j := range queue {
 				rec := runEpisode(ctx, cfg, j.agent, j.arm, j.task)
-				rec.Server, rec.Backend = cfg.Corpus.Server, backendOf(j.agent)
+				rec.Server, rec.Backend, rec.ArmDigest = cfg.Corpus.Server, backendOf(j.agent), cfg.Arms.Digest(j.arm)
 				rep.Records[j.i] = rec
 				if cfg.Progress != nil {
 					status := "PASS"

@@ -285,6 +285,8 @@ func TestRecorderRedirectsQueriesAndRepeatedReads(t *testing.T) {
 	assert.Equal(t, 403, do(t, "GET", url+"/999/secret.json", ""))
 	assert.Equal(t, http.StatusMethodNotAllowed, do(t, "OPTIONS", url+"/123/thing.json", ""), "a method no cassette can replay")
 	assert.Equal(t, http.StatusBadRequest, do(t, "GET", url+"/123/%2e%2e/999/secret.json", ""), "an encoded dot segment")
+	assert.True(t, hasDotSegment("//999/projects"), "an empty segment a router could collapse")
+	assert.False(t, hasDotSegment("/123/projects.json"))
 	resp, err = noFollow.Get(url + "/123/offsite")
 	require.NoError(t, err)
 	_ = resp.Body.Close()
@@ -758,4 +760,12 @@ func TestPlayerComparesQueriesWithItsOriginAsBase(t *testing.T) {
 	status, _, _ := get(t, url+"/1/by_url?url="+url+"/1/todos/5.json")
 	assert.Equal(t, 200, status)
 	assert.Contains(t, p.Log()[0].Query, "%7B%7Bbase%7D%7D", "logged with the origin as {{base}}, as the recorder logs it")
+}
+
+func TestDecodedPersonalDataIsCaught(t *testing.T) {
+	assert.True(t, leaksPersonal([]byte(`{"email":"alice\u0040corp.example"}`)), "an escaped @ decodes to a real address")
+	assert.False(t, leaksPersonal([]byte(`{"email":"person-1@example.com"}`)))
+	out := scrubAvatarFields([]byte(`{"avatar\u005furl":"https://cdn/x?sig=S","avatars_sample":["https://cdn/a","https://cdn/b"],"name":"n"}`))
+	assert.NotContains(t, string(out), "cdn")
+	assert.False(t, leaksPersonal(out))
 }

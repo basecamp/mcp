@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -164,4 +165,17 @@ func TestRecordDirAliasIsCaught(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, sameDir(rel, real), "relative and absolute spellings of one directory")
 	assert.False(t, sameDir(t.TempDir(), real))
+}
+
+func TestOutMayNotBeTheSkillFile(t *testing.T) {
+	chdirRoot(t)
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "skill.md"), []byte("skill"), 0o644))
+	data, err := os.ReadFile("eval/testdata/multiturn/fake/arms.json")
+	require.NoError(t, err)
+	arms := strings.Replace(string(data), `"skill_resource": "skill://fake/SKILL.md"`, `"skill_file": "skill.md"`, 1)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "arms.json"), []byte(arms), 0o644))
+	o := options{server: "fake", backend: "script", armsFile: filepath.Join(dir, "arms.json"), out: filepath.Join(dir, "skill.md")}
+	_, _, _, err = preflight(&o)
+	assert.ErrorContains(t, err, "skill file")
 }

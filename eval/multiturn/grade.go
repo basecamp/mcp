@@ -18,7 +18,9 @@ type Record struct {
 	Model   string `json:"model"`
 	ModelID string `json:"model_id"`
 	Arm     string `json:"arm"`
-	TaskID  string `json:"task_id"`
+	// ArmDigest pins the arm definition the cell ran under.
+	ArmDigest string `json:"arm_digest"`
+	TaskID    string `json:"task_id"`
 	// TaskDigest pins the task definition the cell was graded under.
 	TaskDigest string `json:"task_digest"`
 
