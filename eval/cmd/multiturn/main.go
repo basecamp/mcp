@@ -29,6 +29,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -191,6 +192,15 @@ func preflight(o options) (multiturn.Config, map[string]string, *multiturn.Basel
 		if st, err := os.Stat(o.recordDir); o.recordDir == "" || err != nil || !st.IsDir() {
 			return fail(fmt.Errorf("--record-profile needs --record-dir naming an existing directory"))
 		}
+		probe, err := os.CreateTemp(o.recordDir, ".write-probe-")
+		if err != nil {
+			return fail(fmt.Errorf("--record-dir %s is not writable: %w", o.recordDir, err))
+		}
+		_ = probe.Close()
+		_ = os.Remove(probe.Name())
+		if len(arms.Arms) != 1 || (o.backend != "script" && len(plan) != 1) {
+			return fail(fmt.Errorf("recording runs one model under one arm (pass --arms and --models): each episode mutates the live test account"))
+		}
 		cfg.Record, cfg.RecordDir = p, o.recordDir
 	} else if err := corpus.CheckCassettes(); err != nil {
 		return fail(err)
@@ -199,8 +209,23 @@ func preflight(o options) (multiturn.Config, map[string]string, *multiturn.Basel
 	if o.out == "" {
 		o.out = fmt.Sprintf("eval/results/multiturn/%s.jsonl", o.server)
 	}
-	if sameFile(o.out, o.baseline) {
-		return fail(fmt.Errorf("--out %s is the same file as --baseline: the run would overwrite the baseline before comparing", o.out))
+	// --out is truncated after the run; it must not be any file the run reads.
+	for _, in := range []struct{ flag, path string }{
+		{"--baseline", o.baseline}, {"--tasks", o.tasks}, {"--arms-file", o.armsFile}, {"--record-profile", o.recordProfile},
+	} {
+		if sameFile(o.out, in.path) {
+			return fail(fmt.Errorf("--out %s is the same file as %s: the run would overwrite it", o.out, in.flag))
+		}
+	}
+	if o.recordDir != "" && filepath.Dir(filepath.Clean(o.out)) == filepath.Clean(o.recordDir) && strings.HasSuffix(o.out, ".json") {
+		return fail(fmt.Errorf("--out %s would land among the recorded cassettes in %s", o.out, o.recordDir))
+	}
+	for _, t := range corpus.Tasks {
+		for _, name := range t.Cassettes {
+			if sameFile(o.out, corpus.CassettePath(name)) {
+				return fail(fmt.Errorf("--out %s is task %s's cassette", o.out, t.ID))
+			}
+		}
 	}
 	f, err := os.OpenFile(o.out, os.O_WRONLY|os.O_CREATE, 0o644)
 	if err != nil {

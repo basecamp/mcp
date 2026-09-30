@@ -92,6 +92,19 @@ func TestPlayerMatchesAndLogs(t *testing.T) {
 	assert.Equal(t, 7, p.Len())
 }
 
+func TestEmptyQueryValueMustBePresent(t *testing.T) {
+	p := NewPlayer(&Cassette{Name: "q", Interactions: []Interaction{
+		{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200, Body: json.RawMessage(`"plain"`)}},
+		{Request: Request{Method: "GET", Path: "/a", Query: map[string]string{"archived": ""}}, Response: Response{Status: 200, Body: json.RawMessage(`"archived"`)}},
+	}})
+	url := p.Start()
+	defer p.Close()
+	_, body, _ := get(t, url+"/a")
+	assert.Equal(t, `"plain"`, body)
+	_, body, _ = get(t, url+"/a?archived=")
+	assert.Equal(t, `"archived"`, body)
+}
+
 func TestLoadValidates(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name, s string) string {
@@ -134,6 +147,8 @@ func TestProfileValidation(t *testing.T) {
 		"non-numeric acct":   func(p *Profile) { p.AccountIDs = []string{"abc"} },
 		"no token env":       func(p *Profile) { p.TokenEnv = "" },
 		"quote in redact":    func(p *Profile) { p.Redact = map[string]string{`A "B"`: "C"} },
+		"upstream query":     func(p *Profile) { p.Upstream = "https://3.basecampapi.com?tenant=x" },
+		"upstream fragment":  func(p *Profile) { p.Upstream = "https://3.basecampapi.com#x" },
 	}
 	for name, mutate := range cases {
 		p := good
