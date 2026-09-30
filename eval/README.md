@@ -226,7 +226,7 @@ pagination, mention expansion, and error masking all run for real.
   a trailing `.json` is optional, later cassettes override earlier ones (a
   task cassette layered on a shared world), and a read recorded before and
   after a write is served in the state the replay's own writes have reached
-  (`after_writes`) — re-reading never advances it. `{{base}}` in a body or
+  (`after`, the writes that had landed) — re-reading never advances it. `{{base}}` in a body or
   header becomes the Player's URL, so
   absolute URLs the server follows come back to the Player.
 - An unmatched request is a 404, as the API would answer an id the account

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -490,6 +491,17 @@ func TestRecordThenReplay(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, rep.Records[0].Pass, rep.Records[0].Reasons)
 	assert.NotNil(t, rep.Records[0].Trace)
+
+	// An episode that errors part-way saves nothing, and the run fails.
+	dir2 := t.TempDir()
+	failing := agentFunc(func(ctx context.Context, ep *Episode) error {
+		ep.Call(ctx, "fake_projects", map[string]any{"action": "list_projects"})
+		return fmt.Errorf("model went away")
+	})
+	_, err = Run(context.Background(), Config{Corpus: c, Arms: a, Agents: []Agent{failing}, Launch: ConnectFake, Record: prof, RecordDir: dir2})
+	assert.ErrorContains(t, err, "nothing saved")
+	_, statErr := os.Stat(filepath.Join(dir2, "complete-todo.json"))
+	assert.True(t, os.IsNotExist(statErr))
 
 	// More than one task is refused before anything runs.
 	c3, _ := loadFake(t)
