@@ -432,8 +432,17 @@ func TestReplayStateFollowsTheWritesThatProducedIt(t *testing.T) {
 
 func TestRecorderKeepsEveryLinkField(t *testing.T) {
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("Link", `<https://x/1>; rel="prev"`)
-		w.Header().Add("Link", `<https://x/3>; rel="next"`)
+		switch r.URL.Path {
+		case "/123/offsite.json":
+			w.Header().Add("Link", `<https://cdn.example/3?sig=SECRET>; rel="next"`)
+		case "/123/flaky.json":
+			w.WriteHeader(503)
+			return
+		default:
+			self := "https://" + r.Host
+			w.Header().Add("Link", `<`+self+`/123/list.json?page=1>; rel="prev"`)
+			w.Header().Add("Link", `</123/list.json?page=3>; rel="next"`)
+		}
 		_, _ = io.WriteString(w, `[]`)
 	}))
 	defer upstream.Close()
@@ -445,7 +454,22 @@ func TestRecorderKeepsEveryLinkField(t *testing.T) {
 	defer rec.Close()
 	_, _, hdr := get(t, url+"/123/list.json")
 	assert.Contains(t, hdr.Get("Link"), `rel="next"`)
+	assert.Contains(t, hdr.Get("Link"), url+"/123/list.json?page=1", "an on-origin link points back at the recorder")
 	assert.Contains(t, rec.Cassette("x", "").Interactions[0].Response.Headers["Link"], `rel="next"`)
+	assert.Empty(t, rec.Faults())
+
+	// An off-origin Link target is refused; a transient upstream failure is
+	// served but faults the recording.
+	status, _, _ := get(t, url+"/123/offsite.json")
+	assert.Equal(t, http.StatusBadGateway, status)
+	status, _, _ = get(t, url+"/123/flaky.json")
+	assert.Equal(t, 503, status)
+	faults := rec.Faults()
+	require.Len(t, faults, 2)
+	assert.Contains(t, faults[0], "Link target")
+	assert.Contains(t, faults[1], "503")
+	data, _ := json.Marshal(rec.Cassette("x", ""))
+	assert.NotContains(t, string(data), "SECRET")
 }
 
 func TestRepeatedWritesAreDistinctStatesAndTheTokenIsScrubbed(t *testing.T) {
