@@ -64,7 +64,7 @@ func (in Interaction) stateKey() string {
 	sort.Strings(after)
 	k := patternKey(in.Request) + "\x00" + strings.Join(after, "\x00")
 	if in.Request.Method != "GET" && in.Request.Method != "HEAD" {
-		k += "\x00" + string(in.Request.Body)
+		k += "\x00" + compactJSON(in.Request.Body) // indentation from a saved file must not split a state
 	}
 	return k
 }

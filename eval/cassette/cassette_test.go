@@ -514,6 +514,12 @@ func TestACorrectedRetryIsAnsweredByItsOwnBody(t *testing.T) {
 		{Request: Request{Method: "POST", Path: "/1/todos.json", Body: json.RawMessage(`{"due_on":"Friday"}`)}, Response: Response{Status: 422, Body: json.RawMessage(`{"error":"bad date"}`)}},
 		{Request: Request{Method: "POST", Path: "/1/todos.json", Body: json.RawMessage(`{"due_on":"2026-10-02"}`)}, Response: Response{Status: 201, Body: json.RawMessage(`{"id":7}`)}},
 	}}
+	// Through a save and load, as a real recording goes: the saved file
+	// indents the stored bodies.
+	path := filepath.Join(t.TempDir(), "r.json")
+	require.NoError(t, c.Save(path))
+	c, err := Load(path)
+	require.NoError(t, err)
 	p := NewPlayer(c)
 	url := p.Start()
 	defer p.Close()
