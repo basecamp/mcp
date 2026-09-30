@@ -862,3 +862,21 @@ func TestDecodedTokenAndEmailKeysAreCaught(t *testing.T) {
 	assert.True(t, r.leaksRedacted([]byte(`{"echo":"tok\u0065n"}`)), "an escaped token")
 	assert.True(t, leaksPersonal([]byte(`{"alice\u0040corp.example":{"x":1}}`)), "an address as a key")
 }
+
+func TestCrossStateShadowingAndNetworkPathRedirects(t *testing.T) {
+	wait := &Cassette{Name: "w", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200}, After: []string{"POST /x"}}}}
+	lower := &Cassette{Name: "l", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/a"}, Response: Response{Status: 201}},
+		{Request: Request{Method: "POST", Path: "/x"}, Response: Response{Status: 201}, After: []string{"POST /a"}},
+	}}
+	upper := &Cassette{Name: "u", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x"}, Response: Response{Status: 422}}}}
+	assert.Error(t, ValidateLayers(lower, upper, wait), "the upper 422 shadows the lower 201 in every state")
+
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	r, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://api.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN", Redact: map[string]string{"Alice & Bob": "Pair"}})
+	require.NoError(t, err)
+	h := http.Header{}
+	h.Set("Location", "//api.example/next")
+	assert.Empty(t, r.offOrigin(h), "a same-origin network-path reference")
+	assert.True(t, r.leaksRedacted([]byte(`{"n":"Alice \u0026 Bob"}`)))
+}

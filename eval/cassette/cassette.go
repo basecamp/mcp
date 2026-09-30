@@ -294,9 +294,9 @@ func ValidateLayers(cassettes ...*Cassette) error {
 			if in.Request.Method == "GET" || in.Request.Method == "HEAD" {
 				continue
 			}
-			after := append([]string(nil), in.After...)
-			sort.Strings(after)
-			k := patternKey(in.Request) + "\x00" + strings.Join(after, "\x00")
+			// The Player ranks layer above state, so a later layer's
+			// answer shadows an earlier one whatever state either needs.
+			k := patternKey(in.Request)
 			if shadowed[k] {
 				continue
 			}

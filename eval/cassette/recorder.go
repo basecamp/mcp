@@ -385,7 +385,7 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		refuse(http.StatusBadGateway, "a profile redaction broke this request's JSON; redact text, not structure")
 		return
 	}
-	if leaksPersonal(r.scrubber.Bytes(body)) || r.leaksOrigin(r.scrubber.Bytes(body)) {
+	if leaksPersonal(r.scrubber.Bytes(body)) || r.leaksOrigin(r.scrubber.Bytes(body)) || r.leaksRedacted(r.scrubber.Bytes(body)) {
 		refuse(http.StatusBadRequest, "the request body carries personal data or the live origin in an encoded form")
 		return
 	}
@@ -538,6 +538,9 @@ func (r *Recorder) offOrigin(h http.Header) string {
 		}
 		if u.Host == "" {
 			return false
+		}
+		if u.Scheme == "" {
+			u.Scheme = "https" // a network-path reference inherits the upstream's scheme
 		}
 		host := strings.ToLower(u.Host)
 		if u.Port() == "443" {
