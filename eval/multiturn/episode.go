@@ -83,9 +83,10 @@ type Episode struct {
 	Usage     Usage
 	Exhausted bool
 
-	// attributed counts backend exchanges made during tool calls; any others
-	// (at startup, listing tools, after the last call) are graded too.
-	attributed int
+	// attributedAt marks the backend log positions made during tool calls;
+	// any others (at startup, listing tools, after the last call) are graded
+	// too — by position, so a repeat of an attributed write still counts.
+	attributedAt map[int]bool
 
 	// A host that reports its own spend (the claude CLI) sets these; the
 	// record then carries that figure instead of one priced from Usage.
@@ -99,7 +100,7 @@ func NewEpisode(task Task, surf *Surface, system string, maxTurns int, session *
 	for _, t := range surf.Tools {
 		vis[t.Name] = true
 	}
-	return &Episode{Task: task, Surface: surf, System: system, MaxTurns: maxTurns, session: session, backend: backend, visible: vis}
+	return &Episode{Task: task, Surface: surf, System: system, MaxTurns: maxTurns, session: session, backend: backend, visible: vis, attributedAt: map[int]bool{}}
 }
 
 // resultLimit bounds the result text kept per step in the record; the model
@@ -125,7 +126,9 @@ func (e *Episode) Call(ctx context.Context, name string, args map[string]any) (s
 	mark := e.backend.Len()
 	res, err := e.session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 	step.Requests = e.backend.Since(mark)
-	e.attributed += len(step.Requests)
+	for i := range step.Requests {
+		e.attributedAt[mark+i] = true
+	}
 	var text string
 	switch {
 	case err != nil:

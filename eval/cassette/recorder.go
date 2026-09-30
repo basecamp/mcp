@@ -236,7 +236,9 @@ func (r *Recorder) pathHasAccount(path string) bool {
 // JSON body that the profile does not name.
 func foreignAccounts(body []byte, allowed []string) []string {
 	var doc any
-	if json.Unmarshal(body, &doc) != nil {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber() // account ids compared exactly, never through float64
+	if dec.Decode(&doc) != nil {
 		return nil
 	}
 	ok := map[string]bool{}
@@ -253,7 +255,7 @@ func foreignAccounts(body []byte, allowed []string) []string {
 					for _, item := range list {
 						if m, isMap := item.(map[string]any); isMap {
 							if id, has := m["id"]; has {
-								if s := fmt.Sprint(jsonNumber(id)); !ok[s] {
+								if s := fmt.Sprint(id); !ok[s] {
 									foreign = append(foreign, s)
 								}
 							}
@@ -270,14 +272,6 @@ func foreignAccounts(body []byte, allowed []string) []string {
 	}
 	walk(doc)
 	return foreign
-}
-
-// jsonNumber renders a decoded JSON number as an integer when it is one.
-func jsonNumber(v any) any {
-	if f, isFloat := v.(float64); isFloat && f == float64(int64(f)) {
-		return int64(f)
-	}
-	return v
 }
 
 // allowed reports whether the request path may be forwarded: account-less
@@ -412,6 +406,12 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		refuse(http.StatusBadGateway, "a non-JSON response body is not valid UTF-8 and cannot be recorded")
 		return
 	}
+	if bytes.Contains(scrubbed, []byte(BasePlaceholder+"@")) || bytes.Contains(scrubbed, []byte(strings.ReplaceAll(BasePlaceholder, "/", `\/`)+"@")) {
+		// origin@host: replayed, the Player's origin would become userinfo
+		// and host the real authority — a way out of the loopback.
+		refuse(http.StatusBadGateway, "a response URL puts userinfo after the upstream origin")
+		return
+	}
 	if json.Valid(respBody) && !json.Valid(scrubbed) {
 		refuse(http.StatusBadGateway, "a profile redaction broke this response's JSON; redact text, not structure")
 		return
@@ -425,11 +425,10 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		// An expired or wrong token records nothing but auth failures.
 		r.fault(req, "upstream answered 401: check the profile token")
 	}
-	// A 404 is not recorded: replayed, the same request stays a miss (and a
-	// wrong id), exactly as it was live.
-	if resp.StatusCode != http.StatusNotFound {
-		r.record(req, body, resp.StatusCode, headers, scrubbed)
-	}
+	// A 404 is recorded too — it may override a lower layer's answer (an
+	// item read after the task deleted it) — and the Player reports it as a
+	// miss, so replayed or live, it counts as a wrong id.
+	r.record(req, body, resp.StatusCode, headers, scrubbed)
 	if req.Method != http.MethodGet && req.Method != http.MethodHead && Landed(resp.StatusCode) {
 		// Every occurrence counts: two comments posted to one recording are
 		// two writes, and a read after the second is a state of its own.

@@ -390,8 +390,8 @@ one `--models` label for a model backend, reseeding between recordings — with 
 model backend records what it explored). The recorder proxies to the
 upstream: it injects the token itself (the server keeps its dummy), refuses —
 locally, never forwarded — any account the profile does not list, refuses a
-token whose identity document lists any other account, does not record 404s
-(a miss replays as a miss), and stores
+token whose identity document lists any other account, records 404s as misses
+(replayed, still a wrong id — and able to override a stale lower layer), and stores
 only scrubbed data: no request headers, an allowlist of response headers, the
 upstream origin as `{{base}}`, emails as keyed aliases (`person-<hmac>@example.com`, stable per profile token), avatar URLs
 replaced, and the profile's `redact` literals applied.

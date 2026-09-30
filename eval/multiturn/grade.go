@@ -110,15 +110,9 @@ func grade(ep *Episode, guide func(string) bool) Record {
 	// tools, after the last call) reach the backend all the same; they are
 	// attempts, and on a read-only task, violations.
 	if ep.backend != nil {
-		all := ep.backend.Since(0)
-		outside := len(all) - ep.attributed
-		for _, ex := range all {
-			if outside <= 0 {
-				break
-			}
-			if ex.IsWrite() && !attributedTo(ep.Steps, ex) {
+		for i, ex := range ep.backend.Since(0) {
+			if ex.IsWrite() && !ep.attributedAt[i] {
 				attempted = append(attempted, ex.Line())
-				outside--
 			}
 		}
 	}
@@ -168,20 +162,6 @@ func grade(ep *Episode, guide func(string) bool) Record {
 	}
 	rec.Pass = rec.Score >= 1 && !ep.Exhausted
 	return rec
-}
-
-// attributedTo reports whether an exchange belongs to some step (compared by
-// value; a replayed exchange repeated inside and outside calls is rare and
-// errs toward treating it as attributed).
-func attributedTo(steps []Step, ex cassette.Exchange) bool {
-	for _, s := range steps {
-		for _, r := range s.Requests {
-			if r == ex {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func anyMatch(pattern string, lines []string) bool {
