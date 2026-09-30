@@ -219,10 +219,18 @@ func (r *Recorder) Since(mark int) []Exchange {
 // a literal like "a@b.example" or "Real Person" is matched as written, not
 // as a%40b.example or Real+Person.
 func (r *Recorder) scrubQuery(q url.Values) url.Values {
+	r.mu.Lock()
+	base := r.base
+	r.mu.Unlock()
+	clean := func(v string) string {
+		// A URL the server copied from an answer points at this run's
+		// recorder; store it as {{base}}, as the Player will compare it.
+		return string(toPlaceholder([]byte(r.scrubber.String(v)), base))
+	}
 	out := url.Values{}
 	for k, vs := range q {
 		for _, v := range vs {
-			out.Add(r.scrubber.String(k), r.scrubber.String(v))
+			out.Add(clean(k), clean(v))
 		}
 	}
 	return out

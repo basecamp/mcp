@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 )
@@ -238,7 +239,14 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // and its corrected retry answer differently).
 // Caller holds p.mu.
 func (p *Player) match(r *http.Request, body string) int {
-	q := r.URL.Query()
+	// Query values compared with this Player's origin as {{base}}, as the
+	// recorder stores them.
+	q := url.Values{}
+	for k, vs := range r.URL.Query() {
+		for _, v := range vs {
+			q.Add(k, string(toPlaceholder([]byte(v), p.base)))
+		}
+	}
 	best := -1
 	for i, e := range p.entries {
 		req := e.in.Request
