@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // Profile is the explicit statement of what a recording may touch. Recording
@@ -87,8 +88,8 @@ func (p *Profile) Validate() error {
 		return fmt.Errorf("profile %q names no token_env", p.Name)
 	}
 	for from, to := range p.Redact {
-		if strings.ContainsAny(from+to, "\"\\") {
-			return fmt.Errorf("profile %q: redact literal %q -> %q carries a quote or backslash, which would corrupt the JSON it rewrites", p.Name, from, to)
+		if strings.ContainsAny(from+to, "\"\\") || strings.ContainsFunc(from+to, unicode.IsControl) {
+			return fmt.Errorf("profile %q: redact literal %q -> %q carries a quote, backslash, or control character, which would corrupt the JSON it rewrites", p.Name, from, to)
 		}
 	}
 	return nil
@@ -349,17 +350,21 @@ func compactRaw(b []byte) json.RawMessage {
 	return json.RawMessage(buf.Bytes())
 }
 
-// Merge folds src's interactions into dst, adding the request patterns dst
-// does not answer yet (every recorded state of each, in order) — so recording
-// the same task under several models or arms accumulates the union of what
-// they asked for.
+// Merge folds src's interactions into dst — so recording the same task under
+// several models or arms accumulates the union of what they asked for. Per
+// request pattern, dst's recorded states stand and src contributes the states
+// beyond them: a later recording that saw a read's pre- and post-write
+// answers extends a cassette that only had the first.
 func Merge(dst, src *Cassette) {
-	have := map[string]bool{}
+	have := map[string]int{}
 	for _, in := range dst.Interactions {
-		have[patternKey(in.Request)] = true
+		have[patternKey(in.Request)]++
 	}
+	seen := map[string]int{}
 	for _, in := range src.Interactions {
-		if !have[patternKey(in.Request)] {
+		k := patternKey(in.Request)
+		seen[k]++
+		if seen[k] > have[k] {
 			dst.Interactions = append(dst.Interactions, in)
 		}
 	}

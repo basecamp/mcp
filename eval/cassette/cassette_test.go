@@ -149,6 +149,7 @@ func TestProfileValidation(t *testing.T) {
 		"quote in redact":    func(p *Profile) { p.Redact = map[string]string{`A "B"`: "C"} },
 		"upstream query":     func(p *Profile) { p.Upstream = "https://3.basecampapi.com?tenant=x" },
 		"upstream fragment":  func(p *Profile) { p.Upstream = "https://3.basecampapi.com#x" },
+		"control in redact":  func(p *Profile) { p.Redact = map[string]string{"A": "B\nC"} },
 	}
 	for name, mutate := range cases {
 		p := good
@@ -322,4 +323,20 @@ func TestMergeKeepsFirstAnswerPerPattern(t *testing.T) {
 	require.Len(t, a.Interactions, 3, "every recorded state of a new pattern")
 	assert.Equal(t, json.RawMessage(`1`), a.Interactions[0].Response.Body)
 	assert.Equal(t, "/y", a.Interactions[1].Request.Path)
+}
+
+func TestMergeExtendsAPatternsStates(t *testing.T) {
+	read := func(v string) Interaction {
+		return Interaction{Request: Request{Method: "GET", Path: "/t"}, Response: Response{Status: 200, Body: json.RawMessage(v)}}
+	}
+	dst := &Cassette{Name: "d", Interactions: []Interaction{read(`"before"`)}}
+	Merge(dst, &Cassette{Name: "s", Interactions: []Interaction{read(`"before-again"`), read(`"after"`)}})
+	require.Len(t, dst.Interactions, 2)
+	assert.Equal(t, json.RawMessage(`"before"`), dst.Interactions[0].Response.Body)
+	assert.Equal(t, json.RawMessage(`"after"`), dst.Interactions[1].Response.Body)
+}
+
+func TestHeadIsAValidMethod(t *testing.T) {
+	c := &Cassette{Name: "h", Interactions: []Interaction{{Request: Request{Method: "HEAD", Path: "/a"}, Response: Response{Status: 200}}}}
+	assert.NoError(t, c.Validate())
 }

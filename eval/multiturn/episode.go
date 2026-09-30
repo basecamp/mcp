@@ -20,6 +20,8 @@ type Backend interface {
 
 // Step is one tool call in a trace.
 type Step struct {
+	// Turn is the model turn that made the call; -1 when the host reports
+	// turns only in aggregate (the claude CLI).
 	Turn int    `json:"turn"`
 	Tool string `json:"tool"`
 	// Op is the surface-independent operation: a gateway call's action, or

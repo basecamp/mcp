@@ -95,7 +95,7 @@ func (c *Cassette) Validate() error {
 	for i, in := range c.Interactions {
 		r := in.Request
 		switch r.Method {
-		case "GET", "POST", "PUT", "PATCH", "DELETE":
+		case "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE":
 		default:
 			return fmt.Errorf("interaction #%d: unsupported method %q", i+1, r.Method)
 		}

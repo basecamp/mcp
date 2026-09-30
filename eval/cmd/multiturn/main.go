@@ -82,7 +82,7 @@ func run() error {
 	flag.Parse()
 
 	ctx := context.Background()
-	cfg, plan, base, err := preflight(o)
+	cfg, plan, base, err := preflight(&o)
 	if err != nil {
 		return err
 	}
@@ -138,8 +138,9 @@ func run() error {
 
 // preflight resolves and checks everything that needs neither a server nor a
 // paid call: files, flags, the API key, output paths, the baseline and its
-// overlap with this run.
-func preflight(o options) (multiturn.Config, map[string]string, *multiturn.Baseline, error) {
+// overlap with this run. It fills o's defaults in place, so the caller writes
+// where the checks looked.
+func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Baseline, error) {
 	var cfg multiturn.Config
 	fail := func(err error) (multiturn.Config, map[string]string, *multiturn.Baseline, error) {
 		return cfg, nil, nil, err
@@ -353,6 +354,18 @@ var stdioProfiles = map[string]stdioProfile{
 	"basecamp": {bin: "basecamp-mcp", args: []string{"stdio"}, baseURLEnv: "BASECAMP_BASE_URL", tokenEnv: "BASECAMP_TOKEN"},
 }
 
+// reservedEnv are the variables the launcher sets to isolate the server; an
+// arm overriding one could point it past the Player or at the operator's
+// real config.
+var reservedEnv = map[string]bool{"PATH": true, "HOME": true, "TMPDIR": true}
+
+func init() {
+	for _, p := range stdioProfiles {
+		reservedEnv[p.baseURLEnv] = true
+		reservedEnv[p.tokenEnv] = true
+	}
+}
+
 func launcher(server, serverCmd string) (multiturn.Launcher, error) {
 	if server == "fake" {
 		if serverCmd != "" {
@@ -401,6 +414,10 @@ func launcher(server, serverCmd string) (multiturn.Launcher, error) {
 			prof.tokenEnv + "=eval-replay-dummy-token",
 		}
 		for k, v := range arm.ServerEnv {
+			if reservedEnv[k] {
+				_ = os.RemoveAll(home)
+				return nil, nil, fmt.Errorf("arm %q: server_env may not set %s: the harness owns it to keep the server hermetic", arm.Name, k)
+			}
 			cmd.Env = append(cmd.Env, k+"="+v)
 		}
 		if os.Getenv("EVAL_DEBUG") != "" {
