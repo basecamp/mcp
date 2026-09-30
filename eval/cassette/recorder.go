@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -72,7 +73,7 @@ func (p *Profile) Validate() error {
 		return fmt.Errorf("profile %q does not declare test_account: true — recording is only for seeded test accounts, never production data", p.Name)
 	}
 	u, err := url.Parse(p.Upstream)
-	if err != nil || u.Scheme != "https" || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil || u.Port() == "443" {
+	if err != nil || u.Scheme != "https" || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil || defaultPort(u.Port()) {
 		return fmt.Errorf("profile %q: upstream %q must be a bare https origin", p.Name, p.Upstream)
 	}
 	if len(p.AccountIDs) == 0 {
@@ -585,6 +586,13 @@ func leaksPersonal(body []byte) bool {
 		return false
 	}
 	return walk("", doc)
+}
+
+// defaultPort reports whether an explicit port is 443 in any spelling (0443
+// included): the canonical origin omits it, so the scrubber would miss it.
+func defaultPort(p string) bool {
+	n, err := strconv.Atoi(p)
+	return err == nil && n == 443
 }
 
 // hasDotSegment reports whether a path has a "." or ".." segment, or an
