@@ -139,7 +139,13 @@ func (c *Cassette) Validate() error {
 			return fmt.Errorf("interaction #%d (%s %s): response body is not JSON (use body_text)", i+1, r.Method, r.Path)
 		}
 		for _, w := range in.After {
-			if m, p, ok := strings.Cut(w, " "); !ok || m == "GET" || m == "HEAD" || !strings.HasPrefix(p, "/") {
+			m, p, ok := strings.Cut(w, " ")
+			switch m {
+			case "POST", "PUT", "PATCH", "DELETE":
+			default:
+				ok = false
+			}
+			if !ok || !strings.HasPrefix(p, "/") || strings.ContainsAny(p, "?# ") {
 				return fmt.Errorf("interaction #%d (%s %s): after entry %q must be a write, \"METHOD /path\"", i+1, r.Method, r.Path, w)
 			}
 		}
