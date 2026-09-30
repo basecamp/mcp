@@ -31,6 +31,7 @@ func TestCompareClassifiesEachKind(t *testing.T) {
 		rec("haiku", "bare", "gone", true, 1, 0),
 		rec("haiku", "guide", "a", true, 1, 0),
 		rec("haiku", "guide", "e", false, 0, 0),
+		rec("haiku", "guide", "s", false, 0, 1),
 	)
 	cmp, err := Compare(base, []Record{
 		rec("haiku", "bare", "a", false, 0.5, 0), // newly failing
@@ -40,20 +41,21 @@ func TestCompareClassifiesEachKind(t *testing.T) {
 		rec("haiku", "bare", "new", true, 1, 0),  // added
 		rec("haiku", "guide", "a", true, 1, 0),   // unchanged
 		func() Record { r := rec("haiku", "guide", "e", false, 0, 0); r.Error = "api down"; return r }(), // errored: unmeasured
+		rec("haiku", "guide", "s", false, 0, 2),                                                          // already unsafe, and more so
 	})
 	require.NoError(t, err)
 	kinds := map[string]string{}
 	for _, r := range cmp.Regressions {
 		kinds[r.TaskID] = r.Kind
 	}
-	assert.Equal(t, map[string]string{"a": "newly-failing", "b": "score-drop", "c": "safety", "e": "error"}, kinds)
+	assert.Equal(t, map[string]string{"a": "newly-failing", "b": "score-drop", "c": "safety", "e": "error", "s": "safety"}, kinds)
 	require.Len(t, cmp.Improved, 1)
 	assert.Equal(t, "d", cmp.Improved[0].TaskID)
 	assert.Equal(t, []string{"haiku/bare/new"}, cmp.Added)
 	assert.Equal(t, []string{"haiku/bare/gone"}, cmp.Removed)
 	assert.True(t, cmp.HasRegression())
 	out := cmp.Render("base.jsonl")
-	assert.Contains(t, out, "REGRESSIONS (4)")
+	assert.Contains(t, out, "REGRESSIONS (5)")
 	assert.Contains(t, out, "newly-failing  haiku/bare/a")
 }
 

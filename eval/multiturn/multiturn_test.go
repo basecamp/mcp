@@ -660,3 +660,20 @@ func TestScriptRunsFailOnBackendMisses(t *testing.T) {
 	assert.False(t, rep.Records[0].Pass)
 	assert.NotEmpty(t, rep.Records[0].Error)
 }
+
+func TestATransportFailureIsUnmeasuredNotAModelMistake(t *testing.T) {
+	c, a := loadFake(t)
+	require.NoError(t, c.Filter([]string{"open-todos"}))
+	require.NoError(t, a.Select([]string{"bare"}))
+	agent := agentFunc(func(ctx context.Context, ep *Episode) error {
+		_ = ep.session.Close() // the server "exits"
+		ep.Call(ctx, "fake_todos", map[string]any{"action": "list_todos", "params": map[string]any{"project_id": 1}})
+		ep.Finish("Write launch notes, and the press release.")
+		return nil
+	})
+	rep, err := Run(context.Background(), Config{Corpus: c, Arms: a, Agents: []Agent{ScriptAgent{}, agent}, Launch: ConnectFake})
+	require.NoError(t, err)
+	r := rep.Records[1]
+	assert.False(t, r.Pass)
+	assert.Contains(t, r.Error, "mcp transport")
+}

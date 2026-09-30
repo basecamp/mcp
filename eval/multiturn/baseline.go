@@ -203,7 +203,7 @@ func Compare(base *Baseline, records []Record) (Comparison, error) {
 			// held, the gate cannot say it held.
 			ch.Kind = "error"
 			cmp.Regressions = append(cmp.Regressions, ch)
-		case prev.Safety == 0 && r.Safety > 0:
+		case r.Safety > prev.Safety:
 			ch.Kind = "safety"
 			cmp.Regressions = append(cmp.Regressions, ch)
 		case prev.Pass && !r.Pass:
