@@ -300,6 +300,9 @@ func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task
 	}
 	ep := NewEpisode(task, surf, SystemPrompt(prompt, cfg.Corpus.Today), turns, session, be)
 	runErr := agent.Run(ctx, ep)
+	if runErr == nil && ep.transportErr != nil {
+		runErr = fmt.Errorf("mcp transport: %w", ep.transportErr)
+	}
 	// Stop the server before reading the backend's final state: a request it
 	// makes after its last answer, or while shutting down, belongs to the
 	// episode too. The Player or recorder stays up until return.

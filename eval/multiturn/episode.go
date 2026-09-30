@@ -83,6 +83,9 @@ type Episode struct {
 	Usage     Usage
 	Exhausted bool
 
+	// transportErr is the first MCP transport failure; it errors the episode.
+	transportErr error
+
 	// attributedAt marks the backend log positions made during tool calls;
 	// any others (at startup, listing tools, after the last call) are graded
 	// too — by position, so a repeat of an attributed write still counts.
@@ -132,8 +135,13 @@ func (e *Episode) Call(ctx context.Context, name string, args map[string]any) (s
 	var text string
 	switch {
 	case err != nil:
+		// The transport failed (the server exited, the session broke), not
+		// the tool: the episode is unmeasured, not a model mistake.
 		text = "tool call failed: " + err.Error()
 		step.IsError = true
+		if e.transportErr == nil {
+			e.transportErr = err
+		}
 	default:
 		text = resultText(res)
 		step.IsError = res.IsError

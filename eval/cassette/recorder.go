@@ -538,8 +538,9 @@ func (r *Recorder) fault(req *http.Request, why string) {
 // in a scrubbed JSON body in any encoding — \u002f escapes and the like are
 // decoded here, so a spelling the byte-level rewrite missed is caught.
 func (r *Recorder) leaksOrigin(body []byte) bool {
-	// Hostnames are case-insensitive: compare lowercased.
-	host := strings.ToLower(strings.TrimPrefix(strings.TrimSuffix(r.profile.Upstream, "/"), "https://"))
+	// The hostname alone, lowercased: any port on the live host is still the
+	// live host, and hostnames are case-insensitive.
+	host := strings.ToLower(r.upstreamHost())
 	var doc any
 	if json.Unmarshal(body, &doc) != nil {
 		// Not JSON: the text itself, in any case.
@@ -627,6 +628,14 @@ func hasDotSegment(p string) bool {
 		}
 	}
 	return false
+}
+
+func (r *Recorder) upstreamHost() string {
+	u, err := url.Parse(r.profile.Upstream)
+	if err != nil {
+		return r.profile.Upstream
+	}
+	return u.Hostname()
 }
 
 // Faults returns every anomaly seen so far. A recording with any is
