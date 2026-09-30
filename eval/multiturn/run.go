@@ -319,8 +319,12 @@ func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task
 	}
 	// A gold script that hit a backend miss (a server may mask the 404 as an
 	// empty success) does not prove its cassettes, whatever it graded.
-	if backendOf(agent) == "script" && r.WrongID > 0 && r.Error == "" {
-		r.Error, r.Pass = fmt.Sprintf("gold path hit %d backend request(s) the cassettes could not answer", r.WrongID), false
+	// Any unmatched exchange at all — a 404 miss or a refused malformed
+	// request — since a server may mask either as an empty success.
+	if backendOf(agent) == "script" && r.Error == "" {
+		if n := unmatched(be); n > 0 {
+			r.Error, r.Pass = fmt.Sprintf("gold path hit %d backend request(s) the cassettes could not answer", n), false
+		}
 	}
 
 	if rec != nil {
@@ -346,6 +350,17 @@ func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task
 		r.Trace, r.Answer, r.Reasons = nil, "", nil
 	}
 	return r
+}
+
+// unmatched counts the backend exchanges no interaction answered.
+func unmatched(b Backend) int {
+	n := 0
+	for _, ex := range b.Since(0) {
+		if !ex.Matched {
+			n++
+		}
+	}
+	return n
 }
 
 // backendOf names an agent's backend for the record; an agent that does not

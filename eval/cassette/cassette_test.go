@@ -773,3 +773,18 @@ func TestDecodedPersonalDataIsCaught(t *testing.T) {
 	assert.NotContains(t, string(out), "cdn")
 	assert.False(t, leaksPersonal(out))
 }
+
+func TestIncomparableQueryPatternsMiss(t *testing.T) {
+	p := NewPlayer(&Cassette{Name: "s", Interactions: []Interaction{
+		{Request: Request{Method: "GET", Path: "/search", Query: map[string]string{"status": "open"}}, Response: Response{Status: 200, Body: json.RawMessage(`"open"`)}},
+		{Request: Request{Method: "GET", Path: "/search", Query: map[string]string{"assignee": "me"}}, Response: Response{Status: 200, Body: json.RawMessage(`"mine"`)}},
+	}})
+	url := p.Start()
+	defer p.Close()
+	status, _, _ := get(t, url+"/search?status=open&assignee=me")
+	assert.Equal(t, 404, status, "neither pattern recorded this request")
+	_, body, _ := get(t, url+"/search?status=open")
+	assert.Equal(t, `"open"`, body)
+	assert.False(t, Exchange{Method: "OPTIONS"}.IsWrite(), "safe methods are not writes")
+	assert.Equal(t, []byte(`{"avatar_url":"x"}trailer`), scrubAvatarFields([]byte(`{"avatar_url":"x"}trailer`)))
+}

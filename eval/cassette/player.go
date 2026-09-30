@@ -31,7 +31,13 @@ type Exchange struct {
 }
 
 // IsWrite reports whether the exchange mutates backend state.
-func (e Exchange) IsWrite() bool { return e.Method != http.MethodGet && e.Method != http.MethodHead }
+func (e Exchange) IsWrite() bool {
+	switch e.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	}
+	return false
+}
 
 // Line renders the exchange as one matchable line: METHOD path?query body.
 func (e Exchange) Line() string {
@@ -291,6 +297,22 @@ func (p *Player) match(r *http.Request, body string) int {
 			}
 		case canonicalJSON(e.in.Request.Body) == body && canonicalJSON(b.in.Request.Body) != body:
 			best = i
+		}
+	}
+	// Two patterns naming different parameters equally (?status=open and
+	// ?assignee=me, against a request carrying both) are incomparable:
+	// neither recorded this request, so it is a miss, not whichever came
+	// first.
+	if best >= 0 {
+		bq := canonicalQuery(toValues(p.entries[best].in.Request.Query))
+		for _, e := range p.entries {
+			req := e.in.Request
+			if req.Method != r.Method || !samePath(req.Path, r.URL.Path) || !queryMatches(req.Query, q) || !p.reached(e.in) {
+				continue
+			}
+			if len(req.Query) == len(p.entries[best].in.Request.Query) && canonicalQuery(toValues(req.Query)) != bq {
+				return -1
+			}
 		}
 	}
 	return best
