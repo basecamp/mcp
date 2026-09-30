@@ -284,8 +284,10 @@ func TestRecorderRedirectsQueriesAndRepeatedReads(t *testing.T) {
 	c := rec.Cassette("x", "")
 	data, _ := json.Marshal(c)
 	assert.NotContains(t, string(data), "someone@corp.example")
+	assert.NotContains(t, string(data), "someone%40corp.example")
 	for _, ex := range rec.Since(0) {
 		assert.NotContains(t, ex.Query, "someone@corp.example")
+		assert.NotContains(t, ex.Query, "someone%40corp.example", "scrubbed before encoding")
 	}
 	var reads []string
 	for _, in := range c.Interactions {
@@ -339,4 +341,36 @@ func TestMergeExtendsAPatternsStates(t *testing.T) {
 func TestHeadIsAValidMethod(t *testing.T) {
 	c := &Cassette{Name: "h", Interactions: []Interaction{{Request: Request{Method: "HEAD", Path: "/a"}, Response: Response{Status: 200}}}}
 	assert.NoError(t, c.Validate())
+}
+
+func TestRecorderRefusesForeignAccountsAndSkips404s(t *testing.T) {
+	accounts := `[{"id":123,"name":"Seed"}]`
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/authorization.json":
+			_, _ = io.WriteString(w, `{"identity":{"id":1},"accounts":`+accounts+`}`)
+		default:
+			w.WriteHeader(404)
+			_, _ = io.WriteString(w, `{"error":"Not Found"}`)
+		}
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"123"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+
+	status, _, _ := get(t, url+"/authorization.json")
+	assert.Equal(t, 200, status)
+	status, _, _ = get(t, url+"/123/todos/999")
+	assert.Equal(t, 404, status)
+	require.Len(t, rec.Cassette("x", "").Interactions, 1, "the 404 is not recorded")
+
+	accounts = `[{"id":123,"name":"Seed"},{"id":456,"name":"Production"}]`
+	status, body, _ := get(t, url+"/authorization.json")
+	assert.Equal(t, 403, status)
+	assert.NotContains(t, body, "Production")
+	require.Len(t, rec.Cassette("x", "").Interactions, 1, "nothing recorded from a token that reaches other accounts")
 }
