@@ -158,7 +158,7 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.mu.Lock()
-	idx := p.match(r)
+	idx := p.match(r, ex.Body)
 	var resp Response
 	if idx >= 0 {
 		resp = p.entries[idx].in.Response
@@ -193,9 +193,11 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // match picks the interaction for r, or -1. Only interactions whose After
 // writes have all landed are eligible. Most query parameters named wins;
-// then the latest layer; then the latest state (most After writes).
+// then the latest layer; then the latest state (most After writes); then, for
+// a write, the interaction recorded with the same body (a rejected attempt
+// and its corrected retry answer differently).
 // Caller holds p.mu.
-func (p *Player) match(r *http.Request) int {
+func (p *Player) match(r *http.Request, body string) int {
 	q := r.URL.Query()
 	best := -1
 	for i, e := range p.entries {
@@ -217,7 +219,11 @@ func (p *Player) match(r *http.Request) int {
 			if e.layer > b.layer {
 				best = i
 			}
-		case len(e.in.After) > len(b.in.After):
+		case len(e.in.After) != len(b.in.After):
+			if len(e.in.After) > len(b.in.After) {
+				best = i
+			}
+		case body != "" && string(e.in.Request.Body) == body && string(b.in.Request.Body) != body:
 			best = i
 		}
 	}

@@ -96,7 +96,13 @@ func fakeClaude() error {
 			"inputTokens": 10, "outputTokens": 5, "cacheReadInputTokens": 100, "cacheCreationInputTokens": 20, "costUSD": 0.0123,
 		}},
 	}
-	return json.NewEncoder(os.Stdout).Encode(out)
+	if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
+		return err
+	}
+	if os.Getenv("EVAL_FAKE_EXIT") != "" {
+		os.Exit(3)
+	}
+	return nil
 }
 
 func TestCLIAgentEndToEnd(t *testing.T) {
@@ -124,4 +130,16 @@ func TestCLIAgentEndToEnd(t *testing.T) {
 	require.Len(t, r.Trace, 2)
 	assert.Equal(t, "complete_todo", r.Trace[1].Op)
 	assert.Len(t, r.Trace[1].Requests, 1)
+}
+
+func TestCLIAgentHonorsANonzeroExit(t *testing.T) {
+	self, err := os.Executable()
+	require.NoError(t, err)
+	t.Setenv("EVAL_CLAUDE_BIN", self)
+	t.Setenv("EVAL_FAKE_ROLE", "claude")
+	t.Setenv("EVAL_FAKE_EXIT", "1")
+	t.Setenv("EVAL_FAKE_CALLS", `[{"tool":"fake_todos","arguments":{"action":"complete_todo","params":{"todo_id":11}}}]`)
+	r := runOne(t, "complete-todo", "bare", NewCLIAgent("haiku", ModelID("haiku"), []string{self}))
+	assert.False(t, r.Pass)
+	assert.Contains(t, r.Error, "exit status 3")
 }

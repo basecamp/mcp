@@ -194,7 +194,12 @@ type backend interface {
 
 func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task) Record {
 	fail := func(err error) Record {
-		return Record{Model: agent.Label(), ModelID: agent.ModelID(), Arm: arm.Name, TaskID: task.ID, Error: err.Error()}
+		msg := err.Error()
+		if cfg.Record != nil {
+			// In a recording run, any failure means no cassette: fatal.
+			msg = recordErrPrefix + "nothing saved: " + msg
+		}
+		return Record{Model: agent.Label(), ModelID: agent.ModelID(), Arm: arm.Name, TaskID: task.ID, Error: msg}
 	}
 
 	var be backend

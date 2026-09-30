@@ -165,6 +165,10 @@ func (a *CLIAgent) Run(ctx context.Context, ep *Episode) error {
 	if out.IsError {
 		return fmt.Errorf("claude cli reported error (%s): %s", out.Subtype, truncate(out.Result, 500))
 	}
+	if runErr != nil {
+		// Parseable output does not make a failed host process a success.
+		return fmt.Errorf("claude cli: %w: %s", runErr, truncate(strings.TrimSpace(stderr.String()), 500))
+	}
 	ep.Finish(out.Result)
 	return nil
 }
