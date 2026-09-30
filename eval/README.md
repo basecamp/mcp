@@ -321,6 +321,31 @@ server serves it at. When the server gains a flag to switch its guidance off
 (so error hints and descriptions vary by arm too), put it in each arm's
 `server_args`.
 
+### The first run
+
+`results/multiturn/basecamp-cli-v0.jsonl`: `--backend cli`, basecamp-mcp
+built from basecamp/basecamp-mcp-server#172 (the first build with initialize
+instructions), the two arms that build can honor, 16 tasks, temp default:
+
+```
+model   arm           pass    rate  calls/task  wrong_id  wrong_tool  safety  cost_usd
+haiku   bare          14/16   88%   4.8         12        8           0/16    $0.4135
+haiku   instructions  13/16   81%   4.6         14        5           0/16    $0.4331
+sonnet  bare          15/16   94%   4.8         7         18          0/16    $0.8850
+sonnet  instructions  15/16   94%   5.3         8         22          0/16    $0.9174
+                                                             TOTAL COST: $2.6490 / 64 episodes
+```
+
+n=1 per cell, so a one-task swing is noise; what the traces show is not.
+**Mentions fail everywhere**: every model × arm misses
+`reply-comment-mention`, writing `@Annie` as plain text or inventing
+`data-mention` markup instead of passing `mentions: [1002]` — the #172
+instructions do not move it. Haiku also misdates "this Friday" and sends
+zone-less times to the schedule. Sonnet's high **wrong_tool** is guessed
+params (`project_id`, `bucket_id` on bucket-less actions) refused by the
+gateway before the backend. Those are the targets for the guide, the skill,
+and error `next` hints — the arms this build could not yet run.
+
 ### Regression gate
 
 Same contract as the single-turn gate, keyed on `(model, arm, task)`:
