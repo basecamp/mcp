@@ -61,6 +61,7 @@ func TestPreflight(t *testing.T) {
 		"record without profile file": func(o *options) { o.recordProfile = "does-not-exist.json" },
 		"out is the corpus":           func(o *options) { o.out = "eval/testdata/multiturn/fake/tasks.json" },
 		"out is a cassette":           func(o *options) { o.out = "eval/testdata/multiturn/fake/cassettes/base.json" },
+		"out is a directory":          func(o *options) { o.out = "eval/testdata" },
 	}
 	for name, mutate := range cases {
 		o := base
@@ -129,4 +130,12 @@ func TestLauncherRefusesReservedServerEnv(t *testing.T) {
 		_, _, err := launch(t.Context(), multiturn.Arm{Name: "x", ServerEnv: map[string]string{k: "v"}}, "http://127.0.0.1:1")
 		assert.ErrorContains(t, err, "may not set "+k)
 	}
+}
+
+func TestRecordDirAliasIsCaught(t *testing.T) {
+	real := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "alias")
+	require.NoError(t, os.Symlink(real, alias))
+	assert.True(t, sameDir(alias, real))
+	assert.False(t, sameDir(t.TempDir(), real))
 }

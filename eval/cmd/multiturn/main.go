@@ -235,7 +235,7 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 			}
 		}
 	}
-	if o.recordDir != "" && filepath.Dir(filepath.Clean(o.out)) == filepath.Clean(o.recordDir) && strings.HasSuffix(o.out, ".json") {
+	if o.recordDir != "" && sameDir(filepath.Dir(o.out), o.recordDir) && strings.HasSuffix(o.out, ".json") {
 		return fail(fmt.Errorf("--out %s would land among the recorded cassettes in %s", o.out, o.recordDir))
 	}
 	for _, t := range corpus.Tasks {
@@ -244,6 +244,9 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 				return fail(fmt.Errorf("--out %s is task %s's cassette", o.out, t.ID))
 			}
 		}
+	}
+	if st, err := os.Stat(o.out); err == nil && st.IsDir() {
+		return fail(fmt.Errorf("--out %s is a directory", o.out))
 	}
 	// Results are written to a temp file beside --out and renamed, so that
 	// is what must work: probe the same way.
@@ -463,6 +466,20 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+// sameDir reports whether two directories are one, symlinks resolved, so a
+// symlinked alias of --record-dir is caught too.
+func sameDir(a, b string) bool {
+	ra, err := filepath.EvalSymlinks(a)
+	if err != nil {
+		return filepath.Clean(a) == filepath.Clean(b)
+	}
+	rb, err := filepath.EvalSymlinks(b)
+	if err != nil {
+		return false
+	}
+	return ra == rb
 }
 
 func sameFile(a, b string) bool {
