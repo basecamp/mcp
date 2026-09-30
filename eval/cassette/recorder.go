@@ -72,7 +72,7 @@ func (p *Profile) Validate() error {
 		return fmt.Errorf("profile %q does not declare test_account: true — recording is only for seeded test accounts, never production data", p.Name)
 	}
 	u, err := url.Parse(p.Upstream)
-	if err != nil || u.Scheme != "https" || u.Host == "" || (u.Path != "" && u.Path != "/") {
+	if err != nil || u.Scheme != "https" || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
 		return fmt.Errorf("profile %q: upstream %q must be a bare https origin", p.Name, p.Upstream)
 	}
 	if len(p.AccountIDs) == 0 {
@@ -228,7 +228,8 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		ex.Status = http.StatusBadGateway
 		r.appendLog(ex)
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		// The error text can carry the live URL; scrub it like any answer.
+		http.Error(w, r.scrubber.String(err.Error()), http.StatusBadGateway)
 		return
 	}
 	// Only the headers a JSON API call needs. The inbound Authorization (the
@@ -243,11 +244,19 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		ex.Status = http.StatusBadGateway
 		r.appendLog(ex)
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		// The error text can carry the live URL; scrub it like any answer.
+		http.Error(w, r.scrubber.String(err.Error()), http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		// A body cut off mid-read must not become a recorded answer.
+		ex.Status = http.StatusBadGateway
+		r.appendLog(ex)
+		http.Error(w, r.scrubber.String("recorder: upstream body truncated: "+err.Error()), http.StatusBadGateway)
+		return
+	}
 
 	r.mu.Lock()
 	base := r.base

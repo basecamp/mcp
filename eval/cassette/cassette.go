@@ -128,7 +128,9 @@ func (c *Cassette) Save(path string) error {
 // the request with that value.
 func queryMatches(pattern map[string]string, got url.Values) bool {
 	for k, v := range pattern {
-		if got.Get(k) != v {
+		// Presence first: Get returns "" for an absent key too, which would
+		// let {"archived": ""} match a request that never sent it.
+		if _, ok := got[k]; !ok || got.Get(k) != v {
 			return false
 		}
 	}

@@ -382,7 +382,8 @@ production**. Write a profile:
 }
 ```
 
-then run any backend with `--record-profile profile.json --record-dir <dir>`
+then run one model under one arm (`--arms bare`, and one `--models` label
+for a model backend) with `--record-profile profile.json --record-dir <dir>`
 (the gold scripts under `--backend script` record exactly the gold path; a
 model backend records what it explored). The recorder proxies to the
 upstream: it injects the token itself (the server keeps its dummy), refuses —
