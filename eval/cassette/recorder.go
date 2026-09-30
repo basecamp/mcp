@@ -328,6 +328,18 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	base := r.base
 	r.mu.Unlock()
 
+	// A redirect off the upstream origin would send the server under test
+	// somewhere the recorder cannot see or scrub (a CDN, a signed URL); it is
+	// refused rather than handed on or recorded.
+	if loc := resp.Header.Get("Location"); loc != "" {
+		if u, err := url.Parse(loc); err != nil || (u.IsAbs() && strings.TrimSuffix(u.Scheme+"://"+u.Host, "/") != strings.TrimSuffix(r.profile.Upstream, "/")) {
+			ex.Status = http.StatusBadGateway
+			r.appendLog(ex)
+			http.Error(w, `{"error":"recorder: upstream redirected off its origin"}`, http.StatusBadGateway)
+			return
+		}
+	}
+
 	// An account-less answer (an identity document) may list every account
 	// the token reaches. A token that reaches beyond the profile is refused
 	// outright rather than recorded: a seeded test credential belongs to the

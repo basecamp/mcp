@@ -84,6 +84,9 @@ func LoadArms(path string) (*ArmSet, error) {
 		if a.Guide && len(s.GuideTools) == 0 {
 			return nil, fmt.Errorf("arms %s: arm %q wants the guide but guide_tools is empty", path, a.Name)
 		}
+		if s.SkillFile != "" && !filepath.IsLocal(s.SkillFile) {
+			return nil, fmt.Errorf("arms %s: skill_file %q must be a path beneath the arms file's directory", path, s.SkillFile)
+		}
 		if a.Skill && s.SkillResource == "" && s.SkillFile == "" {
 			return nil, fmt.Errorf("arms %s: arm %q wants the skill but neither skill_resource nor skill_file is set", path, a.Name)
 		}
