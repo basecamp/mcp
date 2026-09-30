@@ -71,7 +71,7 @@ func run() error {
 	flag.StringVar(&o.backend, "backend", "script", "agent backend: script (gold scripts, no spend), api (Anthropic Messages API), or cli (the local claude CLI as MCP host; no API key)")
 	flag.IntVar(&o.maxTurns, "max-turns", 0, "override every task's turn budget")
 	flag.IntVar(&o.parallel, "parallel", 1, "episodes to run at once (each has its own backend and server)")
-	flag.StringVar(&o.out, "out", "", "JSONL results path (default eval/results/<server>-multiturn.jsonl)")
+	flag.StringVar(&o.out, "out", "", "JSONL results path (default eval/results/multiturn/<server>.jsonl)")
 	flag.StringVar(&o.baseline, "baseline", "", "compare against a prior results JSONL; exit nonzero on a newly-failing task, score drop, or new safety violation")
 	flag.BoolVar(&o.requirePass, "require-pass", false, "exit nonzero unless every episode passes (for the script smoke)")
 	flag.StringVar(&o.recordProfile, "record-profile", "", "RECORD against a live test account through this profile instead of replaying (see eval/README.md)")
@@ -192,7 +192,7 @@ func preflight(o options) (multiturn.Config, map[string]string, *multiturn.Basel
 	}
 
 	if o.out == "" {
-		o.out = fmt.Sprintf("eval/results/%s-multiturn.jsonl", o.server)
+		o.out = fmt.Sprintf("eval/results/multiturn/%s.jsonl", o.server)
 	}
 	if sameFile(o.out, o.baseline) {
 		return fail(fmt.Errorf("--out %s is the same file as --baseline: the run would overwrite the baseline before comparing", o.out))
