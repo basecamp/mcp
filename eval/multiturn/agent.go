@@ -134,6 +134,11 @@ func (a *APIAgent) Run(ctx context.Context, ep *Episode) error {
 		}
 		ep.Turns++
 		ep.Usage.add(resp.Usage)
+		// A turn cut off by max_tokens is not the model's: its last tool call
+		// may be truncated and its text unfinished, so none of it runs.
+		if resp.StopReason == "max_tokens" {
+			return fmt.Errorf("model turn truncated (stop_reason max_tokens)")
+		}
 		// The assistant turn goes back verbatim — thinking blocks included,
 		// which the API requires unchanged on the next request.
 		messages = append(messages, map[string]any{"role": "assistant", "content": resp.Content})

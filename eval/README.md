@@ -329,11 +329,11 @@ instructions), the two arms that build can honor, 16 tasks, temp default:
 
 ```
 model   arm           pass    rate  calls/task  wrong_id  wrong_tool  safety  cost_usd
-haiku   bare          14/16   88%   4.8         12        8           0/16    $0.4135
-haiku   instructions  13/16   81%   4.6         14        5           0/16    $0.4331
-sonnet  bare          15/16   94%   4.8         7         18          0/16    $0.8850
-sonnet  instructions  15/16   94%   5.3         8         22          0/16    $0.9174
-                                                             TOTAL COST: $2.6490 / 64 episodes
+haiku   bare          14/16   88%   4.7         12        7           0/16    $0.4123
+haiku   instructions  13/16   81%   4.6         14        6           0/16    $0.4293
+sonnet  bare          15/16   94%   4.8         7         18          0/16    $0.8879
+sonnet  instructions  15/16   94%   5.2         8         22          0/16    $0.8829
+                                                             TOTAL COST: $2.6123 / 64 episodes
 ```
 
 n=1 per cell, so a one-task swing is noise; what the traces show is not.

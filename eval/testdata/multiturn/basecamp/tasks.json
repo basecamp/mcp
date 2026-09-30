@@ -148,7 +148,7 @@
         {"tool": "basecamp_checkins", "arguments": {"action": "list_questions", "params": {"questionnaire_id": 3004}}},
         {"tool": "basecamp_checkins", "arguments": {"action": "list_answers", "params": {"question_id": 8001}}}
       ],
-      "script_answer": "Sep 26: Bo — release build pipeline and signing keys; Annie — pricing page designs and launch illustrations."
+      "script_answer": "Fri Sep 25: Bo — release build pipeline and signing keys; Annie — pricing page designs and launch illustrations."
     },
     {
       "id": "complete-todo-url",
