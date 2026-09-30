@@ -10,7 +10,7 @@ import (
 )
 
 func rec(model, arm, task string, pass bool, score float64, safety int) Record {
-	return Record{Model: model, ModelID: model + "-id", Arm: arm, TaskID: task, Pass: pass, Score: score, Safety: safety}
+	return Record{Server: "fake", Backend: "api", Model: model, ModelID: model + "-id", Arm: arm, TaskID: task, Pass: pass, Score: score, Safety: safety}
 }
 
 func baselineOf(t *testing.T, records ...Record) *Baseline {
@@ -76,6 +76,13 @@ func TestCompareRefusesNothingToCompareAndModelSwaps(t *testing.T) {
 	assert.ErrorContains(t, err, "not like-for-like")
 
 	assert.ErrorContains(t, base.CheckModelIDs(map[string]string{"haiku": "other"}), "not the same model")
+	assert.ErrorContains(t, base.CheckExperiment("basecamp", "api"), "not the same experiment")
+	assert.ErrorContains(t, base.CheckExperiment("fake", "cli"), "not the same experiment")
+	assert.NoError(t, base.CheckExperiment("fake", "api"))
+	other := rec("haiku", "bare", "a", true, 1, 0)
+	other.Backend = "cli"
+	_, err = Compare(base, []Record{other})
+	assert.ErrorContains(t, err, "not the same experiment")
 	assert.NoError(t, base.CheckModelIDs(map[string]string{"haiku": "haiku-id"}))
 	assert.ErrorContains(t, base.CheckOverlap([]string{"haiku"}, []string{"guide"}, []string{"a"}), "shares no")
 	assert.NoError(t, base.CheckOverlap([]string{"haiku"}, []string{"bare"}, []string{"a"}))

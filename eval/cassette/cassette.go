@@ -66,7 +66,7 @@ func (in Interaction) stateKey() string {
 	sort.Strings(after)
 	k := patternKey(in.Request) + "\x00" + strings.Join(after, "\x00")
 	if in.Request.Method != "GET" && in.Request.Method != "HEAD" {
-		k += "\x00" + compactJSON(in.Request.Body) // indentation from a saved file must not split a state
+		k += "\x00" + canonicalJSON(in.Request.Body) // key order and indentation must not split a state
 	}
 	return k
 }
@@ -138,8 +138,13 @@ func (c *Cassette) Validate() error {
 	if strings.TrimSpace(c.Name) == "" {
 		return fmt.Errorf("cassette has no name")
 	}
+	states := map[string]int{}
 	for i, in := range c.Interactions {
 		r := in.Request
+		if prev, dup := states[in.stateKey()]; dup {
+			return fmt.Errorf("interaction #%d (%s %s) repeats #%d's request and state: the Player could never serve it", i+1, r.Method, r.Path, prev)
+		}
+		states[in.stateKey()] = i + 1
 		switch r.Method {
 		case "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE":
 		default:

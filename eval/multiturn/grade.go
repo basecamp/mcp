@@ -10,6 +10,11 @@ import (
 // Record is one graded (model, arm, task) episode — the unit of the JSONL
 // results and the baseline comparison.
 type Record struct {
+	// Server and Backend identify the experiment a cell belongs to: the
+	// product server under test and the agent backend (script, api, cli).
+	// A baseline cell is comparable only under the same pair.
+	Server  string `json:"server"`
+	Backend string `json:"backend"`
 	Model   string `json:"model"`
 	ModelID string `json:"model_id"`
 	Arm     string `json:"arm"`

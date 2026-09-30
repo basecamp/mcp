@@ -172,7 +172,7 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Bodies are compared with this Player's origin as {{base}}, as the
 	// recorder stores them: a URL the server copied from an answer into a
 	// write carries a per-run origin.
-	idx := p.match(r, string(toPlaceholder([]byte(ex.Body), p.base)))
+	idx := p.match(r, canonicalJSON(toPlaceholder([]byte(ex.Body), p.base)))
 	var resp Response
 	if idx >= 0 {
 		resp = p.entries[idx].in.Response
@@ -237,7 +237,7 @@ func (p *Player) match(r *http.Request, body string) int {
 			if len(e.in.After) > len(b.in.After) {
 				best = i
 			}
-		case compactJSON(e.in.Request.Body) == body && compactJSON(b.in.Request.Body) != body:
+		case canonicalJSON(e.in.Request.Body) == body && canonicalJSON(b.in.Request.Body) != body:
 			best = i
 		}
 	}
@@ -258,6 +258,26 @@ func (p *Player) reached(in Interaction) bool {
 		}
 	}
 	return true
+}
+
+// canonicalJSON renders a JSON body with object keys sorted and no
+// whitespace, so two bodies that mean the same thing compare equal whatever
+// order a client encoded them in. A non-JSON body is kept as-is.
+func canonicalJSON(b []byte) string {
+	if len(bytes.TrimSpace(b)) == 0 {
+		return ""
+	}
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber() // ids beyond 2^53 must survive
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return string(b)
+	}
+	out, err := json.Marshal(v)
+	if err != nil {
+		return string(b)
+	}
+	return string(out)
 }
 
 // compactJSON renders a JSON body on one line; a non-JSON body is kept as-is.

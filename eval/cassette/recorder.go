@@ -335,6 +335,12 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		refuse(http.StatusForbidden, "account not in the test profile")
 		return
 	}
+	// Checked before forwarding: a write must not reach the live account
+	// only for its recording to be refused afterwards.
+	if json.Valid(body) && !json.Valid(r.scrubber.Bytes(body)) {
+		refuse(http.StatusBadGateway, "a profile redaction broke this request's JSON; redact text, not structure")
+		return
+	}
 	up, err := http.NewRequestWithContext(req.Context(), req.Method, strings.TrimSuffix(r.profile.Upstream, "/")+req.URL.RequestURI(), bytes.NewReader(body))
 	if err != nil {
 		refuse(http.StatusBadGateway, r.scrubber.String(err.Error())) // may carry the live URL
@@ -391,10 +397,6 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	scrubbed := r.scrubber.Bytes(respBody)
-	if json.Valid(body) && !json.Valid(r.scrubber.Bytes(body)) {
-		refuse(http.StatusBadGateway, "a profile redaction broke this request's JSON; redact text, not structure")
-		return
-	}
 	if json.Valid(respBody) && !json.Valid(scrubbed) {
 		refuse(http.StatusBadGateway, "a profile redaction broke this response's JSON; redact text, not structure")
 		return

@@ -109,6 +109,7 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 			defer wg.Done()
 			for j := range queue {
 				rec := runEpisode(ctx, cfg, j.agent, j.arm, j.task)
+				rec.Server, rec.Backend = cfg.Corpus.Server, backendOf(j.agent)
 				rep.Records[j.i] = rec
 				if cfg.Progress != nil {
 					status := "PASS"
@@ -289,6 +290,15 @@ func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task
 	return r
 }
 
+// backendOf names an agent's backend for the record; an agent that does not
+// say is "custom".
+func backendOf(a Agent) string {
+	if b, ok := a.(interface{ Backend() string }); ok {
+		return b.Backend()
+	}
+	return "custom"
+}
+
 const recordErrPrefix = "record: "
 
 // saveRecording merges what one episode recorded into the task's cassette in
@@ -304,6 +314,13 @@ func saveRecording(cfg Config, task Task, rec *cassette.Recorder) error {
 		got = prev
 	} else if !os.IsNotExist(err) {
 		return err
+	}
+	// The merged whole must load and replay, not only the new part.
+	if err := got.Validate(); err != nil {
+		return fmt.Errorf("merged cassette would not load: %w", err)
+	}
+	if err := cassette.ValidateLayers(got); err != nil {
+		return fmt.Errorf("merged cassette would not replay: %w", err)
 	}
 	return got.Save(path)
 }

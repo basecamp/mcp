@@ -287,6 +287,9 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 		if err := base.CheckModelIDs(plan); err != nil {
 			return fail(err)
 		}
+		if err := base.CheckExperiment(o.server, o.backend); err != nil {
+			return fail(err)
+		}
 		var labels, armNames, taskIDs []string
 		for l := range plan {
 			labels = append(labels, l)

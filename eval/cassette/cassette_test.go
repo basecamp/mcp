@@ -537,6 +537,14 @@ func TestACorrectedRetryIsAnsweredByItsOwnBody(t *testing.T) {
 	defer p.Close()
 	assert.Equal(t, 422, do(t, "POST", url+"/1/todos.json", `{"due_on":"Friday"}`))
 	assert.Equal(t, 201, do(t, "POST", url+"/1/todos.json", `{"due_on": "2026-10-02"}`))
+	c3 := &Cassette{Name: "k", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/1/k.json", Body: json.RawMessage(`{"a":0,"b":2}`)}, Response: Response{Status: 422}},
+		{Request: Request{Method: "POST", Path: "/1/k.json", Body: json.RawMessage(`{"a":1,"b":2}`)}, Response: Response{Status: 201}},
+	}}
+	p3 := NewPlayer(c3)
+	url3 := p3.Start()
+	defer p3.Close()
+	assert.Equal(t, 201, do(t, "POST", url3+"/1/k.json", `{"b":2,"a":1}`), "key order does not matter")
 
 	// A bodyless retry picks its own bodyless answer, too.
 	c2 := &Cassette{Name: "e", Interactions: []Interaction{
