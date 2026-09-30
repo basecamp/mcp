@@ -58,8 +58,14 @@ func LoadBaseline(r io.Reader) (*Baseline, error) {
 			return nil, fmt.Errorf("decode baseline record: %w", err)
 		}
 		for _, k := range recordKeys {
-			if _, ok := fields[k]; !ok {
+			v, ok := fields[k]
+			if !ok {
 				return nil, fmt.Errorf("baseline record missing %q: %s", k, truncate(line, 200))
+			}
+			// null decodes to the zero value without complaint; a baseline
+			// "pass":null would read as a failing cell and hide a regression.
+			if string(v) == "null" {
+				return nil, fmt.Errorf("baseline record has null %q: %s", k, truncate(line, 200))
 			}
 		}
 		var rec Record

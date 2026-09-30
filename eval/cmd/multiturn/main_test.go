@@ -109,6 +109,12 @@ func TestPreflightRecording(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, cfg.Record)
 
+	// A corrupt cassette already at the target fails before any live write.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "add-todo.json"), []byte("{"), 0o644))
+	_, _, _, err = preflight(&o)
+	assert.ErrorContains(t, err, "existing recording target")
+	require.NoError(t, os.Remove(filepath.Join(dir, "add-todo.json")))
+
 	t.Setenv("EVAL_PF_TOKEN", "")
 	_, _, _, err = preflight(&o)
 	assert.ErrorContains(t, err, "EVAL_PF_TOKEN")
@@ -126,6 +132,8 @@ func TestPreflightResolvesTheDefaultOutput(t *testing.T) {
 func TestLauncherRefusesReservedServerEnv(t *testing.T) {
 	launch, err := launcher("basecamp", "/bin/true stdio")
 	require.NoError(t, err)
+	_, _, err = launch(t.Context(), multiturn.Arm{Name: "x", ServerEnv: map[string]string{"BASECAMP_BASE_URL=https://evil.example/": "v"}}, "http://127.0.0.1:1")
+	assert.ErrorContains(t, err, "not a variable name")
 	for _, k := range []string{"HOME", "BASECAMP_BASE_URL", "BASECAMP_TOKEN"} {
 		_, _, err := launch(t.Context(), multiturn.Arm{Name: "x", ServerEnv: map[string]string{k: "v"}}, "http://127.0.0.1:1")
 		assert.ErrorContains(t, err, "may not set "+k)

@@ -385,10 +385,14 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		refuse(http.StatusBadGateway, "a profile redaction broke this response's JSON; redact text, not structure")
 		return
 	}
-	if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
+	switch {
+	case resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests:
 		// Transient: the server may retry and succeed, but a recording that
 		// kept this answer would replay the failure forever.
 		r.fault(req, fmt.Sprintf("upstream answered %d", resp.StatusCode))
+	case resp.StatusCode == http.StatusUnauthorized:
+		// An expired or wrong token records nothing but auth failures.
+		r.fault(req, "upstream answered 401: check the profile token")
 	}
 	// A 404 is not recorded: replayed, the same request stays a miss (and a
 	// wrong id), exactly as it was live.

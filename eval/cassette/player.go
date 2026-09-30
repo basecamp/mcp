@@ -223,7 +223,7 @@ func (p *Player) match(r *http.Request, body string) int {
 			if len(e.in.After) > len(b.in.After) {
 				best = i
 			}
-		case body != "" && compactJSON(e.in.Request.Body) == body && compactJSON(b.in.Request.Body) != body:
+		case compactJSON(e.in.Request.Body) == body && compactJSON(b.in.Request.Body) != body:
 			best = i
 		}
 	}
