@@ -156,7 +156,12 @@ func (c *Cassette) Validate() error {
 		if len(in.Response.Body) > 0 && in.Response.BodyText != "" {
 			return fmt.Errorf("interaction #%d (%s %s): both body and body_text set", i+1, r.Method, r.Path)
 		}
+		canon := map[string]bool{}
 		for k, v := range in.Response.Headers {
+			if canon[http.CanonicalHeaderKey(k)] {
+				return fmt.Errorf("interaction #%d (%s %s): header %q appears twice (header names are case-insensitive)", i+1, r.Method, r.Path, k)
+			}
+			canon[http.CanonicalHeaderKey(k)] = true
 			// The recorder's allowlist, for hand-authored cassettes too:
 			// framing headers (Content-Length) are the transport's to set.
 			if !slices.Contains(keptResponseHeaders, http.CanonicalHeaderKey(k)) {
@@ -172,7 +177,11 @@ func (c *Cassette) Validate() error {
 					}
 				}
 				for _, t := range targets {
-					if u, err := url.Parse(strings.ReplaceAll(strings.TrimSpace(t), BasePlaceholder, "")); err != nil || u.Host != "" || u.Scheme != "" {
+					// Parse as the Player will serve it, a real origin in
+					// place of {{base}}: the target must resolve to that host.
+					const probe = "http://player.invalid"
+					u, err := url.Parse(strings.ReplaceAll(strings.TrimSpace(t), BasePlaceholder, probe))
+					if err != nil || u.User != nil || (u.Host != "" && u.Scheme+"://"+u.Host != probe) || (u.Host == "" && u.Scheme != "") {
 						return fmt.Errorf("interaction #%d (%s %s): %s target %q leaves the Player (use a relative path or %s)", i+1, r.Method, r.Path, h, t, BasePlaceholder)
 					}
 				}
@@ -186,21 +195,49 @@ func (c *Cassette) Validate() error {
 // layered set of cassettes names in after is reachable — some layer answers
 // that write with a success — so a replay never waits on a write it can't land.
 func ValidateLayers(cassettes ...*Cassette) error {
-	answers := map[string]bool{}
+	// Reachability as a fixed point: a write lands once some successful
+	// interaction answering it is itself reachable — so a write that waits
+	// on itself, or two that wait on each other, never land.
+	type write struct {
+		key   string
+		after []string
+	}
+	var writes []write
 	for _, c := range cassettes {
 		for _, in := range c.Interactions {
 			if in.Request.Method != "GET" && in.Request.Method != "HEAD" && in.Response.Status < 400 {
-				answers[writeKey(in.Request.Method, in.Request.Path)] = true
+				writes = append(writes, write{writeKey(in.Request.Method, in.Request.Path), in.After})
+			}
+		}
+	}
+	landed := map[string]int{}
+	reached := func(after []string) bool {
+		need := map[string]int{}
+		for _, w := range after {
+			m, path, _ := strings.Cut(w, " ")
+			need[writeKey(m, path)]++
+		}
+		for k, n := range need {
+			if landed[k] < n {
+				return false
+			}
+		}
+		return true
+	}
+	done := make([]bool, len(writes))
+	for progress := true; progress; {
+		progress = false
+		for i, w := range writes {
+			if !done[i] && reached(w.after) {
+				done[i], progress = true, true
+				landed[w.key]++
 			}
 		}
 	}
 	for _, c := range cassettes {
 		for _, in := range c.Interactions {
-			for _, w := range in.After {
-				m, path, _ := strings.Cut(w, " ")
-				if !answers[writeKey(m, path)] {
-					return fmt.Errorf("cassette %s: %s %s waits on %q, which no layer answers with a success", c.Name, in.Request.Method, in.Request.Path, w)
-				}
+			if !reached(in.After) {
+				return fmt.Errorf("cassette %s: %s %s waits on %v, which the layers can never land", c.Name, in.Request.Method, in.Request.Path, in.After)
 			}
 		}
 	}
