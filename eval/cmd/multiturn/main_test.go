@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/basecamp/mcp/eval/multiturn"
 )
 
 // The command runs from the repo root; tests run from the package dir.
@@ -23,7 +25,7 @@ func TestPreflight(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "out.jsonl")
 	base := options{server: "fake", backend: "script", out: out}
 
-	cfg, plan, b, err := preflight(base)
+	cfg, plan, b, err := preflight(&base)
 	require.NoError(t, err)
 	assert.Nil(t, b)
 	assert.Equal(t, map[string]string{"script": "script"}, plan)
@@ -63,13 +65,13 @@ func TestPreflight(t *testing.T) {
 	for name, mutate := range cases {
 		o := base
 		mutate(&o)
-		_, _, _, err := preflight(o)
+		_, _, _, err := preflight(&o)
 		assert.Error(t, err, name)
 	}
 
 	o := base
 	o.baseline = "eval/testdata/multiturn/fake/baseline-script.jsonl"
-	_, _, b, err = preflight(o)
+	_, _, b, err = preflight(&o)
 	require.NoError(t, err)
 	assert.NotNil(t, b)
 }
@@ -94,15 +96,33 @@ func TestPreflightRecording(t *testing.T) {
 	t.Setenv("EVAL_PF_TOKEN", "tok")
 	o := options{server: "fake", backend: "script", out: filepath.Join(dir, "out.jsonl"), recordProfile: prof, recordDir: dir}
 
-	_, _, _, err := preflight(o)
+	_, _, _, err := preflight(&o)
 	assert.ErrorContains(t, err, "one model under one arm", "every arm would repeat the live writes")
 
 	o.arms = "bare"
-	cfg, _, _, err := preflight(o)
+	cfg, _, _, err := preflight(&o)
 	require.NoError(t, err)
 	assert.NotNil(t, cfg.Record)
 
 	t.Setenv("EVAL_PF_TOKEN", "")
-	_, _, _, err = preflight(o)
+	_, _, _, err = preflight(&o)
 	assert.ErrorContains(t, err, "EVAL_PF_TOKEN")
+}
+
+func TestPreflightResolvesTheDefaultOutput(t *testing.T) {
+	chdirRoot(t)
+	o := options{server: "fake", backend: "script"}
+	_, _, _, err := preflight(&o)
+	require.NoError(t, err)
+	assert.Equal(t, "eval/results/multiturn/fake.jsonl", o.out, "the caller writes where preflight checked")
+	_ = os.Remove(o.out)
+}
+
+func TestLauncherRefusesReservedServerEnv(t *testing.T) {
+	launch, err := launcher("basecamp", "/bin/true stdio")
+	require.NoError(t, err)
+	for _, k := range []string{"HOME", "BASECAMP_BASE_URL", "BASECAMP_TOKEN"} {
+		_, _, err := launch(t.Context(), multiturn.Arm{Name: "x", ServerEnv: map[string]string{k: "v"}}, "http://127.0.0.1:1")
+		assert.ErrorContains(t, err, "may not set "+k)
+	}
 }

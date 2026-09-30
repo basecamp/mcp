@@ -97,6 +97,8 @@ type ScriptCall struct {
 	Arguments map[string]any `json:"arguments"`
 }
 
+var taskIDRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+
 // LoadCorpus reads and validates a task file.
 func LoadCorpus(path string) (*Corpus, error) {
 	data, err := os.ReadFile(path)
@@ -160,8 +162,8 @@ func (c *Corpus) validate() error {
 	seen := map[string]bool{}
 	seenPrompt := map[string]string{}
 	for _, t := range c.Tasks {
-		if strings.TrimSpace(t.ID) == "" {
-			return fmt.Errorf("a task has no id")
+		if !taskIDRE.MatchString(t.ID) {
+			return fmt.Errorf("task id %q must be a lowercase slug (it names the task's recorded cassette file)", t.ID)
 		}
 		if seen[t.ID] {
 			return fmt.Errorf("duplicate task id %q", t.ID)

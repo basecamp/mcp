@@ -260,6 +260,7 @@ func TestCorpusValidation(t *testing.T) {
 	assert.ErrorContains(t, c.CheckCassettes(), "nope")
 	for name, m := range map[string]func(map[string]any){
 		"no id":              func(t map[string]any) { t["id"] = "" },
+		"path id":            func(t map[string]any) { t["id"] = "../tasks" },
 		"no prompt":          func(t map[string]any) { t["prompt"] = " " },
 		"no cassettes":       func(t map[string]any) { t["cassettes"] = []any{} },
 		"expects nothing":    func(t map[string]any) { t["expect"] = map[string]any{} },

@@ -208,6 +208,9 @@ func (s *ArmSet) skill(ctx context.Context, session *mcp.ClientSession) (string,
 		return b.String(), nil
 	}
 	data, err := os.ReadFile(filepath.Join(s.dir, s.SkillFile))
+	if os.IsNotExist(err) {
+		return "", fmt.Errorf("skill file %s not found beside the arms file: add the skill draft there, or set skill_resource once the server serves it (eval/README.md, multi-turn mode)", s.SkillFile)
+	}
 	if err != nil {
 		return "", fmt.Errorf("skill file: %w", err)
 	}
