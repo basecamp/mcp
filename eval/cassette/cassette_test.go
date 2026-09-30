@@ -483,3 +483,15 @@ func TestRepeatedWritesAreDistinctStatesAndTheTokenIsScrubbed(t *testing.T) {
 	assert.JSONEq(t, `{"comments":1}`, b1)
 	assert.JSONEq(t, `{"comments":2}`, b2, "the second occurrence of a write is a state of its own")
 }
+
+func TestACorrectedRetryIsAnsweredByItsOwnBody(t *testing.T) {
+	c := &Cassette{Name: "r", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/1/todos.json", Body: json.RawMessage(`{"due_on":"Friday"}`)}, Response: Response{Status: 422, Body: json.RawMessage(`{"error":"bad date"}`)}},
+		{Request: Request{Method: "POST", Path: "/1/todos.json", Body: json.RawMessage(`{"due_on":"2026-10-02"}`)}, Response: Response{Status: 201, Body: json.RawMessage(`{"id":7}`)}},
+	}}
+	p := NewPlayer(c)
+	url := p.Start()
+	defer p.Close()
+	assert.Equal(t, 422, do(t, "POST", url+"/1/todos.json", `{"due_on":"Friday"}`))
+	assert.Equal(t, 201, do(t, "POST", url+"/1/todos.json", `{"due_on": "2026-10-02"}`))
+}

@@ -54,11 +54,17 @@ type Interaction struct {
 	After    []string `json:"after,omitempty"`
 }
 
-// stateKey identifies an interaction's backend state for dedup and merge.
+// stateKey identifies an interaction for dedup and merge: its pattern, its
+// backend state, and — for a write — the body sent, so a rejected write and
+// its corrected retry (same path, no landed write between) stay distinct.
 func (in Interaction) stateKey() string {
 	after := append([]string(nil), in.After...)
 	sort.Strings(after)
-	return patternKey(in.Request) + "\x00" + strings.Join(after, "\x00")
+	k := patternKey(in.Request) + "\x00" + strings.Join(after, "\x00")
+	if in.Request.Method != "GET" && in.Request.Method != "HEAD" {
+		k += "\x00" + string(in.Request.Body)
+	}
+	return k
 }
 
 // writeKey is how a landed write is named in After: method and path, the
