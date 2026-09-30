@@ -495,6 +495,11 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	for k, v := range headers {
 		w.Header().Set(k, strings.ReplaceAll(v, BasePlaceholder, base))
 	}
+	// The Player's default for a JSON body with no Content-Type, applied
+	// here too, so the recording episode sees what its replay will.
+	if w.Header().Get("Content-Type") == "" && len(bytes.TrimSpace(scrubbed)) > 0 && json.Valid(scrubbed) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	}
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(bytes.ReplaceAll(scrubbed, []byte(BasePlaceholder), []byte(base)))
 }

@@ -86,6 +86,9 @@ func (s *Scrubber) Bytes(in []byte) []byte {
 // the byte-level pattern cannot see. A body with nothing to replace, or
 // that is not JSON, is returned unchanged.
 func scrubAvatarFields(body []byte) []byte {
+	if !json.Valid(body) {
+		return body // a non-JSON body (JSON with a trailer, say) stays whole
+	}
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.UseNumber()
 	var doc any
