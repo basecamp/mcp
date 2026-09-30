@@ -426,8 +426,10 @@ func TestReplayStateFollowsTheWritesThatProducedIt(t *testing.T) {
 	assert.Equal(t, 200, status)
 	assert.Equal(t, `"created"`, body)
 
-	bad := &Cassette{Name: "b", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200}, After: []string{"GET /a"}}}}
-	assert.Error(t, bad.Validate(), "after names writes only")
+	for _, after := range []string{"GET /a", "POTS /a", "POST /a?mode=done", "POST a"} {
+		bad := &Cassette{Name: "b", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200}, After: []string{after}}}}
+		assert.Error(t, bad.Validate(), "after %q is unreachable", after)
+	}
 }
 
 func TestRecorderKeepsEveryLinkField(t *testing.T) {
@@ -540,5 +542,7 @@ func TestRecorderRefusesARedactionThatBreaksJSON(t *testing.T) {
 	defer rec.Close()
 	status, _, _ := get(t, url+"/1/thing.json")
 	assert.Equal(t, http.StatusBadGateway, status)
+	assert.Equal(t, http.StatusBadGateway, do(t, "POST", url+"/1/other.json", `{"id":123}`), "request side too")
 	assert.Empty(t, rec.Cassette("x", "").Interactions)
+	assert.Len(t, rec.Faults(), 2)
 }
