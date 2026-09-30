@@ -359,6 +359,18 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		refuse(http.StatusBadRequest, "dot or empty segments in the path")
 		return
 	}
+	if _, err := url.ParseQuery(req.URL.RawQuery); err != nil {
+		// url.Query drops a malformed pair silently; the upstream would see
+		// it and the cassette would not.
+		refuse(http.StatusBadRequest, "malformed query string")
+		return
+	}
+	if r.scrubber.String(req.URL.Path) != req.URL.Path {
+		// A path carrying an email, the token, or a redacted name would be
+		// stored verbatim (a path must replay as sent), so it is refused.
+		refuse(http.StatusBadRequest, "the path carries data the scrubber would remove")
+		return
+	}
 	if !r.allowed(req.URL.Path) {
 		refuse(http.StatusForbidden, "account not in the test profile")
 		return
@@ -367,6 +379,10 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// only for its recording to be refused afterwards.
 	if json.Valid(body) && !json.Valid(r.scrubber.Bytes(body)) {
 		refuse(http.StatusBadGateway, "a profile redaction broke this request's JSON; redact text, not structure")
+		return
+	}
+	if leaksPersonal(r.scrubber.Bytes(body)) || r.leaksOrigin(r.scrubber.Bytes(body)) {
+		refuse(http.StatusBadRequest, "the request body carries personal data or the live origin in an encoded form")
 		return
 	}
 	up, err := http.NewRequestWithContext(req.Context(), req.Method, strings.TrimSuffix(r.profile.Upstream, "/")+req.URL.RequestURI(), bytes.NewReader(body))
