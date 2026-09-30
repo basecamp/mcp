@@ -52,12 +52,12 @@ func (e Exchange) Line() string {
 // Player serves recorded interactions over HTTP. Later cassettes take
 // precedence over earlier ones for the same request (a task cassette layered
 // on a shared base overrides it). Among identical patterns in one cassette,
-// the Player serves the state its replay has reached: the interaction with
-// the highest AfterWrites not above the writes landed so far.
+// the Player serves the latest state its replay has reached: of the
+// interactions whose After writes have all landed, the one requiring most.
 type Player struct {
 	mu      sync.Mutex
 	entries []entry
-	writes  int // writes landed (answered below 400) so far
+	landed  map[string]bool // writeKey of every write landed so far
 	log     []Exchange
 	base    string
 	srv     *httptest.Server
@@ -71,7 +71,7 @@ type entry struct {
 // NewPlayer builds a Player over the cassettes, in precedence order (last
 // wins).
 func NewPlayer(cassettes ...*Cassette) *Player {
-	p := &Player{}
+	p := &Player{landed: map[string]bool{}}
 	for layer, c := range cassettes {
 		for _, in := range c.Interactions {
 			p.entries = append(p.entries, entry{layer: layer, in: in})
@@ -168,7 +168,7 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ex.Status = resp.Status
 	if ex.Matched && ex.IsWrite() && ex.Status < 400 {
-		p.writes++
+		p.landed[writeKey(ex.Method, ex.Path)] = true
 	}
 	p.log = append(p.log, ex)
 	base := p.base
@@ -191,44 +191,47 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(out)
 }
 
-// match picks the interaction for r, or -1. Most query parameters named wins;
-// then the latest layer; within that layer's identical patterns, the state
-// the replay has reached (the earliest state when it has reached none).
+// match picks the interaction for r, or -1. Only interactions whose After
+// writes have all landed are eligible. Most query parameters named wins;
+// then the latest layer; then the latest state (most After writes).
 // Caller holds p.mu.
 func (p *Player) match(r *http.Request) int {
 	q := r.URL.Query()
-	best, bestSpec, bestLayer := -1, -1, -1
+	best := -1
 	for i, e := range p.entries {
 		req := e.in.Request
-		if req.Method != r.Method || !samePath(req.Path, r.URL.Path) || !queryMatches(req.Query, q) {
+		if req.Method != r.Method || !samePath(req.Path, r.URL.Path) || !queryMatches(req.Query, q) || !p.reached(e.in) {
 			continue
 		}
-		spec := len(req.Query)
-		if spec > bestSpec || (spec == bestSpec && e.layer > bestLayer) {
-			best, bestSpec, bestLayer = i, spec, e.layer
-		}
-	}
-	if best < 0 {
-		return -1
-	}
-	key := patternKey(p.entries[best].in.Request)
-	pick, earliest := -1, -1
-	for i, e := range p.entries {
-		if e.layer != bestLayer || patternKey(e.in.Request) != key {
+		if best < 0 {
+			best = i
 			continue
 		}
-		aw := e.in.AfterWrites
-		if earliest < 0 || aw < p.entries[earliest].in.AfterWrites {
-			earliest = i
-		}
-		if aw <= p.writes && (pick < 0 || aw > p.entries[pick].in.AfterWrites) {
-			pick = i
+		b := p.entries[best]
+		switch {
+		case len(req.Query) != len(b.in.Request.Query):
+			if len(req.Query) > len(b.in.Request.Query) {
+				best = i
+			}
+		case e.layer != b.layer:
+			if e.layer > b.layer {
+				best = i
+			}
+		case len(e.in.After) > len(b.in.After):
+			best = i
 		}
 	}
-	if pick < 0 {
-		return earliest
+	return best
+}
+
+func (p *Player) reached(in Interaction) bool {
+	for _, w := range in.After {
+		m, path, _ := strings.Cut(w, " ")
+		if !p.landed[writeKey(m, path)] {
+			return false
+		}
 	}
-	return pick
+	return true
 }
 
 // compactJSON renders a JSON body on one line; a non-JSON body is kept as-is.

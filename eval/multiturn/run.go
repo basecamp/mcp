@@ -260,7 +260,11 @@ func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task
 	}
 
 	if rec != nil {
-		if err := saveRecording(cfg, task, rec); err != nil {
+		// Only a whole episode is a recording: one that errored part-way
+		// would save (or merge in) a partial cassette.
+		if runErr != nil {
+			r.Error, r.Pass = recordErrPrefix+"episode errored, nothing saved: "+runErr.Error(), false
+		} else if err := saveRecording(cfg, task, rec); err != nil {
 			r.Error, r.Pass = recordErrPrefix+err.Error(), false
 		}
 		// A recording run's product is the scrubbed cassette. Its results

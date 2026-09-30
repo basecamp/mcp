@@ -46,7 +46,7 @@ func TestPlayerMatchesAndLogs(t *testing.T) {
 	}}
 	task := &Cassette{Name: "task", Interactions: []Interaction{
 		{Request: Request{Method: "GET", Path: "/1/todos/5"}, Response: Response{Status: 200, Body: json.RawMessage(`{"v":"task-1"}`)}},
-		{Request: Request{Method: "GET", Path: "/1/todos/5"}, Response: Response{Status: 200, Body: json.RawMessage(`{"v":"task-2"}`)}, AfterWrites: 1},
+		{Request: Request{Method: "GET", Path: "/1/todos/5"}, Response: Response{Status: 200, Body: json.RawMessage(`{"v":"task-2"}`)}, After: []string{"POST /1/todos/5/completion.json"}},
 	}}
 	p := NewPlayer(base, task)
 	url := p.Start()
@@ -338,7 +338,7 @@ func TestMergeKeepsFirstAnswerPerPattern(t *testing.T) {
 		{Request: Request{Method: "GET", Path: "/x.json"}, Response: Response{Status: 200, Body: json.RawMessage(`2`)}},
 		{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200, Body: json.RawMessage(`3`)}},
 	}}
-	b.Interactions = append(b.Interactions, Interaction{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200, Body: json.RawMessage(`4`)}, AfterWrites: 1})
+	b.Interactions = append(b.Interactions, Interaction{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200, Body: json.RawMessage(`4`)}, After: []string{"POST /y"}})
 	Merge(a, b)
 	require.Len(t, a.Interactions, 3, "every recorded state of a new pattern")
 	assert.Equal(t, json.RawMessage(`1`), a.Interactions[0].Response.Body)
@@ -351,7 +351,7 @@ func TestMergeExtendsAPatternsStates(t *testing.T) {
 	}
 	dst := &Cassette{Name: "d", Interactions: []Interaction{read(`"before"`)}}
 	after := read(`"after"`)
-	after.AfterWrites = 1
+	after.After = []string{"POST /t/touch"}
 	Merge(dst, &Cassette{Name: "s", Interactions: []Interaction{read(`"before-again"`), after}})
 	require.Len(t, dst.Interactions, 2)
 	assert.Equal(t, json.RawMessage(`"before"`), dst.Interactions[0].Response.Body)
@@ -393,4 +393,55 @@ func TestRecorderRefusesForeignAccountsAndSkips404s(t *testing.T) {
 	assert.Equal(t, 403, status)
 	assert.NotContains(t, body, "Production")
 	require.Len(t, rec.Cassette("x", "").Interactions, 1, "nothing recorded from a token that reaches other accounts")
+}
+
+func TestReplayStateFollowsTheWritesThatProducedIt(t *testing.T) {
+	c := &Cassette{Name: "s", Interactions: []Interaction{
+		{Request: Request{Method: "GET", Path: "/1/todos/5"}, Response: Response{Status: 200, Body: json.RawMessage(`"open"`)}},
+		{Request: Request{Method: "GET", Path: "/1/todos/5"}, Response: Response{Status: 200, Body: json.RawMessage(`"done"`)}, After: []string{"POST /1/todos/5/completion"}},
+		{Request: Request{Method: "GET", Path: "/1/todos/6"}, Response: Response{Status: 200, Body: json.RawMessage(`"created"`)}, After: []string{"POST /1/todos"}},
+		{Request: Request{Method: "POST", Path: "/1/todos/5/completion.json"}, Response: Response{Status: 204}},
+		{Request: Request{Method: "POST", Path: "/1/todos/9/completion.json"}, Response: Response{Status: 204}},
+		{Request: Request{Method: "POST", Path: "/1/todos.json"}, Response: Response{Status: 201, Body: json.RawMessage(`{"id":6}`)}},
+	}}
+	require.NoError(t, c.Validate())
+	p := NewPlayer(c)
+	url := p.Start()
+	defer p.Close()
+
+	// A resource first recorded after its creation is a miss before it.
+	status, _, _ := get(t, url+"/1/todos/6")
+	assert.Equal(t, 404, status)
+	// An unrelated write does not unlock the completed state.
+	do(t, "POST", url+"/1/todos/9/completion.json", "")
+	_, body, _ := get(t, url+"/1/todos/5")
+	assert.Equal(t, `"open"`, body)
+	do(t, "POST", url+"/1/todos/5/completion.json", "")
+	_, body, _ = get(t, url+"/1/todos/5")
+	assert.Equal(t, `"done"`, body)
+	do(t, "POST", url+"/1/todos.json", `{}`)
+	status, body, _ = get(t, url+"/1/todos/6")
+	assert.Equal(t, 200, status)
+	assert.Equal(t, `"created"`, body)
+
+	bad := &Cassette{Name: "b", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200}, After: []string{"GET /a"}}}}
+	assert.Error(t, bad.Validate(), "after names writes only")
+}
+
+func TestRecorderKeepsEveryLinkField(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Link", `<https://x/1>; rel="prev"`)
+		w.Header().Add("Link", `<https://x/3>; rel="next"`)
+		_, _ = io.WriteString(w, `[]`)
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"123"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+	_, _, hdr := get(t, url+"/123/list.json")
+	assert.Contains(t, hdr.Get("Link"), `rel="next"`)
+	assert.Contains(t, rec.Cassette("x", "").Interactions[0].Response.Headers["Link"], `rel="next"`)
 }

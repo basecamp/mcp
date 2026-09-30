@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -122,7 +123,7 @@ type Recorder struct {
 	mu           sync.Mutex
 	interactions []Interaction
 	log          []Exchange
-	writes       int // writes landed upstream so far
+	landed       []string // writeKey of each write landed upstream so far, in order
 	base         string
 	srv          *httptest.Server
 }
@@ -283,8 +284,16 @@ func (r *Recorder) allowed(path string) bool {
 // scrubbed exchange, and answers the client with the live response (upstream
 // origin rewritten to the recorder so follow-up requests stay proxied).
 func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	body, _ := io.ReadAll(req.Body)
+	body, readErr := io.ReadAll(req.Body)
 	ex := Exchange{Method: req.Method, Path: req.URL.Path, Query: canonicalQuery(r.scrubQuery(req.URL.Query())), Body: compactJSON(r.scrubber.Bytes(body))}
+	if readErr != nil {
+		// A request cut off mid-body must not reach the live account as if
+		// it were whole.
+		ex.Status = http.StatusBadRequest
+		r.appendLog(ex)
+		http.Error(w, `{"error":"recorder: request body truncated"}`, http.StatusBadRequest)
+		return
+	}
 	if !r.allowed(req.URL.Path) {
 		ex.Status = http.StatusForbidden
 		r.appendLog(ex)
@@ -358,8 +367,10 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	headers := map[string]string{}
 	for _, h := range keptResponseHeaders {
-		if v := resp.Header.Get(h); v != "" {
-			headers[h] = r.scrubber.String(v)
+		// Every field value, joined: an API may send prev and next as
+		// separate Link fields, and Link's own syntax is comma-separated.
+		if vs := resp.Header.Values(h); len(vs) > 0 {
+			headers[h] = r.scrubber.String(strings.Join(vs, ", "))
 		}
 	}
 	scrubbed := r.scrubber.Bytes(respBody)
@@ -369,8 +380,11 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		r.record(req, body, resp.StatusCode, headers, scrubbed)
 	}
 	if req.Method != http.MethodGet && req.Method != http.MethodHead && resp.StatusCode < 400 {
+		k := writeKey(req.Method, req.URL.Path)
 		r.mu.Lock()
-		r.writes++
+		if !slices.Contains(r.landed, k) {
+			r.landed = append(r.landed, k)
+		}
 		r.mu.Unlock()
 	}
 	ex.Status, ex.Matched = resp.StatusCode, resp.StatusCode != http.StatusNotFound
@@ -424,14 +438,16 @@ func (r *Recorder) record(req *http.Request, reqBody []byte, status int, headers
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	in.AfterWrites = r.writes
-	// Each pattern keeps one answer per backend state: the first seen after
-	// a given number of writes. A read repeated with no write between adds
-	// nothing; a read after a write is a new state the Player serves once
-	// its own replay has landed as many writes.
-	key := patternKey(in.Request)
+	if len(r.landed) > 0 {
+		in.After = append([]string(nil), r.landed...)
+	}
+	// Each pattern keeps one answer per backend state: the first seen after a
+	// given set of landed writes. A read repeated with no write between adds
+	// nothing; a read after a write is a new state the Player serves once its
+	// own replay has landed those writes.
+	key := in.stateKey()
 	for _, prev := range r.interactions {
-		if patternKey(prev.Request) == key && prev.AfterWrites == in.AfterWrites {
+		if prev.stateKey() == key {
 			return
 		}
 	}
@@ -448,20 +464,15 @@ func compactRaw(b []byte) json.RawMessage {
 
 // Merge folds src's interactions into dst — so recording the same task under
 // several models or arms accumulates the union of what they asked for. Per
-// request pattern and backend state (AfterWrites), dst's answer stands and
-// src adds the states dst lacks.
+// request pattern and backend state (After), dst's answer stands and src adds
+// the states dst lacks.
 func Merge(dst, src *Cassette) {
-	type state struct {
-		key    string
-		writes int
-	}
-	have := map[state]bool{}
+	have := map[string]bool{}
 	for _, in := range dst.Interactions {
-		have[state{patternKey(in.Request), in.AfterWrites}] = true
+		have[in.stateKey()] = true
 	}
 	for _, in := range src.Interactions {
-		k := state{patternKey(in.Request), in.AfterWrites}
-		if !have[k] {
+		if k := in.stateKey(); !have[k] {
 			dst.Interactions = append(dst.Interactions, in)
 			have[k] = true
 		}
@@ -471,6 +482,6 @@ func Merge(dst, src *Cassette) {
 		if a.Request.Path != b.Request.Path {
 			return a.Request.Path < b.Request.Path
 		}
-		return a.AfterWrites < b.AfterWrites
+		return len(a.After) < len(b.After)
 	})
 }

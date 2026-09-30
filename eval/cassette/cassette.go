@@ -40,15 +40,30 @@ type Cassette struct {
 
 // Interaction is one request pattern and the response served for it.
 //
-// AfterWrites is the backend state the response belongs to: how many writes
-// had landed before it was recorded. A read recorded before and after a
-// write is two interactions, AfterWrites 0 and 1, and the Player serves the
-// one matching the writes its own replay has landed — so state advances on
-// the agent's writes, never on how often it re-reads.
+// After is the backend state the response belongs to: the writes ("METHOD
+// /path") that had landed before it was recorded. A read recorded before and
+// after `POST /x` is two interactions, the second with After ["POST /x"],
+// and the Player serves a response only once its own replay has landed every
+// write in its After — so state follows the agent's own writes: re-reading
+// never advances it, an unrelated write never unlocks it, and a resource
+// first seen after its creation is a miss until the replay creates it.
 type Interaction struct {
-	Request     Request  `json:"request"`
-	Response    Response `json:"response"`
-	AfterWrites int      `json:"after_writes,omitempty"`
+	Request  Request  `json:"request"`
+	Response Response `json:"response"`
+	After    []string `json:"after,omitempty"`
+}
+
+// stateKey identifies an interaction's backend state for dedup and merge.
+func (in Interaction) stateKey() string {
+	after := append([]string(nil), in.After...)
+	sort.Strings(after)
+	return patternKey(in.Request) + "\x00" + strings.Join(after, "\x00")
+}
+
+// writeKey is how a landed write is named in After: method and path, the
+// ".json" suffix dropped, so both spellings name one write.
+func writeKey(method, path string) string {
+	return method + " " + strings.TrimSuffix(path, ".json")
 }
 
 // Request identifies which requests an interaction answers. Method and Path
@@ -116,8 +131,10 @@ func (c *Cassette) Validate() error {
 		if len(in.Response.Body) > 0 && !json.Valid(in.Response.Body) {
 			return fmt.Errorf("interaction #%d (%s %s): response body is not JSON (use body_text)", i+1, r.Method, r.Path)
 		}
-		if in.AfterWrites < 0 {
-			return fmt.Errorf("interaction #%d (%s %s): negative after_writes", i+1, r.Method, r.Path)
+		for _, w := range in.After {
+			if m, p, ok := strings.Cut(w, " "); !ok || m == "GET" || m == "HEAD" || !strings.HasPrefix(p, "/") {
+				return fmt.Errorf("interaction #%d (%s %s): after entry %q must be a write, \"METHOD /path\"", i+1, r.Method, r.Path, w)
+			}
 		}
 		if len(in.Response.Body) > 0 && in.Response.BodyText != "" {
 			return fmt.Errorf("interaction #%d (%s %s): both body and body_text set", i+1, r.Method, r.Path)
