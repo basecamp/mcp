@@ -180,6 +180,14 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, err := url.ParseQuery(r.URL.RawQuery); err != nil {
+		ex.Status = http.StatusBadRequest
+		p.mu.Lock()
+		p.log = append(p.log, ex)
+		p.mu.Unlock()
+		http.Error(w, `{"error":"malformed query string"}`, http.StatusBadRequest)
+		return
+	}
 	for _, vs := range r.URL.Query() {
 		if len(vs) > 1 {
 			// Cassette queries are single-valued; the recorder refuses
