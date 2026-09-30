@@ -573,11 +573,19 @@ func TestOnPlayerTargetsAndLayers(t *testing.T) {
 		{Request: Request{Method: "GET", Path: "/b"}, Response: Response{Status: 200}, After: []string{"POST /x"}},
 	}}
 	require.NoError(t, ok.Validate())
-	assert.ErrorContains(t, ValidateLayers(ok), `waits on "POST /x"`)
+	assert.ErrorContains(t, ValidateLayers(ok), "can never land")
 	failing := &Cassette{Name: "w", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x.json"}, Response: Response{Status: 422}}}}
 	assert.Error(t, ValidateLayers(ok, failing), "a write answered only with a failure never lands")
 	landing := &Cassette{Name: "w", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x.json"}, Response: Response{Status: 201}}}}
 	assert.NoError(t, ValidateLayers(ok, landing))
+
+	selfWait := &Cassette{Name: "s", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x"}, Response: Response{Status: 201}, After: []string{"POST /x"}}}}
+	assert.Error(t, ValidateLayers(ok, selfWait), "a write that waits on itself never lands")
+	cycle := &Cassette{Name: "c", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/x"}, Response: Response{Status: 201}, After: []string{"PUT /y"}},
+		{Request: Request{Method: "PUT", Path: "/y"}, Response: Response{Status: 200}, After: []string{"POST /x"}},
+	}}
+	assert.Error(t, ValidateLayers(ok, cycle), "nor do two that wait on each other")
 }
 
 func TestPlayerComparesBodiesWithItsOriginAsBase(t *testing.T) {
