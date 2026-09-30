@@ -76,6 +76,10 @@ type Episode struct {
 	session *mcp.ClientSession
 	backend Backend
 	visible map[string]bool
+	// gateway marks tools whose schema makes "action" an enumerated
+	// selector: only their calls normalize to the action as op. A flat
+	// tool that merely has an action argument keeps its own name.
+	gateway map[string]bool
 
 	Turns     int
 	Steps     []Step
@@ -100,10 +104,12 @@ type Episode struct {
 // NewEpisode binds an episode to a live session and backend.
 func NewEpisode(task Task, surf *Surface, system string, maxTurns int, session *mcp.ClientSession, backend Backend) *Episode {
 	vis := map[string]bool{}
+	gw := map[string]bool{}
 	for _, t := range surf.Tools {
 		vis[t.Name] = true
+		gw[t.Name] = isGateway(t)
 	}
-	return &Episode{Task: task, Surface: surf, System: system, MaxTurns: maxTurns, session: session, backend: backend, visible: vis, attributedAt: map[int]bool{}}
+	return &Episode{Task: task, Surface: surf, System: system, MaxTurns: maxTurns, session: session, backend: backend, visible: vis, gateway: gw, attributedAt: map[int]bool{}}
 }
 
 // resultLimit bounds the result text kept per step in the record; the model
@@ -116,7 +122,11 @@ const resultLimit = 600
 // listed, is answered in-band as an error — the model made it, so it counts.
 func (e *Episode) Call(ctx context.Context, name string, args map[string]any) (string, bool) {
 	step := Step{Turn: e.Turns, Tool: name}
-	step.Op, step.Params = normalize(name, args)
+	if e.gateway[name] {
+		step.Op, step.Params = normalize(name, args)
+	} else {
+		step.Op, step.Params = name, args
+	}
 
 	if !e.visible[name] {
 		step.IsError, step.Unknown = true, true
@@ -153,6 +163,22 @@ func (e *Episode) Call(ctx context.Context, name string, args map[string]any) (s
 
 // Finish records the agent's final reply.
 func (e *Episode) Finish(answer string) { e.Answer = answer }
+
+// isGateway reports whether a tool's input schema declares "action" as an
+// enumerated selector — the gateway convention.
+func isGateway(t *mcp.Tool) bool {
+	schema, ok := t.InputSchema.(map[string]any)
+	if !ok {
+		data, err := json.Marshal(t.InputSchema)
+		if err != nil || json.Unmarshal(data, &schema) != nil {
+			return false
+		}
+	}
+	props, _ := schema["properties"].(map[string]any)
+	action, _ := props["action"].(map[string]any)
+	enum, _ := action["enum"].([]any)
+	return len(enum) > 0
+}
 
 // normalize maps a call to its surface-independent op and params. A gateway
 // call carries {"action": "...", "params": {...}} — and a meta tool may take

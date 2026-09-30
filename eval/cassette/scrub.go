@@ -63,9 +63,11 @@ func (s *Scrubber) Bytes(in []byte) []byte {
 	}
 	out := in
 	if s.upstream != "" {
-		out = bytes.ReplaceAll(out, []byte(s.upstream), []byte(BasePlaceholder))
-		// JSON encoders may escape the slashes in an absolute URL.
-		out = bytes.ReplaceAll(out, []byte(strings.ReplaceAll(s.upstream, "/", `\/`)), []byte(BasePlaceholder))
+		// Case-insensitively (hosts are), in the plain spelling and with the
+		// slashes a JSON encoder may escape.
+		for _, form := range []string{s.upstream, strings.ReplaceAll(s.upstream, "/", `\/`)} {
+			out = regexp.MustCompile(`(?i)`+regexp.QuoteMeta(form)).ReplaceAll(out, []byte(BasePlaceholder))
+		}
 	}
 	out = avatarRE.ReplaceAllFunc(out, func(m []byte) []byte {
 		key := avatarRE.FindSubmatch(m)[1]
