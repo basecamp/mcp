@@ -722,6 +722,10 @@ func TestRecorderFaultsOnEncodedOriginsAndUserinfoRedirects(t *testing.T) {
 	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
 	assert.Len(t, rec.Faults(), 2)
 	assert.Empty(t, rec.Cassette("x", "").Interactions)
+
+	named, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://3.basecampapi.com", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	assert.True(t, named.leaksOrigin([]byte(`{"url":"https://3.BASECAMPAPI.COM/1/x"}`)), "a host is case-insensitive")
 }
 
 func TestPlayerRefusesRepeatedQueryKeysAndLayersShadowAcrossBodies(t *testing.T) {

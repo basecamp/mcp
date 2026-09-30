@@ -244,7 +244,7 @@ func (p *Player) match(r *http.Request, body string) int {
 	q := url.Values{}
 	for k, vs := range r.URL.Query() {
 		for _, v := range vs {
-			q.Add(k, string(toPlaceholder([]byte(v), p.base)))
+			q.Add(string(toPlaceholder([]byte(k), p.base)), string(toPlaceholder([]byte(v), p.base)))
 		}
 	}
 	best := -1
