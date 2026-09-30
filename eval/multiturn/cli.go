@@ -46,6 +46,13 @@ func NewCLIAgent(label, modelID string, bridge []string) *CLIAgent {
 	if bin == "" {
 		bin = "claude"
 	}
+	// Resolved now, from the invocation directory: the CLI later runs in a
+	// temp dir, where a relative ./bin/claude would name something else.
+	if p, err := exec.LookPath(bin); err == nil {
+		if abs, err := filepath.Abs(p); err == nil {
+			bin = abs
+		}
+	}
 	return &CLIAgent{label: label, modelID: modelID, bin: bin, bridge: bridge, timeout: 15 * time.Minute}
 }
 

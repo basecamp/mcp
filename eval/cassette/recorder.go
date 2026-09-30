@@ -98,6 +98,9 @@ func (p *Profile) Validate() error {
 		if json.Valid([]byte(strings.TrimSpace(from))) {
 			return fmt.Errorf("profile %q: redact literal %q is a JSON value; redact text such as names, not ids or literals", p.Name, from)
 		}
+		if strings.Contains(from+to, BasePlaceholder) {
+			return fmt.Errorf("profile %q: redact literal %q -> %q uses the cassette placeholder %s", p.Name, from, to, BasePlaceholder)
+		}
 		if strings.ContainsAny(from+to, "\"\\") || strings.ContainsFunc(from+to, unicode.IsControl) {
 			return fmt.Errorf("profile %q: redact literal %q -> %q carries a quote, backslash, or control character, which would corrupt the JSON it rewrites", p.Name, from, to)
 		}
