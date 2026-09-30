@@ -3,6 +3,7 @@ package multiturn
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/basecamp/mcp/eval/cassette"
 )
@@ -150,6 +151,14 @@ func grade(ep *Episode, guide func(string) bool) Record {
 	}
 	check("call", t.Expect.Calls, okCalls)
 	check("write", t.Expect.Writes, landed)
+	for _, g := range t.Expect.WriteGroups {
+		total++
+		if oneLineMatchesAll(g, landed) {
+			met++
+		} else {
+			rec.Reasons = append(rec.Reasons, fmt.Sprintf("missing write matching all of: %s", strings.Join(g, " && ")))
+		}
+	}
 	check("answer", t.Expect.Answer, []string{ep.Answer})
 	// A read task's answer must come from the account: at least one read the
 	// backend answered during a tool call. Startup reads (the server fetching
@@ -203,6 +212,23 @@ func grade(ep *Episode, guide func(string) bool) Record {
 // for malformed traffic (400, 415) are not id lookups.
 func isWrongID(ex cassette.Exchange) bool {
 	return !ex.Matched && ex.Status == 404
+}
+
+// oneLineMatchesAll reports whether a single line matches every pattern.
+func oneLineMatchesAll(patterns []string, lines []string) bool {
+	for _, l := range lines {
+		all := true
+		for _, p := range patterns {
+			if !regexp.MustCompile(p).MatchString(l) {
+				all = false
+				break
+			}
+		}
+		if all {
+			return true
+		}
+	}
+	return false
 }
 
 func allMatches(pattern string, lines []string) []string {

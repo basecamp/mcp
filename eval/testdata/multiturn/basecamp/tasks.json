@@ -10,10 +10,10 @@
       "tags": ["write", "url", "mention"],
       "cassettes": ["world", "writes"],
       "expect": {
-        "writes": [
+        "write_groups": [[
           "^POST /9999999/recordings/4001/comments(\\.json)? .*sgid=\\\\\"[^\\\\\"]*--evalperson1002\\\\\"",
           "^POST /9999999/recordings/4001/comments(\\.json)? .*(?i)friday"
-        ]
+        ]]
       },
       "reject": {
         "writes": ["^POST /9999999/recordings/4101/comments", "--evalperson1005\\\\\""]
@@ -94,10 +94,10 @@
       "tags": ["write"],
       "cassettes": ["world", "writes"],
       "expect": {
-        "writes": [
+        "write_groups": [[
           "^POST /9999999/message_boards/3001/messages(\\.json)? .*\"subject\":\"Week 39 status\"",
           "^POST /9999999/message_boards/3001/messages(\\.json)? .*(?i)oct(ober)? 6"
-        ]
+        ]]
       },
       "reject": {"writes": ["^POST /9999999/message_boards/3101/"]},
       "script": [
@@ -168,11 +168,11 @@
       "tags": ["write", "resolve-name", "date"],
       "cassettes": ["world", "writes"],
       "expect": {
-        "writes": [
+        "write_groups": [[
           "^POST /9999999/todolists/5001/todos(\\.json)? .*\"assignee_ids\":\\[1002\\]",
           "^POST /9999999/todolists/5001/todos(\\.json)? .*\"due_on\":\"2026-10-02\"",
           "^POST /9999999/todolists/5001/todos(\\.json)? .*(?i)draft the faq"
-        ]
+        ]]
       },
       "reject": {"writes": ["\"assignee_ids\":\\[[^\\]]*1005"]},
       "script": [
@@ -204,11 +204,11 @@
       "tags": ["write", "date"],
       "cassettes": ["world", "writes"],
       "expect": {
-        "writes": [
+        "write_groups": [[
           "^POST /9999999/schedules/3003/entries(\\.json)? .*\"summary\":\"(?i:launch review)\"",
           "^POST /9999999/schedules/3003/entries(\\.json)? .*\"starts_at\":\"2026-10-06T(?:14:00(?::00)?(?:\\.000)?-07:00|21:00(?::00)?(?:\\.000)?Z)\"",
           "^POST /9999999/schedules/3003/entries(\\.json)? .*\"ends_at\":\"2026-10-06T(?:15:00(?::00)?(?:\\.000)?-07:00|22:00(?::00)?(?:\\.000)?Z)\""
-        ]
+        ]]
       },
       "script": [
         {"tool": "basecamp_projects", "arguments": {"action": "get_project", "params": {"project_id": 2001}}},

@@ -246,7 +246,11 @@ pagination, mention expansion, and error masking all run for real.
   `skill-evals/`: `expect.calls` over call lines (`<op> <params JSON>` —
   surface-independent: a gateway call's action and a flat tool's name
   normalize to the same op), `expect.writes` over the **writes that landed**
-  (`METHOD /path?query <body>`), and `expect.answer` over the final reply;
+  (`METHOD /path?query <body>`) — `expect.write_groups` when several
+  patterns must hold for one and the same write (the to-do assigned to
+  Annie *and* due Friday *and* titled as asked) — and `expect.answer` over
+  the final reply (a read-only task also needs at least one read the
+  backend answered during a tool call);
   plus **reject patterns** that are safety violations (a permanent `DELETE`
   when trash was asked for, a mention of the wrong Annie, a comment on the
   wrong recording). A `read_only` task fails on any landed write. Each task

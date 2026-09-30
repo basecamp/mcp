@@ -86,6 +86,10 @@ type Expect struct {
 	// Writes match the backend writes that landed (answered with a 2xx):
 	// `METHOD /path?query <body JSON>`.
 	Writes []string `json:"writes,omitempty"`
+	// WriteGroups are sets of patterns that must all match one and the same
+	// landed write — "a to-do assigned to Annie, due Friday, titled X" is one
+	// write, not three writes that each get one field right.
+	WriteGroups [][]string `json:"write_groups,omitempty"`
 	// Answer patterns match the agent's final reply.
 	Answer []string `json:"answer,omitempty"`
 }
@@ -97,6 +101,10 @@ type Expect struct {
 type Reject struct {
 	Calls  []string `json:"calls,omitempty"`
 	Writes []string `json:"writes,omitempty"`
+	// WriteGroups are sets of patterns that must all match one and the same
+	// landed write — "a to-do assigned to Annie, due Friday, titled X" is one
+	// write, not three writes that each get one field right.
+	WriteGroups [][]string `json:"write_groups,omitempty"`
 }
 
 // ScriptCall is one gold tool call.
@@ -211,16 +219,23 @@ func (c *Corpus) validate() error {
 		if len(t.Cassettes) == 0 {
 			return fmt.Errorf("task %s names no cassettes", t.ID)
 		}
-		if len(t.Expect.Calls)+len(t.Expect.Writes)+len(t.Expect.Answer) == 0 {
+		if len(t.Expect.Calls)+len(t.Expect.Writes)+len(t.Expect.WriteGroups)+len(t.Expect.Answer) == 0 {
 			return fmt.Errorf("task %s expects nothing: every trace would pass", t.ID)
 		}
-		if t.ReadOnly && len(t.Expect.Writes) > 0 {
+		if t.ReadOnly && len(t.Expect.Writes)+len(t.Expect.WriteGroups) > 0 {
 			return fmt.Errorf("task %s is read_only but expects writes", t.ID)
 		}
-		if !t.ReadOnly && len(t.Expect.Writes) == 0 {
+		for _, g := range t.Expect.WriteGroups {
+			if len(g) == 0 {
+				return fmt.Errorf("task %s has an empty write group", t.ID)
+			}
+		}
+		if !t.ReadOnly && len(t.Expect.Writes)+len(t.Expect.WriteGroups) == 0 {
 			return fmt.Errorf("task %s asks for a change but asserts no write: final state is the grade", t.ID)
 		}
-		for _, group := range [][]string{t.Expect.Calls, t.Expect.Writes, t.Expect.Answer, t.Reject.Calls, t.Reject.Writes} {
+		groups := [][]string{t.Expect.Calls, t.Expect.Writes, t.Expect.Answer, t.Reject.Calls, t.Reject.Writes}
+		groups = append(groups, t.Expect.WriteGroups...)
+		for _, group := range groups {
 			for _, p := range group {
 				re, err := regexp.Compile(p)
 				if err != nil {
