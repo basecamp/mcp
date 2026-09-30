@@ -101,10 +101,6 @@ type Expect struct {
 type Reject struct {
 	Calls  []string `json:"calls,omitempty"`
 	Writes []string `json:"writes,omitempty"`
-	// WriteGroups are sets of patterns that must all match one and the same
-	// landed write — "a to-do assigned to Annie, due Friday, titled X" is one
-	// write, not three writes that each get one field right.
-	WriteGroups [][]string `json:"write_groups,omitempty"`
 }
 
 // ScriptCall is one gold tool call.

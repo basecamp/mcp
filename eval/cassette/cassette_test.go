@@ -157,6 +157,7 @@ func TestProfileValidation(t *testing.T) {
 		"empty query":        func(p *Profile) { p.Upstream = "https://3.basecampapi.com?" },
 		"empty fragment":     func(p *Profile) { p.Upstream = "https://3.basecampapi.com/#" },
 		"uppercase host":     func(p *Profile) { p.Upstream = "https://3.BasecampAPI.com" },
+		"empty port":         func(p *Profile) { p.Upstream = "https://3.basecampapi.com:" },
 		"control in redact":  func(p *Profile) { p.Redact = map[string]string{"A": "B\nC"} },
 		"numeric redact":     func(p *Profile) { p.Redact = map[string]string{"123": "456"} },
 		"literal redact":     func(p *Profile) { p.Redact = map[string]string{"true": "false"} },

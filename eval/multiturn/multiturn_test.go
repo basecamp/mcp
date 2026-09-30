@@ -279,6 +279,7 @@ func TestCorpusValidation(t *testing.T) {
 		"no script":          func(t map[string]any) { delete(t, "script") },
 		"negative turns":     func(t map[string]any) { t["max_turns"] = -1 },
 		"unknown field":      func(t map[string]any) { t["expekt"] = 1 },
+		"reject groups":      func(t map[string]any) { t["reject"] = map[string]any{"write_groups": []any{[]any{"x"}}} },
 	} {
 		assert.Error(t, load(m, nil), name)
 	}
@@ -728,4 +729,32 @@ func TestWriteGroupsNeedOneWriteForAllPatterns(t *testing.T) {
 	assert.False(t, grade(split, func(string) bool { return false }).Pass, "two writes each half right are not one right write")
 	whole := &Episode{Task: task, Steps: []Step{{Op: "create", Requests: []cassette.Exchange{w(`{"assignee":1002,"due":"fri"}`)}}}, attributedAt: map[int]bool{}}
 	assert.True(t, grade(whole, func(string) bool { return false }).Pass)
+}
+
+func TestAPIAgentStopsAfterATransportFailure(t *testing.T) {
+	calls := `{"content":[{"type":"tool_use","id":"tu","name":"fake_projects","input":{"action":"list_projects"}}],"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}}`
+	fa := &fakeAnthropic{responses: []string{calls, calls, calls, calls}}
+	srv := httptest.NewServer(fa)
+	defer srv.Close()
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	t.Setenv("ANTHROPIC_BASE_URL", srv.URL)
+	api, err := NewAPIAgent("haiku", ModelID("haiku"))
+	require.NoError(t, err)
+	c, a := loadFake(t)
+	require.NoError(t, c.Filter([]string{"open-todos"}))
+	require.NoError(t, a.Select([]string{"bare"}))
+	var ep *Episode
+	surf, sess, cleanup := func() (*Surface, *mcp.ClientSession, func()) {
+		s, cl, err := ConnectFake(context.Background(), a.Arms[0], "http://127.0.0.1:1")
+		require.NoError(t, err)
+		sf, err := a.Realize(context.Background(), s, a.Arms[0])
+		require.NoError(t, err)
+		return sf, s, cl
+	}()
+	defer cleanup()
+	ep = NewEpisode(c.Tasks[0], surf, "sys", 8, sess, logBackend{})
+	_ = sess.Close()
+	err = api.Run(context.Background(), ep)
+	assert.ErrorContains(t, err, "mcp transport")
+	assert.Len(t, fa.requests, 1, "no paid turn after the server is gone")
 }

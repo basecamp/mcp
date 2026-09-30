@@ -165,6 +165,11 @@ func (a *APIAgent) Run(ctx context.Context, ep *Episode) error {
 					args = map[string]any{}
 				}
 				out, isErr := ep.Call(ctx, b.Name, args)
+				if ep.transportErr != nil {
+					// The server is gone: further paid turns cannot be
+					// measured.
+					return fmt.Errorf("mcp transport: %w", ep.transportErr)
+				}
 				results = append(results, map[string]any{
 					"type": "tool_result", "tool_use_id": b.ID,
 					"content": out, "is_error": isErr,
