@@ -733,3 +733,11 @@ func TestPlayerRefusesRepeatedQueryKeysAndLayersShadowAcrossBodies(t *testing.T)
 	upper := &Cassette{Name: "u", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x", Body: json.RawMessage(`{"b":2}`)}, Response: Response{Status: 422}}}}
 	assert.Error(t, ValidateLayers(lower, upper, wait), "the later layer answers every body")
 }
+
+func TestPlayerComparesQueriesWithItsOriginAsBase(t *testing.T) {
+	p := NewPlayer(&Cassette{Name: "q", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/1/by_url", Query: map[string]string{"url": "{{base}}/1/todos/5.json"}}, Response: Response{Status: 200, Body: json.RawMessage(`{"id":5}`)}}}})
+	url := p.Start()
+	defer p.Close()
+	status, _, _ := get(t, url+"/1/by_url?url="+url+"/1/todos/5.json")
+	assert.Equal(t, 200, status)
+}

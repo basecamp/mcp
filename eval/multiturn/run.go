@@ -152,42 +152,38 @@ func preflightArms(ctx context.Context, cfg Config) error {
 		// write at startup) and discard what it did.
 		return nil
 	}
-	var cs []*cassette.Cassette
-	for _, name := range cfg.Corpus.Tasks[0].Cassettes {
-		if cfg.Record != nil {
-			break
+	// Every distinct cassette stack, not just the first task's: a server may
+	// read the backend while initializing or listing tools, and a later
+	// task's stack must prove the arm before any episode spends.
+	seen := map[string]bool{}
+	for _, task := range cfg.Corpus.Tasks {
+		key := strings.Join(task.Cassettes, "\x00")
+		if seen[key] {
+			continue
 		}
-		c, err := cassette.Load(cfg.Corpus.CassettePath(name))
-		if err != nil {
-			return err
-		}
-		cs = append(cs, c)
-	}
-	for _, arm := range cfg.Arms.Arms {
-		var be backend
-		var url string
-		if cfg.Record != nil {
-			// Recording: the task cassettes may not exist yet, so the live
-			// test account answers the server's startup instead.
-			r, err := cassette.NewRecorder(cfg.Record)
+		seen[key] = true
+		var cs []*cassette.Cassette
+		for _, name := range task.Cassettes {
+			c, err := cassette.Load(cfg.Corpus.CassettePath(name))
 			if err != nil {
 				return err
 			}
-			be, url = r, r.Start()
-		} else {
+			cs = append(cs, c)
+		}
+		for _, arm := range cfg.Arms.Arms {
 			p := cassette.NewPlayer(cs...)
-			be, url = p, p.Start()
-		}
-		session, cleanup, err := cfg.Launch(ctx, arm, url)
-		if err != nil {
-			be.Close()
-			return fmt.Errorf("arm %q: launch: %w", arm.Name, err)
-		}
-		_, err = cfg.Arms.Realize(ctx, session, arm)
-		cleanup()
-		be.Close()
-		if err != nil {
-			return err
+			url := p.Start()
+			session, cleanup, err := cfg.Launch(ctx, arm, url)
+			if err != nil {
+				p.Close()
+				return fmt.Errorf("arm %q (cassettes %v): launch: %w", arm.Name, task.Cassettes, err)
+			}
+			_, err = cfg.Arms.Realize(ctx, session, arm)
+			cleanup()
+			p.Close()
+			if err != nil {
+				return fmt.Errorf("cassettes %v: %w", task.Cassettes, err)
+			}
 		}
 	}
 	return nil
