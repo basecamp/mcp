@@ -152,6 +152,8 @@ func TestProfileValidation(t *testing.T) {
 		"upstream query":     func(p *Profile) { p.Upstream = "https://3.basecampapi.com?tenant=x" },
 		"upstream fragment":  func(p *Profile) { p.Upstream = "https://3.basecampapi.com#x" },
 		"control in redact":  func(p *Profile) { p.Redact = map[string]string{"A": "B\nC"} },
+		"numeric redact":     func(p *Profile) { p.Redact = map[string]string{"123": "456"} },
+		"literal redact":     func(p *Profile) { p.Redact = map[string]string{"true": "false"} },
 	}
 	for name, mutate := range cases {
 		p := good
@@ -535,7 +537,7 @@ func TestRecorderRefusesARedactionThatBreaksJSON(t *testing.T) {
 	}))
 	defer upstream.Close()
 	t.Setenv("EVAL_REC_TOKEN", "tok")
-	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN", Redact: map[string]string{"123": "fixture"}})
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN", Redact: map[string]string{"123}": "fixture"}})
 	require.NoError(t, err)
 	rec.client.Transport = upstream.Client().Transport
 	url := rec.Start()

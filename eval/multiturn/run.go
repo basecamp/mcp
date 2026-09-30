@@ -134,7 +134,7 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	// fails the run, whatever the episodes scored.
 	for _, r := range rep.Records {
 		if strings.HasPrefix(r.Error, recordErrPrefix) {
-			return rep, fmt.Errorf("%s/%s/%s: %s", r.Model, r.Arm, r.TaskID, r.Error)
+			return rep, fmt.Errorf("%s/%s/%s: %s: %s", r.Model, r.Arm, r.TaskID, r.Error, r.detail)
 		}
 	}
 	return rep, nil
@@ -194,12 +194,12 @@ type backend interface {
 
 func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task) Record {
 	fail := func(err error) Record {
-		msg := err.Error()
+		r := Record{Model: agent.Label(), ModelID: agent.ModelID(), Arm: arm.Name, TaskID: task.ID, Error: err.Error()}
 		if cfg.Record != nil {
 			// In a recording run, any failure means no cassette: fatal.
-			msg = recordErrPrefix + "nothing saved: " + msg
+			r.Error, r.detail = recordErrPrefix+"episode could not start, nothing saved", err.Error()
 		}
-		return Record{Model: agent.Label(), ModelID: agent.ModelID(), Arm: arm.Name, TaskID: task.ID, Error: msg}
+		return r
 	}
 
 	var be backend
@@ -267,15 +267,17 @@ func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task
 	if rec != nil {
 		// Only a whole episode is a recording: one that errored part-way
 		// would save (or merge in) a partial cassette.
+		// Error keeps a fixed category; the detail (which can echo live or
+		// prompt text) goes to the operator through Run's error only.
 		if runErr != nil {
-			r.Error, r.Pass = recordErrPrefix+"episode errored, nothing saved: "+runErr.Error(), false
+			r.Error, r.detail, r.Pass = recordErrPrefix+"episode errored, nothing saved", runErr.Error(), false
 		} else if faults := rec.Faults(); len(faults) > 0 {
 			// The agent may have recovered, but the recording did not: an
 			// answer the recorder refused or a transient upstream failure
 			// would replay wrong. Reseed and record again.
-			r.Error, r.Pass = recordErrPrefix+fmt.Sprintf("recording incomplete, nothing saved (%d fault(s), first: %s)", len(faults), faults[0]), false
+			r.Error, r.detail, r.Pass = recordErrPrefix+fmt.Sprintf("recording incomplete, nothing saved (%d fault(s))", len(faults)), strings.Join(faults, "; "), false
 		} else if err := saveRecording(cfg, task, rec); err != nil {
-			r.Error, r.Pass = recordErrPrefix+err.Error(), false
+			r.Error, r.detail, r.Pass = recordErrPrefix+"cassette save failed", err.Error(), false
 		}
 		// A recording run's product is the scrubbed cassette. Its results
 		// record keeps the scores but drops what carries free text from the
