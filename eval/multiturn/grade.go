@@ -96,7 +96,7 @@ func grade(ep *Episode, guide func(string) bool) Record {
 			rec.WrongTool++
 		}
 		for _, ex := range s.Requests {
-			if !ex.Matched {
+			if isWrongID(ex) {
 				rec.WrongID++
 			}
 			if !ex.IsWrite() {
@@ -117,7 +117,7 @@ func grade(ep *Episode, guide func(string) bool) Record {
 			if ep.attributedAt[i] {
 				continue
 			}
-			if !ex.Matched {
+			if isWrongID(ex) {
 				rec.WrongID++
 			}
 			if ex.IsWrite() {
@@ -171,6 +171,12 @@ func grade(ep *Episode, guide func(string) bool) Record {
 	}
 	rec.Pass = rec.Score >= 1 && !ep.Exhausted
 	return rec
+}
+
+// isWrongID: a request the backend had nothing for — a 404 miss. Refusals
+// for malformed traffic (400, 415) are not id lookups.
+func isWrongID(ex cassette.Exchange) bool {
+	return !ex.Matched && ex.Status == 404
 }
 
 func anyMatch(pattern string, lines []string) bool {

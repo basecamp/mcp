@@ -611,6 +611,8 @@ func TestGradeSeesWritesOutsideToolCallsAndOnlySuccessfulExpectedCalls(t *testin
 	assert.Equal(t, 2, r.Safety, "each write outside tool calls on a read-only task, by occurrence")
 	ep.backend = logBackend{read, cassette.Exchange{Method: "GET", Path: "/nope", Status: 404}}
 	assert.Equal(t, 1, grade(ep, func(string) bool { return false }).WrongID, "a miss outside tool calls counts too")
+	ep.backend = logBackend{read, cassette.Exchange{Method: "POST", Path: "/f", Status: 415}}
+	assert.Equal(t, 0, grade(ep, func(string) bool { return false }).WrongID, "a refused malformed request is not a wrong id")
 	assert.Contains(t, strings.Join(r.Reasons, "\n"), "missing call", "the failed list_todos does not satisfy expect.calls")
 }
 
@@ -624,4 +626,16 @@ func TestPaidRunsProveGoldScriptsFirst(t *testing.T) {
 	_, err := Run(context.Background(), Config{Corpus: c, Arms: a, Agents: []Agent{agent}, Launch: ConnectFake})
 	assert.ErrorContains(t, err, "gold script for open-todos")
 	assert.False(t, ran, "no paid episode after a broken gold path")
+}
+
+func TestDigestCoversTheEffectiveBudget(t *testing.T) {
+	c, _ := loadFake(t)
+	before := c.Tasks[0].Digest()
+	path := filepath.Join(t.TempDir(), "tasks.json")
+	data, err := os.ReadFile(filepath.Join(fakeDir, "tasks.json"))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, []byte(strings.Replace(string(data), `"max_turns": 8`, `"max_turns": 9`, 1)), 0o644))
+	c2, err := LoadCorpus(path)
+	require.NoError(t, err)
+	assert.NotEqual(t, before, c2.Tasks[0].Digest(), "a changed corpus default budget changes the task")
 }

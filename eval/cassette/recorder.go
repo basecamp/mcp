@@ -313,7 +313,10 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.serial.Lock()
 	defer r.serial.Unlock()
 	body, readErr := io.ReadAll(req.Body)
-	ex := Exchange{Method: req.Method, Path: req.URL.Path, Query: canonicalQuery(r.scrubQuery(req.URL.Query())), Body: compactJSON(r.scrubber.Bytes(body))}
+	r.mu.Lock()
+	logBase := r.base
+	r.mu.Unlock()
+	ex := Exchange{Method: req.Method, Path: req.URL.Path, Query: canonicalQuery(r.scrubQuery(req.URL.Query())), Body: compactJSON(toPlaceholder(r.scrubber.Bytes(body), logBase))}
 	refuse := func(status int, why string) {
 		ex.Status = status
 		r.appendLog(ex)

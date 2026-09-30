@@ -202,7 +202,7 @@ func (c *Cassette) Validate() error {
 		if in.Response.Status < 200 || in.Response.Status > 599 {
 			return fmt.Errorf("interaction #%d (%s %s): response status %d", i+1, r.Method, r.Path, in.Response.Status)
 		}
-		if strings.Contains(string(in.Response.Body)+in.Response.BodyText, BasePlaceholder+"@") || decodedContains(in.Response.Body, BasePlaceholder+"@") {
+		if strings.Contains(string(in.Response.Body)+in.Response.BodyText, BasePlaceholder+"@") || decodedContains(in.Response.Body, BasePlaceholder+"@") || decodedContains(json.RawMessage(in.Response.BodyText), BasePlaceholder+"@") {
 			return fmt.Errorf("interaction #%d (%s %s): %s@ in a body would make the Player's origin userinfo", i+1, r.Method, r.Path, BasePlaceholder)
 		}
 		if len(r.Body) > 0 && !json.Valid(r.Body) {

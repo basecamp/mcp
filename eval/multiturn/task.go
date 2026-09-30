@@ -69,6 +69,11 @@ type Task struct {
 	// solution and turns the loop in CI without a model.
 	Script       []ScriptCall `json:"script"`
 	ScriptAnswer string       `json:"script_answer"`
+
+	// The corpus-level settings the task runs under, filled at load, so the
+	// digest covers what actually governs the episode.
+	effTurns int
+	today    string
 }
 
 // Expect lists what a passing trace must contain. Each pattern is a Go regexp
@@ -113,6 +118,9 @@ func LoadCorpus(path string) (*Corpus, error) {
 	c.dir = filepath.Dir(path)
 	if err := c.validate(); err != nil {
 		return nil, fmt.Errorf("tasks %s: %w", path, err)
+	}
+	for i := range c.Tasks {
+		c.Tasks[i].effTurns, c.Tasks[i].today = c.turns(c.Tasks[i]), c.Today
 	}
 	return &c, nil
 }
@@ -216,7 +224,8 @@ func (c *Corpus) validate() error {
 }
 
 // Digest identifies what a task asks and how it is graded — prompt,
-// cassettes, turn budget, read-only flag, expectations, rejections — so a
+// cassettes, effective turn budget, pinned date, read-only flag,
+// expectations, rejections — so a
 // baseline cell is only compared with a run of the same task definition.
 // The gold script is left out: it proves the corpus, it does not grade.
 func (t Task) Digest() string {
@@ -224,10 +233,11 @@ func (t Task) Digest() string {
 		Prompt    string
 		Cassettes []string
 		MaxTurns  int
+		Today     string
 		ReadOnly  bool
 		Expect    Expect
 		Reject    Reject
-	}{t.Prompt, t.Cassettes, t.MaxTurns, t.ReadOnly, t.Expect, t.Reject})
+	}{t.Prompt, t.Cassettes, t.effTurns, t.today, t.ReadOnly, t.Expect, t.Reject})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:8])
 }
