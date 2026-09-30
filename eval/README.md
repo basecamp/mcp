@@ -388,7 +388,7 @@ model backend records what it explored). The recorder proxies to the
 upstream: it injects the token itself (the server keeps its dummy), refuses —
 locally, never forwarded — any account the profile does not list, and stores
 only scrubbed data: no request headers, an allowlist of response headers, the
-upstream origin as `{{base}}`, emails as `personN@example.com`, avatar URLs
+upstream origin as `{{base}}`, emails as keyed aliases (`person-<hmac>@example.com`, stable per profile token), avatar URLs
 replaced, and the profile's `redact` literals applied. Recording performs the
 task's writes on the test account, so reseed between recordings. Each task's
 cassette lands at `<dir>/<task-id>.json` (merged across episodes); point the

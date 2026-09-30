@@ -257,47 +257,9 @@ func connect(ctx context.Context, server, serverCmd string) (*mcp.ClientSession,
 	return session, func() { _ = session.Close() }, nil
 }
 
-// splitCommand tokenizes a command line, honoring single and double quotes so a
-// path or argument containing spaces survives intact. It rejects an empty
-// command rather than indexing into no fields.
-func splitCommand(s string) ([]string, error) {
-	var fields []string
-	var cur strings.Builder
-	inField := false
-	var quote rune // 0, '\'' or '"'
-	for _, r := range s {
-		switch {
-		case quote != 0:
-			if r == quote {
-				quote = 0
-			} else {
-				cur.WriteRune(r)
-			}
-		case r == '\'' || r == '"':
-			quote = r
-			inField = true
-		case r == ' ' || r == '\t' || r == '\n':
-			if inField {
-				fields = append(fields, cur.String())
-				cur.Reset()
-				inField = false
-			}
-		default:
-			cur.WriteRune(r)
-			inField = true
-		}
-	}
-	if quote != 0 {
-		return nil, fmt.Errorf("unbalanced quote in command %q", s)
-	}
-	if inField {
-		fields = append(fields, cur.String())
-	}
-	if len(fields) == 0 {
-		return nil, fmt.Errorf("empty server command")
-	}
-	return fields, nil
-}
+// splitCommand tokenizes a user-supplied command line (eval.SplitCommand,
+// shared with the multi-turn command).
+var splitCommand = eval.SplitCommand
 
 // serverProfile describes how to launch and prime one product's stdio MCP
 // server. The eval package is product-agnostic — it reads whatever a session

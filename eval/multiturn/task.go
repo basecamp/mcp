@@ -131,7 +131,12 @@ func (c *Corpus) Filter(ids []string) error {
 		byID[t.ID] = t
 	}
 	var kept []Task
+	seen := map[string]bool{}
 	for _, id := range ids {
+		if seen[id] {
+			return fmt.Errorf("task %q selected twice", id)
+		}
+		seen[id] = true
 		t, ok := byID[id]
 		if !ok {
 			return fmt.Errorf("no task %q in the corpus", id)

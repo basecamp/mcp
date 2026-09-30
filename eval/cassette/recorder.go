@@ -136,10 +136,22 @@ func NewRecorder(p *Profile) (*Recorder, error) {
 		return nil, err
 	}
 	return &Recorder{
-		profile:  p,
-		token:    token,
-		client:   &http.Client{Timeout: 60 * time.Second},
-		scrubber: NewScrubber(p.Upstream, p.Redact),
+		profile: p,
+		token:   token,
+		client: &http.Client{
+			Timeout: 60 * time.Second,
+			// Never follow a redirect upstream: the hop would carry the
+			// injected token to a path the account allowlist never saw. The
+			// redirect goes back to the server under test instead (its
+			// Location rewritten to the recorder), so the next hop re-enters
+			// ServeHTTP and is checked like any other request.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
+		// Email aliases are keyed by the token, so they are stable across
+		// every episode and run recorded under one profile (merged cassettes
+		// agree on who person-… is) without being reversible by anyone who
+		// lacks the token.
+		scrubber: NewScrubber(p.Upstream, p.Redact, token),
 	}, nil
 }
 
@@ -205,7 +217,7 @@ func (r *Recorder) allowed(path string) bool {
 // origin rewritten to the recorder so follow-up requests stay proxied).
 func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	body, _ := io.ReadAll(req.Body)
-	ex := Exchange{Method: req.Method, Path: req.URL.Path, Query: canonicalQuery(req.URL.Query()), Body: compactJSON(r.scrubber.Bytes(body))}
+	ex := Exchange{Method: req.Method, Path: req.URL.Path, Query: r.scrubber.String(canonicalQuery(req.URL.Query())), Body: compactJSON(r.scrubber.Bytes(body))}
 	if !r.allowed(req.URL.Path) {
 		ex.Status = http.StatusForbidden
 		r.appendLog(ex)
@@ -244,20 +256,23 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	headers := map[string]string{}
 	for _, h := range keptResponseHeaders {
 		if v := resp.Header.Get(h); v != "" {
-			headers[h] = v
+			headers[h] = r.scrubber.String(v)
 		}
 	}
-	r.record(req, body, resp.StatusCode, headers, respBody)
+	scrubbed := r.scrubber.Bytes(respBody)
+	r.record(req, body, resp.StatusCode, headers, scrubbed)
 	ex.Status, ex.Matched = resp.StatusCode, resp.StatusCode != http.StatusNotFound
 	r.appendLog(ex)
 
-	// Live answer: same response, upstream origin swapped for the recorder so
-	// the server's next request (a Link page, a followed url) comes back here.
+	// The live answer is the scrubbed one, {{base}} pointing back at the
+	// recorder: the server under test — and so the episode's trace and the
+	// results file — never sees what the cassette may not keep, and a
+	// recording episode sees exactly what its replay will.
 	for k, v := range headers {
-		w.Header().Set(k, strings.ReplaceAll(v, r.profile.Upstream, base))
+		w.Header().Set(k, strings.ReplaceAll(v, BasePlaceholder, base))
 	}
 	w.WriteHeader(resp.StatusCode)
-	_, _ = w.Write(bytes.ReplaceAll(respBody, []byte(r.profile.Upstream), []byte(base)))
+	_, _ = w.Write(bytes.ReplaceAll(scrubbed, []byte(BasePlaceholder), []byte(base)))
 }
 
 func (r *Recorder) appendLog(ex Exchange) {
@@ -266,47 +281,52 @@ func (r *Recorder) appendLog(ex Exchange) {
 	r.mu.Unlock()
 }
 
+// record stores one exchange; headers and respBody arrive scrubbed.
 func (r *Recorder) record(req *http.Request, reqBody []byte, status int, headers map[string]string, respBody []byte) {
 	q := map[string]string{}
 	for k, v := range req.URL.Query() {
 		if len(v) > 0 {
-			q[k] = v[0]
+			q[r.scrubber.String(k)] = r.scrubber.String(v[0])
 		}
 	}
 	if len(q) == 0 {
 		q = nil
 	}
 	in := Interaction{
-		Request: Request{Method: req.Method, Path: req.URL.Path, Query: q},
-		Response: Response{
-			Status:  status,
-			Headers: map[string]string{},
-		},
+		Request:  Request{Method: req.Method, Path: req.URL.Path, Query: q},
+		Response: Response{Status: status, Headers: headers},
 	}
 	if s := r.scrubber.Bytes(reqBody); len(bytes.TrimSpace(s)) > 0 && json.Valid(s) {
 		in.Request.Body = compactRaw(s)
 	}
-	for k, v := range headers {
-		in.Response.Headers[k] = r.scrubber.String(v)
-	}
 	if len(in.Response.Headers) == 0 {
 		in.Response.Headers = nil
 	}
-	scrubbed := r.scrubber.Bytes(respBody)
-	if len(bytes.TrimSpace(scrubbed)) > 0 {
-		if json.Valid(scrubbed) {
-			in.Response.Body = compactRaw(scrubbed)
+	if len(bytes.TrimSpace(respBody)) > 0 {
+		if json.Valid(respBody) {
+			in.Response.Body = compactRaw(respBody)
 		} else {
-			in.Response.BodyText = string(scrubbed)
+			in.Response.BodyText = string(respBody)
 		}
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	key := patternKey(in.Request)
-	for _, prev := range r.interactions {
-		if patternKey(prev.Request) == key && req.Method == http.MethodGet {
-			return // first read wins; a repeated GET adds nothing
+	// A repeated read is kept only when the answer changed — a read after a
+	// write sees new state, and the Player serves identical patterns in
+	// sequence, so the replay walks the same states the recording did. An
+	// unchanged repeat adds nothing.
+	if req.Method == http.MethodGet {
+		key := patternKey(in.Request)
+		for i := len(r.interactions) - 1; i >= 0; i-- {
+			prev := r.interactions[i]
+			if patternKey(prev.Request) != key {
+				continue
+			}
+			if prev.Response.Status == in.Response.Status && bytes.Equal(prev.Response.Body, in.Response.Body) && prev.Response.BodyText == in.Response.BodyText {
+				return
+			}
+			break
 		}
 	}
 	r.interactions = append(r.interactions, in)
@@ -320,18 +340,18 @@ func compactRaw(b []byte) json.RawMessage {
 	return json.RawMessage(buf.Bytes())
 }
 
-// Merge folds src's interactions into dst, skipping request patterns dst
-// already answers — so recording the same task under several models or arms
-// accumulates the union of what they asked for.
+// Merge folds src's interactions into dst, adding the request patterns dst
+// does not answer yet (every recorded state of each, in order) — so recording
+// the same task under several models or arms accumulates the union of what
+// they asked for.
 func Merge(dst, src *Cassette) {
 	have := map[string]bool{}
 	for _, in := range dst.Interactions {
 		have[patternKey(in.Request)] = true
 	}
 	for _, in := range src.Interactions {
-		if k := patternKey(in.Request); !have[k] {
+		if !have[patternKey(in.Request)] {
 			dst.Interactions = append(dst.Interactions, in)
-			have[k] = true
 		}
 	}
 	sort.SliceStable(dst.Interactions, func(i, j int) bool {

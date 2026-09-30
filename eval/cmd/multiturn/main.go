@@ -34,6 +34,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/basecamp/mcp/eval"
 	"github.com/basecamp/mcp/eval/cassette"
 	"github.com/basecamp/mcp/eval/multiturn"
 )
@@ -94,9 +95,10 @@ func run() error {
 	}
 
 	rep, err := multiturn.Run(ctx, cfg)
-	if err != nil {
+	if err != nil && (rep == nil || cfg.Record == nil) {
 		return err
 	}
+	recordErr := err
 
 	f, err := os.Create(o.out)
 	if err != nil {
@@ -111,6 +113,9 @@ func run() error {
 	}
 	fmt.Print(rep.Render())
 	fmt.Fprintf(os.Stderr, "\nwrote %d records to %s\n", len(rep.Records), o.out)
+	if recordErr != nil {
+		return recordErr
+	}
 
 	if base != nil {
 		cmp, err := multiturn.Compare(base, rep.Records)
@@ -337,9 +342,15 @@ func launcher(server, serverCmd string) (multiturn.Launcher, error) {
 	var argv []string
 	switch {
 	case serverCmd != "":
-		argv = strings.Fields(serverCmd)
+		var err error
+		if argv, err = eval.SplitCommand(serverCmd); err != nil {
+			return nil, err
+		}
 	case os.Getenv("EVAL_"+strings.ToUpper(server)+"_CMD") != "":
-		argv = strings.Fields(os.Getenv("EVAL_" + strings.ToUpper(server) + "_CMD"))
+		var err error
+		if argv, err = eval.SplitCommand(os.Getenv("EVAL_" + strings.ToUpper(server) + "_CMD")); err != nil {
+			return nil, err
+		}
 	default:
 		path, err := exec.LookPath(prof.bin)
 		if err != nil {
