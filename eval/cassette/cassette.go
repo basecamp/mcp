@@ -71,6 +71,17 @@ func (in Interaction) stateKey() string {
 	return k
 }
 
+// validHeaderValue reports whether net/http can send v as a field value: no
+// control characters but tab (RFC 9110 field-value).
+func validHeaderValue(v string) bool {
+	for i := 0; i < len(v); i++ {
+		if c := v[i]; (c < 0x20 && c != '\t') || c == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
 // Landed reports whether a write answered with status actually happened:
 // a 2xx. A redirect or an error changed nothing the replay can count on.
 func Landed(status int) bool { return status >= 200 && status < 300 }
@@ -184,6 +195,9 @@ func (c *Cassette) Validate() error {
 				return fmt.Errorf("interaction #%d (%s %s): header %q appears twice (header names are case-insensitive)", i+1, r.Method, r.Path, k)
 			}
 			canon[http.CanonicalHeaderKey(k)] = true
+			if !validHeaderValue(v) {
+				return fmt.Errorf("interaction #%d (%s %s): header %q has a value net/http cannot send", i+1, r.Method, r.Path, k)
+			}
 			// The recorder's allowlist, for hand-authored cassettes too:
 			// framing headers (Content-Length) are the transport's to set.
 			if !slices.Contains(keptResponseHeaders, http.CanonicalHeaderKey(k)) {
@@ -224,10 +238,22 @@ func ValidateLayers(cassettes ...*Cassette) error {
 		key   string
 		after []string
 	}
+	// Later layers shadow earlier ones, as in the Player: a write whose
+	// request and state a later layer answers counts only as that layer
+	// answers it.
 	var writes []write
-	for _, c := range cassettes {
-		for _, in := range c.Interactions {
-			if in.Request.Method != "GET" && in.Request.Method != "HEAD" && Landed(in.Response.Status) {
+	shadowed := map[string]bool{}
+	for li := len(cassettes) - 1; li >= 0; li-- {
+		for _, in := range cassettes[li].Interactions {
+			if in.Request.Method == "GET" || in.Request.Method == "HEAD" {
+				continue
+			}
+			k := in.stateKey() + "\x00" + canonicalQuery(toValues(in.Request.Query))
+			if shadowed[k] {
+				continue
+			}
+			shadowed[k] = true
+			if Landed(in.Response.Status) {
 				writes = append(writes, write{writeKey(in.Request.Method, in.Request.Path), in.After})
 			}
 		}

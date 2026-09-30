@@ -146,6 +146,12 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 // serves): the surface (instructions, guide tools, skill) comes from the
 // server's catalog, so any task's cassettes prove it.
 func preflightArms(ctx context.Context, cfg Config) error {
+	if cfg.Record != nil {
+		// A recording realizes its one arm in its one episode: a separate
+		// preflight session would talk to the live account (a server may
+		// write at startup) and discard what it did.
+		return nil
+	}
 	var cs []*cassette.Cassette
 	for _, name := range cfg.Corpus.Tasks[0].Cassettes {
 		if cfg.Record != nil {

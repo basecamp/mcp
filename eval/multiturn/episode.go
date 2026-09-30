@@ -83,6 +83,10 @@ type Episode struct {
 	Usage     Usage
 	Exhausted bool
 
+	// attributed counts backend exchanges made during tool calls; any others
+	// (at startup, listing tools, after the last call) are graded too.
+	attributed int
+
 	// A host that reports its own spend (the claude CLI) sets these; the
 	// record then carries that figure instead of one priced from Usage.
 	cliCost    float64
@@ -121,6 +125,7 @@ func (e *Episode) Call(ctx context.Context, name string, args map[string]any) (s
 	mark := e.backend.Len()
 	res, err := e.session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 	step.Requests = e.backend.Since(mark)
+	e.attributed += len(step.Requests)
 	var text string
 	switch {
 	case err != nil:

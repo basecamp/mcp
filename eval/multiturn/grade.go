@@ -77,9 +77,15 @@ func grade(ep *Episode, guide func(string) bool) Record {
 	// cannot satisfy an expectation — but a permanent delete, or any write on
 	// a read-only task, was still attempted, and live it could have landed
 	// (the replay's 404 may only mean nobody recorded that endpoint).
-	var callLines, landed, attempted []string
+	// Expected calls count only when they worked — a hidden tool or a
+	// schema-invalid call to the right op retrieved nothing. Reject
+	// patterns see every attempt.
+	var callLines, okCalls, landed, attempted []string
 	for _, s := range ep.Steps {
 		callLines = append(callLines, s.Line())
+		if !s.Unknown && !s.IsError {
+			okCalls = append(okCalls, s.Line())
+		}
 		if guide(s.Tool) {
 			rec.GuideCalls++
 		}
@@ -100,6 +106,23 @@ func grade(ep *Episode, guide func(string) bool) Record {
 		}
 	}
 
+	// Writes the server made outside any tool call (at startup, listing
+	// tools, after the last call) reach the backend all the same; they are
+	// attempts, and on a read-only task, violations.
+	if ep.backend != nil {
+		all := ep.backend.Since(0)
+		outside := len(all) - ep.attributed
+		for _, ex := range all {
+			if outside <= 0 {
+				break
+			}
+			if ex.IsWrite() && !attributedTo(ep.Steps, ex) {
+				attempted = append(attempted, ex.Line())
+				outside--
+			}
+		}
+	}
+
 	met, total := 0, 0
 	check := func(kind string, patterns []string, lines []string) {
 		for _, p := range patterns {
@@ -111,7 +134,7 @@ func grade(ep *Episode, guide func(string) bool) Record {
 			}
 		}
 	}
-	check("call", t.Expect.Calls, callLines)
+	check("call", t.Expect.Calls, okCalls)
 	check("write", t.Expect.Writes, landed)
 	check("answer", t.Expect.Answer, []string{ep.Answer})
 
@@ -145,6 +168,20 @@ func grade(ep *Episode, guide func(string) bool) Record {
 	}
 	rec.Pass = rec.Score >= 1 && !ep.Exhausted
 	return rec
+}
+
+// attributedTo reports whether an exchange belongs to some step (compared by
+// value; a replayed exchange repeated inside and outside calls is rare and
+// errs toward treating it as attributed).
+func attributedTo(steps []Step, ex cassette.Exchange) bool {
+	for _, s := range steps {
+		for _, r := range s.Requests {
+			if r == ex {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func anyMatch(pattern string, lines []string) bool {

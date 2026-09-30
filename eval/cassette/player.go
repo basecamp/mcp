@@ -168,6 +168,18 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(bytes.TrimSpace(body)) > 0 && !json.Valid(body) {
+		// The recorder refuses non-JSON bodies, so no cassette answers one
+		// truthfully: unmatched, like any request nobody recorded.
+		resp := Response{Status: http.StatusUnsupportedMediaType}
+		ex.Status = resp.Status
+		p.mu.Lock()
+		p.log = append(p.log, ex)
+		p.mu.Unlock()
+		http.Error(w, `{"error":"non-JSON request body"}`, resp.Status)
+		return
+	}
+
 	p.mu.Lock()
 	// Bodies are compared with this Player's origin as {{base}}, as the
 	// recorder stores them: a URL the server copied from an answer into a

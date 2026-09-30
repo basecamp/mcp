@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Profile is the explicit statement of what a recording may touch. Recording
@@ -325,6 +326,14 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		refuse(http.StatusBadRequest, "request body truncated")
 		return
 	}
+	for k, vs := range req.URL.Query() {
+		if len(vs) > 1 {
+			// A cassette query is single-valued; recording this would
+			// silently broaden what the pattern answers.
+			refuse(http.StatusBadRequest, "query key "+r.scrubber.String(k)+" repeats; cassettes hold one value per key")
+			return
+		}
+	}
 	if len(bytes.TrimSpace(body)) > 0 && !json.Valid(body) {
 		// A cassette keys writes by their JSON body; a form or multipart
 		// body could not be told apart from its retry on replay.
@@ -397,6 +406,12 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	scrubbed := r.scrubber.Bytes(respBody)
+	if !json.Valid(scrubbed) && !utf8.Valid(scrubbed) {
+		// body_text is a JSON string: invalid UTF-8 would be replaced on
+		// save and replay different bytes.
+		refuse(http.StatusBadGateway, "a non-JSON response body is not valid UTF-8 and cannot be recorded")
+		return
+	}
 	if json.Valid(respBody) && !json.Valid(scrubbed) {
 		refuse(http.StatusBadGateway, "a profile redaction broke this response's JSON; redact text, not structure")
 		return
