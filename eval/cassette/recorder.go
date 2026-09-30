@@ -604,8 +604,10 @@ func (r *Recorder) leaksOrigin(body []byte) bool {
 // leaksRedacted reports whether any profile redaction literal survives, once
 // the JSON is decoded (Alice \u0026 Bob is Alice & Bob), in a scrubbed body.
 func (r *Recorder) leaksRedacted(body []byte) bool {
-	if len(r.profile.Redact) == 0 {
-		return false
+	// The token is always a literal to find; the profile's are added to it.
+	lits := []string{r.token}
+	for lit := range r.profile.Redact {
+		lits = append(lits, lit)
 	}
 	var doc any
 	if json.Unmarshal(body, &doc) != nil {
@@ -615,8 +617,8 @@ func (r *Recorder) leaksRedacted(body []byte) bool {
 	walk = func(v any) bool {
 		switch t := v.(type) {
 		case string:
-			for lit := range r.profile.Redact {
-				if strings.Contains(t, lit) {
+			for _, lit := range lits {
+				if lit != "" && strings.Contains(t, lit) {
 					return true
 				}
 			}
@@ -661,6 +663,11 @@ func leaksPersonal(body []byte) bool {
 			}
 		case map[string]any:
 			for k, c := range t {
+				for _, m := range emailRE.FindAllString(k, -1) {
+					if !strings.HasSuffix(strings.ToLower(m), "@example.com") {
+						return true // an address used as a key
+					}
+				}
 				if walk(under || strings.HasPrefix(k, "avatar"), c) {
 					return true
 				}

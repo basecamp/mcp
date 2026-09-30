@@ -854,3 +854,11 @@ func TestEncodedRedactionsDefaultPortsAndBodyTieBreaks(t *testing.T) {
 	assert.Equal(t, 202, do(t, "POST", url+"/x?status=open&assignee=me", `{"b":2}`), "the body resolves what the query could not")
 	assert.Equal(t, http.StatusUnsupportedMediaType, do(t, "POST", url+"/x?status=open", "  "), "whitespace-only is not JSON")
 }
+
+func TestDecodedTokenAndEmailKeysAreCaught(t *testing.T) {
+	t.Setenv("EVAL_REC_TOKEN", "token")
+	r, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://api.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	assert.True(t, r.leaksRedacted([]byte(`{"echo":"tok\u0065n"}`)), "an escaped token")
+	assert.True(t, leaksPersonal([]byte(`{"alice\u0040corp.example":{"x":1}}`)), "an address as a key")
+}
