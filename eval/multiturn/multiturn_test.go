@@ -498,8 +498,10 @@ func TestRecordThenReplay(t *testing.T) {
 		ep.Call(ctx, "fake_projects", map[string]any{"action": "list_projects"})
 		return fmt.Errorf("model went away")
 	})
-	_, err = Run(context.Background(), Config{Corpus: c, Arms: a, Agents: []Agent{failing}, Launch: ConnectFake, Record: prof, RecordDir: dir2})
+	rep, err = Run(context.Background(), Config{Corpus: c, Arms: a, Agents: []Agent{failing}, Launch: ConnectFake, Record: prof, RecordDir: dir2})
 	assert.ErrorContains(t, err, "nothing saved")
+	assert.ErrorContains(t, err, "model went away", "the operator gets the detail")
+	assert.NotContains(t, rep.Records[0].Error, "model went away", "the results file does not")
 	_, statErr := os.Stat(filepath.Join(dir2, "complete-todo.json"))
 	assert.True(t, os.IsNotExist(statErr))
 

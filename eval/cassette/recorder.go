@@ -86,6 +86,12 @@ func (p *Profile) Validate() error {
 		return fmt.Errorf("profile %q names no token_env", p.Name)
 	}
 	for from, to := range p.Redact {
+		// A literal that is itself a JSON scalar (123, true, null) would
+		// rewrite values, not text, and could leave valid JSON with wrong
+		// ids. Redactions are for names and other text.
+		if json.Valid([]byte(strings.TrimSpace(from))) {
+			return fmt.Errorf("profile %q: redact literal %q is a JSON value; redact text such as names, not ids or literals", p.Name, from)
+		}
 		if strings.ContainsAny(from+to, "\"\\") || strings.ContainsFunc(from+to, unicode.IsControl) {
 			return fmt.Errorf("profile %q: redact literal %q -> %q carries a quote, backslash, or control character, which would corrupt the JSON it rewrites", p.Name, from, to)
 		}

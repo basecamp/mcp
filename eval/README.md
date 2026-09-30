@@ -394,7 +394,14 @@ token whose identity document lists any other account, does not record 404s
 (a miss replays as a miss), and stores
 only scrubbed data: no request headers, an allowlist of response headers, the
 upstream origin as `{{base}}`, emails as keyed aliases (`person-<hmac>@example.com`, stable per profile token), avatar URLs
-replaced, and the profile's `redact` literals applied. Recording performs the
+replaced, and the profile's `redact` literals applied.
+
+The scrubber is a safety net, not the guarantee. It rewrites text — origins,
+ASCII email addresses, avatar URLs, the token, and the profile's literal
+names (never JSON values: a literal that parses as JSON is refused) — and
+cannot know every form personal data takes. The guarantee is the seeded
+account: record only fictional data you seeded yourself, and **read each
+recorded cassette before committing it**. Recording performs the
 task's writes on the test account, so reseed between recordings. Each task's
 cassette lands at `<dir>/<task-id>.json` (merged across episodes); point the
 task's `cassettes` at it (and at a shared world, if any) and rewrite its

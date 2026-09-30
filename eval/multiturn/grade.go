@@ -40,6 +40,12 @@ type Record struct {
 	CostUSD          float64 `json:"cost_usd"`
 	PricingEstimated bool    `json:"pricing_estimated,omitempty"`
 
+	// detail is a recording failure's full message, returned to the
+	// operator but never written to the results file: in a recording run
+	// Error holds only a fixed category, since the detail can carry live
+	// or prompt text.
+	detail string
+
 	Exhausted bool     `json:"exhausted"`
 	Error     string   `json:"error,omitempty"`
 	Reasons   []string `json:"reasons,omitempty"`
