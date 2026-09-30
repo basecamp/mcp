@@ -335,10 +335,16 @@ func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task
 		// would save (or merge in) a partial cassette.
 		// Error keeps a fixed category; the detail (which can echo live or
 		// prompt text) goes to the operator through Run's error only.
-		if runErr != nil || r.Error != "" {
+		// A gold script is a recording of the correct path: one that did not
+		// pass recorded something else. A model's exploration may still be
+		// recorded, pass or not.
+		if runErr != nil || r.Error != "" || (backendOf(agent) == "script" && !r.Pass) {
 			why := r.Error
 			if runErr != nil {
 				why = runErr.Error()
+			}
+			if why == "" {
+				why = "the gold script did not pass: " + strings.Join(r.Reasons, "; ")
 			}
 			r.Error, r.detail, r.Pass = recordErrPrefix+"episode errored, nothing saved", why, false
 		} else if faults := rec.Faults(); len(faults) > 0 {

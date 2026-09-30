@@ -179,3 +179,12 @@ func TestOutMayNotBeTheSkillFile(t *testing.T) {
 	_, _, _, err = preflight(&o)
 	assert.ErrorContains(t, err, "skill file")
 }
+
+func TestOutMayNotBeTheServerExecutable(t *testing.T) {
+	chdirRoot(t)
+	exe := filepath.Join(t.TempDir(), "server")
+	require.NoError(t, os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o755))
+	o := options{server: "basecamp", backend: "script", serverCmd: exe + " stdio", out: exe}
+	_, _, _, err := preflight(&o)
+	assert.ErrorContains(t, err, "server executable")
+}

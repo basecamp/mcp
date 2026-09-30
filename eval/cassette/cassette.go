@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -71,9 +72,9 @@ func (in Interaction) stateKey() string {
 	return k
 }
 
-// decodedContains reports whether any string in a JSON body, decoded (so
-// \u0040 is @), contains s.
-func decodedContains(body json.RawMessage, s string) bool {
+// decodedMatches reports whether any string in a JSON body, decoded (so
+// \u0040 is @ and \u002e is .), matches re.
+func decodedMatches(body json.RawMessage, re *regexp.Regexp) bool {
 	if len(body) == 0 {
 		return false
 	}
@@ -85,10 +86,10 @@ func decodedContains(body json.RawMessage, s string) bool {
 	walk = func(v any) bool {
 		switch t := v.(type) {
 		case string:
-			return strings.Contains(t, s)
+			return re.MatchString(t)
 		case map[string]any:
 			for k, c := range t {
-				if strings.Contains(k, s) || walk(c) {
+				if re.MatchString(k) || walk(c) {
 					return true
 				}
 			}
@@ -202,7 +203,7 @@ func (c *Cassette) Validate() error {
 		if in.Response.Status < 200 || in.Response.Status > 599 {
 			return fmt.Errorf("interaction #%d (%s %s): response status %d", i+1, r.Method, r.Path, in.Response.Status)
 		}
-		if strings.Contains(string(in.Response.Body)+in.Response.BodyText, BasePlaceholder+"@") || decodedContains(in.Response.Body, BasePlaceholder+"@") || decodedContains(json.RawMessage(in.Response.BodyText), BasePlaceholder+"@") {
+		if strings.Contains(string(in.Response.Body)+in.Response.BodyText, BasePlaceholder+"@") || decodedMatches(in.Response.Body, placeholderAuthority) || decodedMatches(json.RawMessage(in.Response.BodyText), placeholderAuthority) {
 			return fmt.Errorf("interaction #%d (%s %s): %s@ in a body would make the Player's origin userinfo", i+1, r.Method, r.Path, BasePlaceholder)
 		}
 		if len(r.Body) > 0 && !json.Valid(r.Body) {

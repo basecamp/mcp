@@ -154,6 +154,9 @@ func TestProfileValidation(t *testing.T) {
 		"upstream fragment":  func(p *Profile) { p.Upstream = "https://3.basecampapi.com#x" },
 		"default port":       func(p *Profile) { p.Upstream = "https://3.basecampapi.com:443" },
 		"padded port":        func(p *Profile) { p.Upstream = "https://3.basecampapi.com:0443" },
+		"empty query":        func(p *Profile) { p.Upstream = "https://3.basecampapi.com?" },
+		"empty fragment":     func(p *Profile) { p.Upstream = "https://3.basecampapi.com/#" },
+		"uppercase host":     func(p *Profile) { p.Upstream = "https://3.BasecampAPI.com" },
 		"control in redact":  func(p *Profile) { p.Redact = map[string]string{"A": "B\nC"} },
 		"numeric redact":     func(p *Profile) { p.Redact = map[string]string{"123": "456"} },
 		"literal redact":     func(p *Profile) { p.Redact = map[string]string{"true": "false"} },
@@ -806,4 +809,22 @@ func TestPlaceholderBoundariesNestedAvatarsAndLayeredQueries(t *testing.T) {
 	defer p.Close()
 	_, body, _ := get(t, url+"/s?status=open&assignee=me")
 	assert.Equal(t, `"upper"`, body, "layer precedence resolves it")
+}
+
+func TestDecodedAuthorityRunOnAndLiteralPlaceholders(t *testing.T) {
+	c := &Cassette{Name: "d", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200, Body: json.RawMessage(`{"u":"{{base}}\u002eevil\u0040169.254.169.254/x"}`)}}}}
+	assert.Error(t, c.Validate(), "decoded, {{base}} runs on into a longer authority")
+
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"doc":"use {{base}} in templates"}`)
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+	status, _, _ := get(t, url+"/1/doc.json")
+	assert.Equal(t, http.StatusBadGateway, status, "a literal placeholder in upstream content")
 }

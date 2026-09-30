@@ -230,12 +230,23 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 		o.out = fmt.Sprintf("eval/results/multiturn/%s.jsonl", o.server)
 	}
 	// --out is truncated after the run; it must not be any file the run reads.
+	serverBin := ""
+	if cmdline := o.serverCmd; cmdline != "" || os.Getenv("EVAL_"+strings.ToUpper(o.server)+"_CMD") != "" {
+		if cmdline == "" {
+			cmdline = os.Getenv("EVAL_" + strings.ToUpper(o.server) + "_CMD")
+		}
+		if argv, err := eval.SplitCommand(cmdline); err == nil {
+			if p, err := exec.LookPath(argv[0]); err == nil {
+				serverBin = p
+			}
+		}
+	}
 	skillPath := ""
 	if arms.SkillFile != "" {
 		skillPath = filepath.Join(filepath.Dir(o.armsFile), arms.SkillFile)
 	}
 	for _, in := range []struct{ flag, path string }{
-		{"--baseline", o.baseline}, {"--tasks", o.tasks}, {"--arms-file", o.armsFile}, {"--record-profile", o.recordProfile}, {"the skill file", skillPath},
+		{"--baseline", o.baseline}, {"--tasks", o.tasks}, {"--arms-file", o.armsFile}, {"--record-profile", o.recordProfile}, {"the skill file", skillPath}, {"the server executable", serverBin},
 	} {
 		if sameFile(o.out, in.path) {
 			return fail(fmt.Errorf("--out %s is the same file as %s: the run would overwrite it", o.out, in.flag))
