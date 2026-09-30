@@ -30,6 +30,7 @@ type Agent interface {
 type ScriptAgent struct{}
 
 func (ScriptAgent) Label() string   { return "script" }
+func (ScriptAgent) Backend() string { return "script" }
 func (ScriptAgent) ModelID() string { return "script" }
 
 func (ScriptAgent) Run(ctx context.Context, ep *Episode) error {
@@ -84,6 +85,7 @@ func NewAPIAgent(label, modelID string) (*APIAgent, error) {
 }
 
 func (a *APIAgent) Label() string   { return a.label }
+func (a *APIAgent) Backend() string { return "api" }
 func (a *APIAgent) ModelID() string { return a.modelID }
 
 type apiBlock struct {

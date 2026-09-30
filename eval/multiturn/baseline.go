@@ -72,10 +72,10 @@ func LoadBaseline(r io.Reader) (*Baseline, error) {
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			return nil, fmt.Errorf("decode baseline record: %w", err)
 		}
-		if rec.Model == "" || rec.ModelID == "" || rec.Arm == "" || rec.TaskID == "" {
+		if rec.Server == "" || rec.Backend == "" || rec.Model == "" || rec.ModelID == "" || rec.Arm == "" || rec.TaskID == "" {
 			// model_id included: without it the like-for-like model check
 			// would silently skip the cell.
-			return nil, fmt.Errorf("baseline record missing model, model_id, arm, or task_id: %s", truncate(line, 200))
+			return nil, fmt.Errorf("baseline record missing server, backend, model, model_id, arm, or task_id: %s", truncate(line, 200))
 		}
 		k := cellKey(rec.Model, rec.Arm, rec.TaskID)
 		if _, dup := b.cells[k]; dup {
@@ -98,6 +98,18 @@ func (b *Baseline) CheckModelIDs(plan map[string]string) error {
 	for _, rec := range b.cells {
 		if want, ok := plan[rec.Model]; ok && rec.ModelID != "" && want != rec.ModelID {
 			return fmt.Errorf("label %q: baseline was produced by model %q, this run would use %q — not the same model; regenerate the baseline or run under a distinct label", rec.Model, rec.ModelID, want)
+		}
+	}
+	return nil
+}
+
+// CheckExperiment refuses, before spend, a baseline from another server or
+// agent backend: an API run and a CLI run, or two products sharing a task
+// id, are not like-for-like cells.
+func (b *Baseline) CheckExperiment(server, backend string) error {
+	for _, rec := range b.cells {
+		if rec.Server != server || rec.Backend != backend {
+			return fmt.Errorf("baseline is %s via %s, this run would be %s via %s — not the same experiment", rec.Server, rec.Backend, server, backend)
 		}
 	}
 	return nil
@@ -150,6 +162,9 @@ func Compare(base *Baseline, records []Record) (Comparison, error) {
 			continue
 		}
 		matched++
+		if prev.Server != r.Server || prev.Backend != r.Backend {
+			return cmp, fmt.Errorf("cell %s/%s/%s: baseline is %s via %s, this run %s via %s — not the same experiment", r.Model, r.Arm, r.TaskID, prev.Server, prev.Backend, r.Server, r.Backend)
+		}
 		if prev.ModelID != "" && r.ModelID != "" && prev.ModelID != r.ModelID {
 			return cmp, fmt.Errorf("cell %s/%s/%s: baseline model %q, this run %q — not like-for-like", r.Model, r.Arm, r.TaskID, prev.ModelID, r.ModelID)
 		}

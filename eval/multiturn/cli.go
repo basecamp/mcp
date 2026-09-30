@@ -54,6 +54,7 @@ func NewCLIAgent(label, modelID string, bridge []string) *CLIAgent {
 func (a *CLIAgent) HostInjectsInstructions() bool { return true }
 
 func (a *CLIAgent) Label() string   { return a.label }
+func (a *CLIAgent) Backend() string { return "cli" }
 func (a *CLIAgent) ModelID() string { return a.modelID }
 
 // mcpServerName is the name the host sees; Claude Code exposes the tools as

@@ -567,3 +567,18 @@ func TestAPIAgentCountsARefusalsUsage(t *testing.T) {
 	assert.Equal(t, 1000, r.InTokens)
 	assert.Greater(t, r.CostUSD, 0.0)
 }
+
+// TestCommittedResultsAreBaselines keeps every committed results file
+// loadable as a --baseline: identity complete, no duplicate cells.
+func TestCommittedResultsAreBaselines(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "results", "multiturn", "*.jsonl"))
+	require.NoError(t, err)
+	files = append(files, filepath.Join(fakeDir, "baseline-script.jsonl"))
+	for _, f := range files {
+		fh, err := os.Open(f)
+		require.NoError(t, err)
+		_, err = LoadBaseline(fh)
+		_ = fh.Close()
+		require.NoError(t, err, f)
+	}
+}
