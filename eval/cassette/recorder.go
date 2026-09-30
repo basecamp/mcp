@@ -355,7 +355,7 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Dot segments (literal or percent-encoded) could put a request under
 	// another account once something upstream normalizes the path, past the
 	// allowlist that read it un-normalized: refused outright.
-	if hasDotSegment(req.URL.Path) || strings.Contains(strings.ToLower(req.URL.EscapedPath()), "%2e") {
+	if strings.ContainsAny(req.URL.Path, "?#") || hasDotSegment(req.URL.Path) || strings.Contains(strings.ToLower(req.URL.EscapedPath()), "%2e") {
 		refuse(http.StatusBadRequest, "dot or empty segments in the path")
 		return
 	}

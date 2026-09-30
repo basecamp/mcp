@@ -133,7 +133,7 @@ func TestGradeWantsTheAnswer(t *testing.T) {
 		todoCall("list_todos", map[string]any{"project_id": 1}),
 	}, answer: "Nothing much."})
 	assert.False(t, r.Pass)
-	assert.InDelta(t, 1.0/3, r.Score, 0.001)
+	assert.InDelta(t, 2.0/4, r.Score, 0.001, "call and backend read met; both answers missing")
 }
 
 func TestArmsRealize(t *testing.T) {
@@ -676,4 +676,20 @@ func TestATransportFailureIsUnmeasuredNotAModelMistake(t *testing.T) {
 	r := rep.Records[1]
 	assert.False(t, r.Pass)
 	assert.Contains(t, r.Error, "mcp transport")
+}
+
+func TestAReadAnswerMustComeFromTheAccount(t *testing.T) {
+	r := runOne(t, "open-todos", "bare", badAgent{answer: "Write launch notes and the press release draft."})
+	assert.False(t, r.Pass, "no call, no backend read: a recited answer does not pass")
+	assert.Contains(t, strings.Join(r.Reasons, "\n"), "missing backend read")
+}
+
+func TestSummaryExcludesErroredEpisodes(t *testing.T) {
+	rep := &Report{Server: "s", Tasks: []Task{{ID: "a"}, {ID: "b"}}, Records: []Record{
+		{Model: "m", Arm: "x", TaskID: "a", Pass: true, Calls: 4, Turns: 4},
+		{Model: "m", Arm: "x", TaskID: "b", Error: "api down", CostUSD: 0.5},
+	}}
+	out := rep.Render()
+	assert.Contains(t, out, "1/1      100%   1     4.0")
+	assert.Contains(t, out, "$0.5000")
 }
