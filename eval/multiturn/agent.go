@@ -61,6 +61,7 @@ type APIAgent struct {
 	endpoint  string
 	maxTokens int
 	client    *http.Client
+	backoff   time.Duration // base retry delay (squared per attempt)
 }
 
 // NewAPIAgent builds an API-backed agent. Requires ANTHROPIC_API_KEY.
@@ -78,6 +79,7 @@ func NewAPIAgent(label, modelID string) (*APIAgent, error) {
 		endpoint:  strings.TrimSuffix(endpoint, "/") + "/v1/messages",
 		maxTokens: 16000,
 		client:    &http.Client{Timeout: 10 * time.Minute},
+		backoff:   5 * time.Second,
 	}, nil
 }
 
@@ -195,7 +197,7 @@ func (a *APIAgent) post(ctx context.Context, body map[string]any) (*apiResponse,
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
-			case <-time.After(time.Duration(attempt*attempt) * 5 * time.Second):
+			case <-time.After(time.Duration(attempt*attempt) * a.backoff):
 			}
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.endpoint, bytes.NewReader(data))
@@ -210,8 +212,13 @@ func (a *APIAgent) post(ctx context.Context, body map[string]any) (*apiResponse,
 			last = err
 			continue
 		}
-		raw, _ := io.ReadAll(resp.Body)
+		raw, readErr := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
+		if readErr != nil {
+			// A body cut off in transit may still parse; it is not an answer.
+			last = fmt.Errorf("anthropic api: read response: %w", readErr)
+			continue
+		}
 		// Retry what the API says is transient; fail fast on the rest.
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 			last = fmt.Errorf("anthropic api: HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))

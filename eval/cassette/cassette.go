@@ -129,8 +129,8 @@ func (c *Cassette) Validate() error {
 		default:
 			return fmt.Errorf("interaction #%d: unsupported method %q", i+1, r.Method)
 		}
-		if !strings.HasPrefix(r.Path, "/") || strings.Contains(r.Path, "?") {
-			return fmt.Errorf("interaction #%d: path %q must be absolute and carry no query (use request.query)", i+1, r.Path)
+		if !strings.HasPrefix(r.Path, "/") || strings.ContainsAny(r.Path, "?#") {
+			return fmt.Errorf("interaction #%d: path %q must be absolute and carry no query (use request.query) or fragment", i+1, r.Path)
 		}
 		// Terminal statuses only: a 1xx is informational, and the Player
 		// would end up sending an implicit 200 after it.
