@@ -151,11 +151,22 @@ func toValues(m map[string]string) map[string][]string {
 // ServeHTTP answers one request from the cassettes, logging it either way.
 func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, readErr := io.ReadAll(r.Body)
+	p.mu.Lock()
+	base := p.base
+	p.mu.Unlock()
+	// Logged with this Player's origin as {{base}}, as the recorder logs
+	// them, so one pattern grades a recording and its replay alike.
+	logged := url.Values{}
+	for k, vs := range r.URL.Query() {
+		for _, v := range vs {
+			logged.Add(string(toPlaceholder([]byte(k), base)), string(toPlaceholder([]byte(v), base)))
+		}
+	}
 	ex := Exchange{
 		Method: r.Method,
 		Path:   r.URL.Path,
-		Query:  canonicalQuery(r.URL.Query()),
-		Body:   compactJSON(body),
+		Query:  canonicalQuery(logged),
+		Body:   compactJSON(toPlaceholder(body, base)),
 	}
 
 	if readErr != nil {
@@ -212,7 +223,6 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.landed[writeKey(ex.Method, ex.Path)]++
 	}
 	p.log = append(p.log, ex)
-	base := p.base
 	p.mu.Unlock()
 
 	for k, v := range resp.Headers {

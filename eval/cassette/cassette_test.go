@@ -696,6 +696,9 @@ func TestOriginUserinfoIsRefused(t *testing.T) {
 	assert.Error(t, c.Validate())
 	c.Interactions[0].Response.Body = json.RawMessage(`{"url":"{{base}}\u0040evil.example/x"}`)
 	assert.Error(t, c.Validate(), "escaped @ too")
+	c.Interactions[0].Response.Body = nil
+	c.Interactions[0].Response.BodyText = `{"url":"{{base}}\u0040evil.example/x"}`
+	assert.Error(t, c.Validate(), "and in body_text")
 	assert.Empty(t, foreignAccounts([]byte(`{"accounts":[{"id":9007199254740992}]}`), []string{"9007199254740992"}))
 	assert.Equal(t, []string{"9007199254740993"}, foreignAccounts([]byte(`{"accounts":[{"id":9007199254740993}]}`), []string{"9007199254740992"}), "no float rounding")
 }
@@ -752,4 +755,5 @@ func TestPlayerComparesQueriesWithItsOriginAsBase(t *testing.T) {
 	defer p.Close()
 	status, _, _ := get(t, url+"/1/by_url?url="+url+"/1/todos/5.json")
 	assert.Equal(t, 200, status)
+	assert.Contains(t, p.Log()[0].Query, "%7B%7Bbase%7D%7D", "logged with the origin as {{base}}, as the recorder logs it")
 }
