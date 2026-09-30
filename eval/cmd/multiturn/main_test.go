@@ -109,6 +109,13 @@ func TestPreflightRecording(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, cfg.Record)
 
+	// A target that cannot even be stat'ed (a symlink loop) fails too.
+	loop := filepath.Join(dir, "add-todo.json")
+	require.NoError(t, os.Symlink(loop, loop))
+	_, _, _, err = preflight(&o)
+	assert.ErrorContains(t, err, "recording target")
+	require.NoError(t, os.Remove(loop))
+
 	// A corrupt cassette already at the target fails before any live write.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "add-todo.json"), []byte("{"), 0o644))
 	_, _, _, err = preflight(&o)

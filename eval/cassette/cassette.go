@@ -71,6 +71,10 @@ func (in Interaction) stateKey() string {
 	return k
 }
 
+// Landed reports whether a write answered with status actually happened:
+// a 2xx. A redirect or an error changed nothing the replay can count on.
+func Landed(status int) bool { return status >= 200 && status < 300 }
+
 // toPlaceholder rewrites an origin to BasePlaceholder in a body, in both the
 // plain and the slash-escaped JSON spelling (http:\/\/127.0.0.1:…).
 func toPlaceholder(body []byte, origin string) []byte {
@@ -163,6 +167,9 @@ func (c *Cassette) Validate() error {
 				return fmt.Errorf("interaction #%d (%s %s): after entry %q must be a write, \"METHOD /path\"", i+1, r.Method, r.Path, w)
 			}
 		}
+		if (len(in.Response.Body) > 0 || in.Response.BodyText != "") && (r.Method == "HEAD" || in.Response.Status == 204 || in.Response.Status == 304) {
+			return fmt.Errorf("interaction #%d (%s %s): a %d answer to %s carries no body", i+1, r.Method, r.Path, in.Response.Status, r.Method)
+		}
 		if len(in.Response.Body) > 0 && in.Response.BodyText != "" {
 			return fmt.Errorf("interaction #%d (%s %s): both body and body_text set", i+1, r.Method, r.Path)
 		}
@@ -215,7 +222,7 @@ func ValidateLayers(cassettes ...*Cassette) error {
 	var writes []write
 	for _, c := range cassettes {
 		for _, in := range c.Interactions {
-			if in.Request.Method != "GET" && in.Request.Method != "HEAD" && in.Response.Status < 400 {
+			if in.Request.Method != "GET" && in.Request.Method != "HEAD" && Landed(in.Response.Status) {
 				writes = append(writes, write{writeKey(in.Request.Method, in.Request.Path), in.After})
 			}
 		}

@@ -131,11 +131,13 @@ func (a *APIAgent) Run(ctx context.Context, ep *Episode) error {
 			// arm), so each turn re-reads them from cache.
 			"cache_control": map[string]any{"type": "ephemeral"},
 		})
+		if resp != nil {
+			ep.Usage.add(resp.Usage)
+		}
 		if err != nil {
 			return err
 		}
 		ep.Turns++
-		ep.Usage.add(resp.Usage)
 		// A turn cut off by max_tokens is not the model's: its last tool call
 		// may be truncated and its text unfinished, so none of it runs.
 		if resp.StopReason == "max_tokens" {
@@ -235,7 +237,8 @@ func (a *APIAgent) post(ctx context.Context, body map[string]any) (*apiResponse,
 			return nil, fmt.Errorf("anthropic api: HTTP %d", resp.StatusCode)
 		}
 		if out.StopReason == "refusal" {
-			return nil, fmt.Errorf("anthropic api: the model refused")
+			// Billed all the same: hand the usage back with the error.
+			return &out, fmt.Errorf("anthropic api: the model refused")
 		}
 		return &out, nil
 	}

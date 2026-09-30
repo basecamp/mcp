@@ -269,6 +269,7 @@ func TestCorpusValidation(t *testing.T) {
 		"write without read": func(t map[string]any) { t["expect"] = map[string]any{"answer": []any{"x"}} },
 		"read_only writes":   func(t map[string]any) { t["read_only"] = true },
 		"bad regex":          func(t map[string]any) { t["expect"] = map[string]any{"writes": []any{"("}} },
+		"vacuous regex":      func(t map[string]any) { t["expect"] = map[string]any{"writes": []any{"(?i)"}} },
 		"no script":          func(t map[string]any) { delete(t, "script") },
 		"unknown field":      func(t map[string]any) { t["expekt"] = 1 },
 	} {
@@ -551,4 +552,18 @@ func TestAPIAgentRejectsATruncatedBody(t *testing.T) {
 	r := runOne(t, "open-todos", "bare", agent)
 	assert.False(t, r.Pass)
 	assert.Contains(t, r.Error, "read response")
+}
+
+func TestAPIAgentCountsARefusalsUsage(t *testing.T) {
+	fa := &fakeAnthropic{responses: []string{`{"content":[],"stop_reason":"refusal","usage":{"input_tokens":1000,"output_tokens":10}}`}}
+	srv := httptest.NewServer(fa)
+	defer srv.Close()
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	t.Setenv("ANTHROPIC_BASE_URL", srv.URL)
+	agent, err := NewAPIAgent("haiku", ModelID("haiku"))
+	require.NoError(t, err)
+	r := runOne(t, "complete-todo", "bare", agent)
+	assert.Contains(t, r.Error, "refused")
+	assert.Equal(t, 1000, r.InTokens)
+	assert.Greater(t, r.CostUSD, 0.0)
 }

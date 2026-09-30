@@ -621,3 +621,20 @@ func TestEscapedOriginsAndNonJSONBodies(t *testing.T) {
 	assert.Equal(t, http.StatusUnsupportedMediaType, do(t, "POST", rurl+"/1/form", "a=1&b=2"))
 	assert.Len(t, rec.Faults(), 1)
 }
+
+func TestOnlyA2xxWriteLands(t *testing.T) {
+	c := &Cassette{Name: "r", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/x"}, Response: Response{Status: 307, Headers: map[string]string{"Location": "/elsewhere"}}},
+		{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200, Body: json.RawMessage(`"after"`)}, After: []string{"POST /x"}},
+	}}
+	assert.Error(t, ValidateLayers(c), "a redirect is not a landed write")
+	p := NewPlayer(c)
+	url := p.Start()
+	defer p.Close()
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := noFollow.Post(url+"/x", "application/json", nil)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	status, _, _ := get(t, url+"/y")
+	assert.Equal(t, 404, status)
+}
