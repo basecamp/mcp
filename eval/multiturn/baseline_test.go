@@ -110,6 +110,7 @@ func TestLoadBaselineRejectsBrokenFiles(t *testing.T) {
 		"duplicate":   line + "\n" + line,
 		"no identity": strings.Replace(line, `"task_id":"a"`, `"task_id":""`, 1),
 		"null pass":   strings.Replace(line, `"pass":true`, `"pass":null`, 1),
+		"errored":     strings.Replace(line, `"pass":true`, `"pass":true,"error":"api down"`, 1),
 		"no model id": strings.Replace(line, `"model_id":"haiku-id"`, `"model_id":""`, 1),
 	} {
 		_, err := LoadBaseline(strings.NewReader(input))

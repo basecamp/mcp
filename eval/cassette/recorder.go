@@ -444,7 +444,7 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			headers[h] = r.scrubber.String(strings.Join(vs, ", "))
 		}
 	}
-	if bytes.Contains(respBody, []byte(BasePlaceholder)) {
+	if bytes.Contains(respBody, []byte(BasePlaceholder)) || strings.Contains(resp.Header.Get("Location")+strings.Join(resp.Header.Values("Link"), ""), BasePlaceholder) {
 		// The literal is the cassette's own placeholder; upstream content
 		// carrying it could not be told from a scrubbed origin.
 		refuse(http.StatusBadGateway, "the upstream answer contains the literal "+BasePlaceholder)
@@ -700,8 +700,10 @@ func (r *Recorder) record(req *http.Request, reqBody []byte, status int, headers
 	if len(in.Response.Headers) == 0 {
 		in.Response.Headers = nil
 	}
-	if len(bytes.TrimSpace(respBody)) > 0 {
-		if json.Valid(respBody) {
+	if len(respBody) > 0 {
+		// Whitespace-only bodies are kept verbatim too: replay must send
+		// what the recording saw.
+		if len(bytes.TrimSpace(respBody)) > 0 && json.Valid(respBody) {
 			in.Response.Body = compactRaw(respBody)
 		} else {
 			in.Response.BodyText = string(respBody)

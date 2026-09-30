@@ -126,9 +126,6 @@ func grade(ep *Episode, guide func(string) bool) Record {
 			if isWrongID(ex) {
 				rec.WrongID++
 			}
-			if !ex.IsWrite() && ex.Matched && ex.Status < 300 {
-				readAnswered = true // a read at startup or listing tools feeds answers too
-			}
 			if ex.IsWrite() {
 				attempted = append(attempted, ex.Line())
 				// A write that finished after its call returned (the server
@@ -155,7 +152,9 @@ func grade(ep *Episode, guide func(string) bool) Record {
 	check("write", t.Expect.Writes, landed)
 	check("answer", t.Expect.Answer, []string{ep.Answer})
 	// A read task's answer must come from the account: at least one read the
-	// backend answered. Fixture strings recalled without calling anything
+	// backend answered during a tool call. Startup reads (the server fetching
+	// its identity) do not count: every episode makes them, whatever the
+	// agent does. Fixture strings recalled without calling anything
 	// would otherwise pass as the server's work.
 	if t.ReadOnly {
 		total++

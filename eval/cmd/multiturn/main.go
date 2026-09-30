@@ -231,6 +231,11 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 	}
 	// --out is truncated after the run; it must not be any file the run reads.
 	serverBin := ""
+	if prof, ok := stdioProfiles[o.server]; ok && o.serverCmd == "" && os.Getenv("EVAL_"+strings.ToUpper(o.server)+"_CMD") == "" {
+		if p, err := exec.LookPath(prof.bin); err == nil {
+			serverBin = p
+		}
+	}
 	if cmdline := o.serverCmd; cmdline != "" || os.Getenv("EVAL_"+strings.ToUpper(o.server)+"_CMD") != "" {
 		if cmdline == "" {
 			cmdline = os.Getenv("EVAL_" + strings.ToUpper(o.server) + "_CMD")

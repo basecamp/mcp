@@ -77,6 +77,11 @@ func LoadBaseline(r io.Reader) (*Baseline, error) {
 			// would silently skip the cell.
 			return nil, fmt.Errorf("baseline record missing server, backend, model, model_id, arm, task_id, task_digest, or arm_digest: %s", truncate(line, 200))
 		}
+		if rec.Error != "" {
+			// An errored cell measured nothing; as a baseline it would let a
+			// measured failure compare equal to "no evidence".
+			return nil, fmt.Errorf("baseline record %s/%s/%s errored (%s): a baseline must be measured; rerun it", rec.Model, rec.Arm, rec.TaskID, truncate(rec.Error, 120))
+		}
 		k := cellKey(rec.Model, rec.Arm, rec.TaskID)
 		if _, dup := b.cells[k]; dup {
 			return nil, fmt.Errorf("baseline has duplicate cell %s/%s/%s: split the runs into separate files", rec.Model, rec.Arm, rec.TaskID)
