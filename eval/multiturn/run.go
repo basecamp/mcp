@@ -296,6 +296,9 @@ const recordErrPrefix = "record: "
 func saveRecording(cfg Config, task Task, rec *cassette.Recorder) error {
 	path := filepath.Join(cfg.RecordDir, task.ID+".json")
 	got := rec.Cassette(task.ID, fmt.Sprintf("Recorded from test profile %q for task %s.", cfg.Record.Name, task.ID))
+	if err := got.Validate(); err != nil {
+		return fmt.Errorf("recorded cassette would not load: %w", err)
+	}
 	if prev, err := cassette.Load(path); err == nil {
 		cassette.Merge(prev, got)
 		got = prev
