@@ -199,8 +199,8 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 		}
 		_ = probe.Close()
 		_ = os.Remove(probe.Name())
-		if len(arms.Arms) != 1 || (o.backend != "script" && len(plan) != 1) {
-			return fail(fmt.Errorf("recording runs one model under one arm (pass --arms and --models): each episode mutates the live test account"))
+		if len(corpus.Tasks) != 1 || len(arms.Arms) != 1 || (o.backend != "script" && len(plan) != 1) {
+			return fail(fmt.Errorf("recording runs one task, one model, one arm (pass --only, --arms, --models): each episode mutates the live test account, so reseed it between recordings"))
 		}
 		cfg.Record, cfg.RecordDir = p, o.recordDir
 	} else if err := corpus.CheckCassettes(); err != nil {

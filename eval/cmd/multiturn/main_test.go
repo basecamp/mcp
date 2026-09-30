@@ -97,9 +97,13 @@ func TestPreflightRecording(t *testing.T) {
 	o := options{server: "fake", backend: "script", out: filepath.Join(dir, "out.jsonl"), recordProfile: prof, recordDir: dir}
 
 	_, _, _, err := preflight(&o)
-	assert.ErrorContains(t, err, "one model under one arm", "every arm would repeat the live writes")
+	assert.ErrorContains(t, err, "one task, one model, one arm", "every arm would repeat the live writes")
 
 	o.arms = "bare"
+	_, _, _, err = preflight(&o)
+	assert.ErrorContains(t, err, "one task", "every task would record the state the last one left")
+
+	o.only = "add-todo"
 	cfg, _, _, err := preflight(&o)
 	require.NoError(t, err)
 	assert.NotNil(t, cfg.Record)

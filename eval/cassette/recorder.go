@@ -198,6 +198,71 @@ func (r *Recorder) Since(mark int) []Exchange {
 	return append([]Exchange(nil), r.log[mark:]...)
 }
 
+// scrubQuery scrubs decoded query keys and values — before any encoding, so
+// a literal like "a@b.example" or "Real Person" is matched as written, not
+// as a%40b.example or Real+Person.
+func (r *Recorder) scrubQuery(q url.Values) url.Values {
+	out := url.Values{}
+	for k, vs := range q {
+		for _, v := range vs {
+			out.Add(r.scrubber.String(k), r.scrubber.String(v))
+		}
+	}
+	return out
+}
+
+func (r *Recorder) pathHasAccount(path string) bool {
+	return numericSegment.MatchString(strings.SplitN(strings.TrimPrefix(path, "/"), "/", 2)[0])
+}
+
+// foreignAccounts returns the ids in any "accounts": [{"id": …}] list of a
+// JSON body that the profile does not name.
+func foreignAccounts(body []byte, allowed []string) []string {
+	var doc any
+	if json.Unmarshal(body, &doc) != nil {
+		return nil
+	}
+	ok := map[string]bool{}
+	for _, id := range allowed {
+		ok[id] = true
+	}
+	var foreign []string
+	var walk func(any)
+	walk = func(v any) {
+		switch t := v.(type) {
+		case map[string]any:
+			for k, child := range t {
+				if list, isList := child.([]any); k == "accounts" && isList {
+					for _, item := range list {
+						if m, isMap := item.(map[string]any); isMap {
+							if id, has := m["id"]; has {
+								if s := fmt.Sprint(jsonNumber(id)); !ok[s] {
+									foreign = append(foreign, s)
+								}
+							}
+						}
+					}
+				}
+				walk(child)
+			}
+		case []any:
+			for _, child := range t {
+				walk(child)
+			}
+		}
+	}
+	walk(doc)
+	return foreign
+}
+
+// jsonNumber renders a decoded JSON number as an integer when it is one.
+func jsonNumber(v any) any {
+	if f, isFloat := v.(float64); isFloat && f == float64(int64(f)) {
+		return int64(f)
+	}
+	return v
+}
+
 // allowed reports whether the request path may be forwarded: account-less
 // paths (/authorization.json) and paths under a profile account.
 func (r *Recorder) allowed(path string) bool {
@@ -218,7 +283,7 @@ func (r *Recorder) allowed(path string) bool {
 // origin rewritten to the recorder so follow-up requests stay proxied).
 func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	body, _ := io.ReadAll(req.Body)
-	ex := Exchange{Method: req.Method, Path: req.URL.Path, Query: r.scrubber.String(canonicalQuery(req.URL.Query())), Body: compactJSON(r.scrubber.Bytes(body))}
+	ex := Exchange{Method: req.Method, Path: req.URL.Path, Query: canonicalQuery(r.scrubQuery(req.URL.Query())), Body: compactJSON(r.scrubber.Bytes(body))}
 	if !r.allowed(req.URL.Path) {
 		ex.Status = http.StatusForbidden
 		r.appendLog(ex)
@@ -263,6 +328,19 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	base := r.base
 	r.mu.Unlock()
 
+	// An account-less answer (an identity document) may list every account
+	// the token reaches. A token that reaches beyond the profile is refused
+	// outright rather than recorded: a seeded test credential belongs to the
+	// test accounts only.
+	if !r.pathHasAccount(req.URL.Path) {
+		if foreign := foreignAccounts(respBody, r.profile.AccountIDs); len(foreign) > 0 {
+			ex.Status = http.StatusForbidden
+			r.appendLog(ex)
+			http.Error(w, fmt.Sprintf(`{"error":"recorder: the token reaches %d account(s) outside the profile; record with a credential scoped to the test account"}`, len(foreign)), http.StatusForbidden)
+			return
+		}
+	}
+
 	headers := map[string]string{}
 	for _, h := range keptResponseHeaders {
 		if v := resp.Header.Get(h); v != "" {
@@ -270,7 +348,11 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	scrubbed := r.scrubber.Bytes(respBody)
-	r.record(req, body, resp.StatusCode, headers, scrubbed)
+	// A 404 is not recorded: replayed, the same request stays a miss (and a
+	// wrong id), exactly as it was live.
+	if resp.StatusCode != http.StatusNotFound {
+		r.record(req, body, resp.StatusCode, headers, scrubbed)
+	}
 	ex.Status, ex.Matched = resp.StatusCode, resp.StatusCode != http.StatusNotFound
 	r.appendLog(ex)
 
@@ -294,9 +376,9 @@ func (r *Recorder) appendLog(ex Exchange) {
 // record stores one exchange; headers and respBody arrive scrubbed.
 func (r *Recorder) record(req *http.Request, reqBody []byte, status int, headers map[string]string, respBody []byte) {
 	q := map[string]string{}
-	for k, v := range req.URL.Query() {
+	for k, v := range r.scrubQuery(req.URL.Query()) {
 		if len(v) > 0 {
-			q[r.scrubber.String(k)] = r.scrubber.String(v[0])
+			q[k] = v[0]
 		}
 	}
 	if len(q) == 0 {

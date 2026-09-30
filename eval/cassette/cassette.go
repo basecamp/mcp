@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -115,13 +116,26 @@ func (c *Cassette) Validate() error {
 	return nil
 }
 
-// Save writes the cassette as indented JSON.
+// Save writes the cassette as indented JSON, atomically: a failed write
+// leaves any existing cassette at path intact.
 func (c *Cassette) Save(path string) error {
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".cassette-*.json")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(append(data, '\n')); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 // queryMatches reports whether every parameter the pattern names is present in

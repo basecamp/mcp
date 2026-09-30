@@ -65,10 +65,10 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	}
 	if cfg.Record != nil {
 		// Every recorded episode performs its writes on the live account,
-		// so a second agent or arm would repeat them and record the state
-		// the first one left. One pass, then reseed.
-		if len(cfg.Agents) != 1 || len(cfg.Arms.Arms) != 1 {
-			return nil, fmt.Errorf("recording runs one agent under one arm (got %d agents, %d arms): each episode mutates the live test account", len(cfg.Agents), len(cfg.Arms.Arms))
+		// so a second task, agent or arm would record the state the first
+		// left. One episode, then reseed.
+		if len(cfg.Agents) != 1 || len(cfg.Arms.Arms) != 1 || len(cfg.Corpus.Tasks) != 1 {
+			return nil, fmt.Errorf("recording runs one task, one agent, one arm (got %d, %d, %d): each episode mutates the live test account, so every recording starts from a freshly seeded one", len(cfg.Corpus.Tasks), len(cfg.Agents), len(cfg.Arms.Arms))
 		}
 		cfg.Parallel = 1
 	} else if err := cfg.Corpus.CheckCassettes(); err != nil {

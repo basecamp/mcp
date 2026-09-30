@@ -382,12 +382,14 @@ production**. Write a profile:
 }
 ```
 
-then run one model under one arm (`--arms bare`, and one `--models` label
-for a model backend) with `--record-profile profile.json --record-dir <dir>`
+then record one task at a time — one `--only` task, one `--arms` arm, and
+one `--models` label for a model backend, reseeding between recordings — with `--record-profile profile.json --record-dir <dir>`
 (the gold scripts under `--backend script` record exactly the gold path; a
 model backend records what it explored). The recorder proxies to the
 upstream: it injects the token itself (the server keeps its dummy), refuses —
-locally, never forwarded — any account the profile does not list, and stores
+locally, never forwarded — any account the profile does not list, refuses a
+token whose identity document lists any other account, does not record 404s
+(a miss replays as a miss), and stores
 only scrubbed data: no request headers, an allowlist of response headers, the
 upstream origin as `{{base}}`, emails as keyed aliases (`person-<hmac>@example.com`, stable per profile token), avatar URLs
 replaced, and the profile's `redact` literals applied. Recording performs the
