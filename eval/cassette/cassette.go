@@ -39,9 +39,16 @@ type Cassette struct {
 }
 
 // Interaction is one request pattern and the response served for it.
+//
+// AfterWrites is the backend state the response belongs to: how many writes
+// had landed before it was recorded. A read recorded before and after a
+// write is two interactions, AfterWrites 0 and 1, and the Player serves the
+// one matching the writes its own replay has landed — so state advances on
+// the agent's writes, never on how often it re-reads.
 type Interaction struct {
-	Request  Request  `json:"request"`
-	Response Response `json:"response"`
+	Request     Request  `json:"request"`
+	Response    Response `json:"response"`
+	AfterWrites int      `json:"after_writes,omitempty"`
 }
 
 // Request identifies which requests an interaction answers. Method and Path
@@ -108,6 +115,9 @@ func (c *Cassette) Validate() error {
 		}
 		if len(in.Response.Body) > 0 && !json.Valid(in.Response.Body) {
 			return fmt.Errorf("interaction #%d (%s %s): response body is not JSON (use body_text)", i+1, r.Method, r.Path)
+		}
+		if in.AfterWrites < 0 {
+			return fmt.Errorf("interaction #%d (%s %s): negative after_writes", i+1, r.Method, r.Path)
 		}
 		if len(in.Response.Body) > 0 && in.Response.BodyText != "" {
 			return fmt.Errorf("interaction #%d (%s %s): both body and body_text set", i+1, r.Method, r.Path)

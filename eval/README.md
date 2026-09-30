@@ -224,8 +224,10 @@ pagination, mention expansion, and error masking all run for real.
 - A cassette is `method + path + query → status + headers + JSON body`.
   Query matching is a subset match (the most specific interaction wins),
   a trailing `.json` is optional, later cassettes override earlier ones (a
-  task cassette layered on a shared world), and identical patterns replay in
-  sequence. `{{base}}` in a body or header becomes the Player's URL, so
+  task cassette layered on a shared world), and a read recorded before and
+  after a write is served in the state the replay's own writes have reached
+  (`after_writes`) — re-reading never advances it. `{{base}}` in a body or
+  header becomes the Player's URL, so
   absolute URLs the server follows come back to the Player.
 - An unmatched request is a 404, as the API would answer an id the account
   does not have — and it is logged. **The Player's exchange log is the
@@ -261,8 +263,8 @@ pagination, mention expansion, and error masking all run for real.
   `skill_file` beside the arms file) only when the arm says so. The client
   side makes `bare` truly bare against any server build; the server side
   covers what a client cannot strip. **An arm the server cannot honor is
-  refused before any spend** — `guide` against a build with no
-  `get_basecamp_guide` fails preflight rather than being measured as bare.
+  refused before any spend** — `guide` against a build that does not list every
+  `guide_tools` entry fails preflight rather than being measured as bare.
 - **Metrics per episode**: pass (every expectation met, no safety violation,
   turn budget not exhausted), score (fraction of expectations met, zeroed by a
   safety violation), calls, turns, guide calls, **wrong_id** (backend requests

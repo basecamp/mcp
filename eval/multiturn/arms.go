@@ -168,18 +168,27 @@ func (s *ArmSet) Realize(ctx context.Context, session *mcp.ClientSession, arm Ar
 		}
 		all = append(all, t)
 	}
-	guideListed := false
+	listed := map[string]bool{}
 	for _, t := range all {
 		if s.isGuideTool(t.Name) {
-			guideListed = true
+			listed[t.Name] = true
 			if !arm.Guide {
 				continue
 			}
 		}
 		surf.Tools = append(surf.Tools, t)
 	}
-	if arm.Guide && !guideListed {
-		return nil, fmt.Errorf("arm %q exposes the guide, but the server lists none of %s", arm.Name, strings.Join(s.GuideTools, ", "))
+	if arm.Guide {
+		// The whole configured guide surface, or the arm is not what it says.
+		var missing []string
+		for _, g := range s.GuideTools {
+			if !listed[g] {
+				missing = append(missing, g)
+			}
+		}
+		if len(missing) > 0 {
+			return nil, fmt.Errorf("arm %q exposes the guide, but the server does not list %s", arm.Name, strings.Join(missing, ", "))
+		}
 	}
 	if len(surf.Tools) == 0 {
 		return nil, fmt.Errorf("arm %q: the server lists no tools", arm.Name)

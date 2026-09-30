@@ -46,7 +46,7 @@ func TestPlayerMatchesAndLogs(t *testing.T) {
 	}}
 	task := &Cassette{Name: "task", Interactions: []Interaction{
 		{Request: Request{Method: "GET", Path: "/1/todos/5"}, Response: Response{Status: 200, Body: json.RawMessage(`{"v":"task-1"}`)}},
-		{Request: Request{Method: "GET", Path: "/1/todos/5"}, Response: Response{Status: 200, Body: json.RawMessage(`{"v":"task-2"}`)}},
+		{Request: Request{Method: "GET", Path: "/1/todos/5"}, Response: Response{Status: 200, Body: json.RawMessage(`{"v":"task-2"}`)}, AfterWrites: 1},
 	}}
 	p := NewPlayer(base, task)
 	url := p.Start()
@@ -63,17 +63,17 @@ func TestPlayerMatchesAndLogs(t *testing.T) {
 	_, body, _ = get(t, url+"/1/projects.json?page=2")
 	assert.JSONEq(t, `[{"id":2}]`, body)
 
-	// A later cassette overrides an earlier one; identical patterns in one
-	// cassette are served in order, the last repeating. ".json" is optional.
+	// A later cassette overrides an earlier one, and ".json" is optional.
+	// State advances on writes, not on re-reads.
 	_, body, _ = get(t, url+"/1/todos/5.json")
 	assert.JSONEq(t, `{"v":"task-1"}`, body)
 	_, body, _ = get(t, url+"/1/todos/5")
-	assert.JSONEq(t, `{"v":"task-2"}`, body)
-	_, body, _ = get(t, url+"/1/todos/5")
-	assert.JSONEq(t, `{"v":"task-2"}`, body)
+	assert.JSONEq(t, `{"v":"task-1"}`, body)
 
 	// Writes are answered by path and logged with the body sent.
 	assert.Equal(t, 204, do(t, "POST", url+"/1/todos/5/completion.json", `{ "a" : 1 }`))
+	_, body, _ = get(t, url+"/1/todos/5")
+	assert.JSONEq(t, `{"v":"task-2"}`, body)
 
 	// A miss is a 404, logged as unmatched.
 	status, _, _ = get(t, url+"/1/todos/999")
@@ -82,8 +82,8 @@ func TestPlayerMatchesAndLogs(t *testing.T) {
 	log := p.Log()
 	require.Len(t, log, 7)
 	assert.Equal(t, "status=active", log[0].Query)
-	assert.True(t, log[5].IsWrite())
-	assert.Equal(t, `POST /1/todos/5/completion.json {"a":1}`, log[5].Line())
+	assert.True(t, log[4].IsWrite())
+	assert.Equal(t, `POST /1/todos/5/completion.json {"a":1}`, log[4].Line())
 	assert.False(t, log[6].Matched)
 	assert.True(t, log[0].Matched)
 
@@ -244,6 +244,9 @@ func TestRecorderRedirectsQueriesAndRepeatedReads(t *testing.T) {
 	state := "before"
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/123/netpath":
+			w.Header().Set("Location", "//cdn.example/signed?sig=SECRET")
+			w.WriteHeader(http.StatusFound)
 		case r.URL.Path == "/123/offsite":
 			http.Redirect(w, r, "https://cdn.example/signed?sig=SECRET", http.StatusFound)
 		case r.URL.Path == "/123/moved":
@@ -279,6 +282,10 @@ func TestRecorderRedirectsQueriesAndRepeatedReads(t *testing.T) {
 	_ = resp.Body.Close()
 	assert.Equal(t, http.StatusBadGateway, resp.StatusCode, "an off-origin redirect is refused")
 	assert.Empty(t, resp.Header.Get("Location"))
+	resp, err = noFollow.Get(url + "/123/netpath")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusBadGateway, resp.StatusCode, "a network-path redirect is refused too")
 
 	// Query values are scrubbed in the cassette and the log.
 	get(t, url+"/123/search.json?q=someone@corp.example")
@@ -305,14 +312,17 @@ func TestRecorderRedirectsQueriesAndRepeatedReads(t *testing.T) {
 	}
 	assert.Equal(t, []string{`{"state":"before"}`, `{"state":"after"}`}, reads)
 
-	// Replay walks the same states.
+	// Replay walks the same states, advancing on the replay's own write.
 	p := NewPlayer(c)
 	purl := p.Start()
 	defer p.Close()
 	_, b1, _ := get(t, purl+"/123/thing.json")
 	_, b2, _ := get(t, purl+"/123/thing.json")
 	assert.JSONEq(t, `{"state":"before"}`, b1)
-	assert.JSONEq(t, `{"state":"after"}`, b2)
+	assert.JSONEq(t, `{"state":"before"}`, b2, "re-reading does not advance state")
+	do(t, "POST", purl+"/123/thing/touch.json", "")
+	_, b3, _ := get(t, purl+"/123/thing.json")
+	assert.JSONEq(t, `{"state":"after"}`, b3)
 }
 
 func TestScrubberAliasesAreKeyedAndStable(t *testing.T) {
@@ -328,7 +338,7 @@ func TestMergeKeepsFirstAnswerPerPattern(t *testing.T) {
 		{Request: Request{Method: "GET", Path: "/x.json"}, Response: Response{Status: 200, Body: json.RawMessage(`2`)}},
 		{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200, Body: json.RawMessage(`3`)}},
 	}}
-	b.Interactions = append(b.Interactions, Interaction{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200, Body: json.RawMessage(`4`)}})
+	b.Interactions = append(b.Interactions, Interaction{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200, Body: json.RawMessage(`4`)}, AfterWrites: 1})
 	Merge(a, b)
 	require.Len(t, a.Interactions, 3, "every recorded state of a new pattern")
 	assert.Equal(t, json.RawMessage(`1`), a.Interactions[0].Response.Body)
@@ -340,7 +350,9 @@ func TestMergeExtendsAPatternsStates(t *testing.T) {
 		return Interaction{Request: Request{Method: "GET", Path: "/t"}, Response: Response{Status: 200, Body: json.RawMessage(v)}}
 	}
 	dst := &Cassette{Name: "d", Interactions: []Interaction{read(`"before"`)}}
-	Merge(dst, &Cassette{Name: "s", Interactions: []Interaction{read(`"before-again"`), read(`"after"`)}})
+	after := read(`"after"`)
+	after.AfterWrites = 1
+	Merge(dst, &Cassette{Name: "s", Interactions: []Interaction{read(`"before-again"`), after}})
 	require.Len(t, dst.Interactions, 2)
 	assert.Equal(t, json.RawMessage(`"before"`), dst.Interactions[0].Response.Body)
 	assert.Equal(t, json.RawMessage(`"after"`), dst.Interactions[1].Response.Body)

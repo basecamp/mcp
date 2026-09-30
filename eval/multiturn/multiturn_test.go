@@ -185,7 +185,7 @@ func TestArmsRealize(t *testing.T) {
 	_, err = surface(Arm{Name: "x", Instructions: true})
 	assert.ErrorContains(t, err, "sent none")
 	_, err = surface(Arm{Name: "x", Guide: true})
-	assert.ErrorContains(t, err, "lists none of fake_guide")
+	assert.ErrorContains(t, err, "does not list fake_guide")
 	_, err = surface(Arm{Name: "x", Skill: true})
 	assert.Error(t, err)
 }
@@ -196,7 +196,7 @@ func TestRunRefusesAnUnrealizableArmBeforeAnyEpisode(t *testing.T) {
 	var ran bool
 	agent := agentFunc(func(context.Context, *Episode) error { ran = true; return nil })
 	_, err := Run(context.Background(), Config{Corpus: c, Arms: a, Agents: []Agent{agent}, Launch: ConnectFake})
-	assert.ErrorContains(t, err, "lists none of fake_guide")
+	assert.ErrorContains(t, err, "does not list fake_guide")
 	assert.False(t, ran)
 }
 

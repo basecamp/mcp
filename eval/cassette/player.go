@@ -51,12 +51,13 @@ func (e Exchange) Line() string {
 
 // Player serves recorded interactions over HTTP. Later cassettes take
 // precedence over earlier ones for the same request (a task cassette layered
-// on a shared base overrides it); identical patterns within one cassette are
-// served in order, the last repeating.
+// on a shared base overrides it). Among identical patterns in one cassette,
+// the Player serves the state its replay has reached: the interaction with
+// the highest AfterWrites not above the writes landed so far.
 type Player struct {
 	mu      sync.Mutex
 	entries []entry
-	served  map[int]int // entry index -> times served
+	writes  int // writes landed (answered below 400) so far
 	log     []Exchange
 	base    string
 	srv     *httptest.Server
@@ -64,20 +65,16 @@ type Player struct {
 
 type entry struct {
 	layer int
-	seq   int // position among identical patterns in the same layer
 	in    Interaction
 }
 
 // NewPlayer builds a Player over the cassettes, in precedence order (last
 // wins).
 func NewPlayer(cassettes ...*Cassette) *Player {
-	p := &Player{served: map[int]int{}}
+	p := &Player{}
 	for layer, c := range cassettes {
-		seen := map[string]int{}
 		for _, in := range c.Interactions {
-			key := patternKey(in.Request)
-			p.entries = append(p.entries, entry{layer: layer, seq: seen[key], in: in})
-			seen[key]++
+			p.entries = append(p.entries, entry{layer: layer, in: in})
 		}
 	}
 	return p
@@ -165,12 +162,14 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var resp Response
 	if idx >= 0 {
 		resp = p.entries[idx].in.Response
-		p.served[idx]++
 		ex.Matched = true
 	} else {
 		resp = Response{Status: http.StatusNotFound, Body: json.RawMessage(`{"status":404,"error":"Not Found"}`)}
 	}
 	ex.Status = resp.Status
+	if ex.Matched && ex.IsWrite() && ex.Status < 400 {
+		p.writes++
+	}
 	p.log = append(p.log, ex)
 	base := p.base
 	p.mu.Unlock()
@@ -193,8 +192,9 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // match picks the interaction for r, or -1. Most query parameters named wins;
-// then the latest layer; within that layer's identical patterns, the next
-// unserved one in sequence (the last repeats). Caller holds p.mu.
+// then the latest layer; within that layer's identical patterns, the state
+// the replay has reached (the earliest state when it has reached none).
+// Caller holds p.mu.
 func (p *Player) match(r *http.Request) int {
 	q := r.URL.Query()
 	best, bestSpec, bestLayer := -1, -1, -1
@@ -211,20 +211,24 @@ func (p *Player) match(r *http.Request) int {
 	if best < 0 {
 		return -1
 	}
-	// Sequence among identical patterns in the winning layer.
 	key := patternKey(p.entries[best].in.Request)
-	var group []int
+	pick, earliest := -1, -1
 	for i, e := range p.entries {
-		if e.layer == bestLayer && patternKey(e.in.Request) == key {
-			group = append(group, i)
+		if e.layer != bestLayer || patternKey(e.in.Request) != key {
+			continue
+		}
+		aw := e.in.AfterWrites
+		if earliest < 0 || aw < p.entries[earliest].in.AfterWrites {
+			earliest = i
+		}
+		if aw <= p.writes && (pick < 0 || aw > p.entries[pick].in.AfterWrites) {
+			pick = i
 		}
 	}
-	for _, i := range group {
-		if p.served[i] == 0 {
-			return i
-		}
+	if pick < 0 {
+		return earliest
 	}
-	return group[len(group)-1]
+	return pick
 }
 
 // compactJSON renders a JSON body on one line; a non-JSON body is kept as-is.

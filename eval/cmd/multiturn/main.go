@@ -101,15 +101,20 @@ func run() error {
 	}
 	recordErr := err
 
-	f, err := os.Create(o.out)
+	// Atomically: a failed write must not destroy a prior run at --out.
+	f, err := os.CreateTemp(filepath.Dir(o.out), ".multiturn-*.jsonl")
 	if err != nil {
 		return err
 	}
+	defer os.Remove(f.Name())
 	if err := multiturn.WriteJSONL(f, rep.Records); err != nil {
 		_ = f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(f.Name(), o.out); err != nil {
 		return err
 	}
 	fmt.Print(rep.Render())
