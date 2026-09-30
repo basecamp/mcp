@@ -72,7 +72,7 @@ func (p *Profile) Validate() error {
 		return fmt.Errorf("profile %q does not declare test_account: true — recording is only for seeded test accounts, never production data", p.Name)
 	}
 	u, err := url.Parse(p.Upstream)
-	if err != nil || u.Scheme != "https" || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+	if err != nil || u.Scheme != "https" || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil || u.Port() == "443" {
 		return fmt.Errorf("profile %q: upstream %q must be a bare https origin", p.Name, p.Upstream)
 	}
 	if len(p.AccountIDs) == 0 {
@@ -351,6 +351,13 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		refuse(http.StatusUnsupportedMediaType, "non-JSON request body cannot be recorded")
 		return
 	}
+	// Dot segments (literal or percent-encoded) could put a request under
+	// another account once something upstream normalizes the path, past the
+	// allowlist that read it un-normalized: refused outright.
+	if hasDotSegment(req.URL.Path) || strings.Contains(strings.ToLower(req.URL.EscapedPath()), "%2e") {
+		refuse(http.StatusBadRequest, "dot segments in the path")
+		return
+	}
 	if !r.allowed(req.URL.Path) {
 		refuse(http.StatusForbidden, "account not in the test profile")
 		return
@@ -535,6 +542,16 @@ func (r *Recorder) leaksOrigin(body []byte) bool {
 		return false
 	}
 	return walk(doc)
+}
+
+// hasDotSegment reports whether a path has a "." or ".." segment.
+func hasDotSegment(p string) bool {
+	for _, seg := range strings.Split(p, "/") {
+		if seg == "." || seg == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // Faults returns every anomaly seen so far. A recording with any is

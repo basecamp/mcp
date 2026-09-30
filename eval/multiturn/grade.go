@@ -122,6 +122,11 @@ func grade(ep *Episode, guide func(string) bool) Record {
 			}
 			if ex.IsWrite() {
 				attempted = append(attempted, ex.Line())
+				// A write that finished after its call returned (the server
+				// completed it asynchronously) still shaped the final state.
+				if ex.Matched && cassette.Landed(ex.Status) {
+					landed = append(landed, ex.Line())
+				}
 			}
 		}
 	}

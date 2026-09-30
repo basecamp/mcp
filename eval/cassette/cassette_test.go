@@ -152,6 +152,7 @@ func TestProfileValidation(t *testing.T) {
 		"quote in redact":    func(p *Profile) { p.Redact = map[string]string{`A "B"`: "C"} },
 		"upstream query":     func(p *Profile) { p.Upstream = "https://3.basecampapi.com?tenant=x" },
 		"upstream fragment":  func(p *Profile) { p.Upstream = "https://3.basecampapi.com#x" },
+		"default port":       func(p *Profile) { p.Upstream = "https://3.basecampapi.com:443" },
 		"control in redact":  func(p *Profile) { p.Redact = map[string]string{"A": "B\nC"} },
 		"numeric redact":     func(p *Profile) { p.Redact = map[string]string{"123": "456"} },
 		"literal redact":     func(p *Profile) { p.Redact = map[string]string{"true": "false"} },
@@ -283,6 +284,7 @@ func TestRecorderRedirectsQueriesAndRepeatedReads(t *testing.T) {
 	assert.Equal(t, http.StatusFound, resp.StatusCode)
 	assert.Equal(t, 403, do(t, "GET", url+"/999/secret.json", ""))
 	assert.Equal(t, http.StatusMethodNotAllowed, do(t, "OPTIONS", url+"/123/thing.json", ""), "a method no cassette can replay")
+	assert.Equal(t, http.StatusBadRequest, do(t, "GET", url+"/123/%2e%2e/999/secret.json", ""), "an encoded dot segment")
 	resp, err = noFollow.Get(url + "/123/offsite")
 	require.NoError(t, err)
 	_ = resp.Body.Close()
