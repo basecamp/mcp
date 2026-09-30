@@ -1,15 +1,15 @@
 package multiturn
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basecamp/mcp/eval/cassette"
 )
 
 // Arm is one guidance condition. Each arm is realized twice over, on purpose:
@@ -63,9 +63,7 @@ func LoadArms(path string) (*ArmSet, error) {
 		return nil, err
 	}
 	var s ArmSet
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&s); err != nil {
+	if err := cassette.DecodeStrict(data, &s); err != nil {
 		return nil, fmt.Errorf("arms %s: %w", path, err)
 	}
 	s.dir = filepath.Dir(path)

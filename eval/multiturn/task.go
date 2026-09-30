@@ -18,8 +18,6 @@
 package multiturn
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -106,9 +104,7 @@ func LoadCorpus(path string) (*Corpus, error) {
 		return nil, err
 	}
 	var c Corpus
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&c); err != nil {
+	if err := cassette.DecodeStrict(data, &c); err != nil {
 		return nil, fmt.Errorf("tasks %s: %w", path, err)
 	}
 	c.dir = filepath.Dir(path)

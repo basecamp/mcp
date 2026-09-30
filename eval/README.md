@@ -400,3 +400,12 @@ cassette lands at `<dir>/<task-id>.json` (merged across episodes); point the
 task's `cassettes` at it (and at a shared world, if any) and rewrite its
 `expect` ids to the recorded account's. The tasks' prompts name the fixture
 world, so a recorded corpus is its own `tasks.json` beside its cassettes.
+
+**Replay limits, on purpose.** State follows writes by endpoint and
+occurrence (`after`), with the request body picking between answers recorded
+in the same state. Two *different* writes to one endpoint replayed in the
+opposite order to the recording get each other's answers (ids, echoed
+fields). The grade is unaffected — it reads the bodies the replay actually
+received — and a fully causal model is not worth it at fixture scale.
+Repeated query keys are single-valued in a cassette; no server under test
+sends them.

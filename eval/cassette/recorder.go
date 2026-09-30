@@ -51,9 +51,7 @@ func LoadProfile(path string) (*Profile, error) {
 		return nil, err
 	}
 	var p Profile
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&p); err != nil {
+	if err := DecodeStrict(data, &p); err != nil {
 		return nil, fmt.Errorf("profile %s: %w", path, err)
 	}
 	if err := p.Validate(); err != nil {
@@ -383,6 +381,15 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	scrubbed := r.scrubber.Bytes(respBody)
+	if json.Valid(respBody) && !json.Valid(scrubbed) {
+		// A redaction literal matched JSON structure rather than text (a
+		// bare number, a key). Serving or recording the result would be a
+		// corrupt answer; refuse the exchange and name the cause.
+		ex.Status = http.StatusBadGateway
+		r.appendLog(ex)
+		http.Error(w, `{"error":"recorder: a profile redaction broke this response's JSON; redact text, not structure"}`, http.StatusBadGateway)
+		return
+	}
 	// A 404 is not recorded: replayed, the same request stays a miss (and a
 	// wrong id), exactly as it was live.
 	if resp.StatusCode != http.StatusNotFound {
