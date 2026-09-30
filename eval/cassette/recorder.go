@@ -457,6 +457,12 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		refuse(http.StatusBadGateway, "the upstream origin survives scrubbing in an encoded form")
 		return
 	}
+	if placeholderAuthority.Match(scrubbed) {
+		// {{base}}.evil@host: the rewrite matched a prefix of a longer
+		// authority; replayed, the Player origin would become userinfo.
+		refuse(http.StatusBadGateway, "the upstream origin matched inside a longer authority")
+		return
+	}
 	if leaksPersonal(scrubbed) {
 		refuse(http.StatusBadGateway, "an email or avatar URL survives scrubbing in an encoded form")
 		return
@@ -580,11 +586,11 @@ func leaksPersonal(body []byte) bool {
 	if json.Unmarshal(body, &doc) != nil {
 		return false
 	}
-	var walk func(key string, v any) bool
-	walk = func(key string, v any) bool {
+	var walk func(under bool, v any) bool
+	walk = func(under bool, v any) bool {
 		switch t := v.(type) {
 		case string:
-			if strings.HasPrefix(key, "avatar") && t != "" && t != "https://example.com/avatar.png" {
+			if under && t != "" && t != "https://example.com/avatar.png" {
 				return true
 			}
 			for _, m := range emailRE.FindAllString(t, -1) {
@@ -594,20 +600,20 @@ func leaksPersonal(body []byte) bool {
 			}
 		case map[string]any:
 			for k, c := range t {
-				if walk(k, c) {
+				if walk(under || strings.HasPrefix(k, "avatar"), c) {
 					return true
 				}
 			}
 		case []any:
 			for _, c := range t {
-				if walk(key, c) {
+				if walk(under, c) {
 					return true
 				}
 			}
 		}
 		return false
 	}
-	return walk("", doc)
+	return walk(false, doc)
 }
 
 // defaultPort reports whether an explicit port is 443 in any spelling (0443
@@ -616,6 +622,11 @@ func defaultPort(p string) bool {
 	n, err := strconv.Atoi(p)
 	return err == nil && n == 443
 }
+
+// placeholderAuthority matches {{base}} running on into more authority
+// (a dot, a colon, an @, a letter) instead of ending at a path, query,
+// fragment, quote, or whitespace.
+var placeholderAuthority = regexp.MustCompile(`\{\{base\}\}[^/?#"\\\s]`)
 
 // hasDotSegment reports whether a path has a "." or ".." segment, or an
 // empty one (//): anything a router upstream might normalize into another
