@@ -172,6 +172,9 @@ func (c *Corpus) validate() error {
 			return fmt.Errorf("tasks %s and %s share a prompt", prev, t.ID)
 		}
 		seenPrompt[t.Prompt] = t.ID
+		if t.MaxTurns < 0 {
+			return fmt.Errorf("task %s: max_turns may not be negative", t.ID)
+		}
 		if len(t.Cassettes) == 0 {
 			return fmt.Errorf("task %s names no cassettes", t.ID)
 		}

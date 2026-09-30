@@ -646,3 +646,33 @@ func TestOnlyA2xxWriteLands(t *testing.T) {
 	status, _, _ := get(t, url+"/y")
 	assert.Equal(t, 404, status)
 }
+
+func TestPlayerRefusesNonJSONWriteBodies(t *testing.T) {
+	p := NewPlayer(&Cassette{Name: "f", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/f"}, Response: Response{Status: 204}}}})
+	url := p.Start()
+	defer p.Close()
+	assert.Equal(t, http.StatusUnsupportedMediaType, do(t, "POST", url+"/f", "a=1"))
+	assert.False(t, p.Log()[0].Matched)
+}
+
+func TestLaterLayersShadowWritesInValidation(t *testing.T) {
+	wait := &Cassette{Name: "w", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200}, After: []string{"POST /x"}}}}
+	base := &Cassette{Name: "b", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x"}, Response: Response{Status: 201}}}}
+	over := &Cassette{Name: "o", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x"}, Response: Response{Status: 422}}}}
+	assert.NoError(t, ValidateLayers(base, wait))
+	assert.Error(t, ValidateLayers(base, over, wait), "the later 422 shadows the earlier 201")
+}
+
+func TestRecorderRefusesRepeatedQueryKeys(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, `[]`) }))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+	status, _, _ := get(t, url+"/1/x.json?id=1&id=2")
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Len(t, rec.Faults(), 1)
+}

@@ -62,6 +62,7 @@ func TestPreflight(t *testing.T) {
 		"out is the corpus":           func(o *options) { o.out = "eval/testdata/multiturn/fake/tasks.json" },
 		"out is a cassette":           func(o *options) { o.out = "eval/testdata/multiturn/fake/cassettes/base.json" },
 		"out is a directory":          func(o *options) { o.out = "eval/testdata" },
+		"negative max turns":          func(o *options) { o.maxTurns = -1 },
 	}
 	for name, mutate := range cases {
 		o := base

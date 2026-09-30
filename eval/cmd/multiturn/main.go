@@ -157,6 +157,12 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 	fail := func(err error) (multiturn.Config, map[string]string, *multiturn.Baseline, error) {
 		return cfg, nil, nil, err
 	}
+	if o.maxTurns < 0 {
+		return fail(fmt.Errorf("--max-turns may not be negative"))
+	}
+	if o.parallel < 0 {
+		return fail(fmt.Errorf("--parallel may not be negative"))
+	}
 	if o.tasks == "" {
 		o.tasks = fmt.Sprintf("eval/testdata/multiturn/%s/tasks.json", o.server)
 	}
@@ -238,7 +244,11 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 			// An existing cassette there is merged into after the episode;
 			// one that cannot be loaded must fail now, before live writes.
 			if _, err := os.Stat(target); err == nil {
-				if _, err := cassette.Load(target); err != nil {
+				existing, err := cassette.Load(target)
+				if err != nil {
+					return fail(fmt.Errorf("existing recording target: %w", err))
+				}
+				if err := cassette.ValidateLayers(existing); err != nil {
 					return fail(fmt.Errorf("existing recording target: %w", err))
 				}
 			} else if !os.IsNotExist(err) {
