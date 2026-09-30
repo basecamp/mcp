@@ -143,3 +143,10 @@ func TestCLIAgentHonorsANonzeroExit(t *testing.T) {
 	assert.False(t, r.Pass)
 	assert.Contains(t, r.Error, "exit status 3")
 }
+
+func TestCLIAgentThatCannotStartKeepsTurnsNonnegative(t *testing.T) {
+	t.Setenv("EVAL_CLAUDE_BIN", "/nonexistent/claude")
+	r := runOne(t, "complete-todo", "bare", NewCLIAgent("haiku", ModelID("haiku"), []string{"/bin/true"}))
+	assert.NotEmpty(t, r.Error)
+	assert.Equal(t, 0, r.Turns)
+}

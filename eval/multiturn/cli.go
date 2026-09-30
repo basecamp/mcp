@@ -108,8 +108,15 @@ func (a *CLIAgent) Run(ctx context.Context, ep *Episode) error {
 	}
 
 	// The CLI reports turns only in aggregate, after the fact: calls made
-	// through the bridge record turn -1 (unknown), not a misleading 0.
+	// through the bridge record turn -1 (unknown), not a misleading 0. The
+	// episode's own count goes back to 0 unless the CLI reports one, so a
+	// failed run never drags a turns average negative.
 	ep.Turns = -1
+	defer func() {
+		if ep.Turns < 0 {
+			ep.Turns = 0
+		}
+	}()
 
 	runCtx, cancel := context.WithTimeout(ctx, a.timeout)
 	defer cancel()

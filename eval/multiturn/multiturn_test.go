@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -530,4 +531,24 @@ func TestSkillFileStaysBesideTheArmsFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(`{"server":"s","guide_tools":[],"skill_file":"../../.env","arms":[{"name":"skill","skill":true}]}`), 0o644))
 	_, err := LoadArms(path)
 	assert.ErrorContains(t, err, "beneath")
+}
+
+// truncatingAnthropic claims a longer body than it sends: a complete JSON
+// prefix, then the connection ends.
+func TestAPIAgentRejectsATruncatedBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := `{"content":[{"type":"text","text":"Done."}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`
+		w.Header().Set("Content-Length", fmt.Sprint(len(body)+100))
+		_, _ = io.WriteString(w, body)
+	}))
+	defer srv.Close()
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	t.Setenv("ANTHROPIC_BASE_URL", srv.URL)
+	agent, err := NewAPIAgent("haiku", ModelID("haiku"))
+	require.NoError(t, err)
+	agent.client.Timeout = 5 * time.Second
+	agent.backoff = time.Millisecond
+	r := runOne(t, "open-todos", "bare", agent)
+	assert.False(t, r.Pass)
+	assert.Contains(t, r.Error, "read response")
 }
