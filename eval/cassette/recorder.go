@@ -505,7 +505,9 @@ func (r *Recorder) leaksOrigin(body []byte) bool {
 	walk = func(v any) bool {
 		switch t := v.(type) {
 		case string:
-			return strings.Contains(t, host)
+			// Decoded, so \u0040 and friends are plain here: the origin
+			// itself, or {{base}}@ (the replay origin turned userinfo).
+			return strings.Contains(t, host) || strings.Contains(t, BasePlaceholder+"@")
 		case map[string]any:
 			for k, c := range t {
 				if strings.Contains(k, host) || walk(c) {
