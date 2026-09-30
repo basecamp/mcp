@@ -219,7 +219,16 @@ func (s *ArmSet) skill(ctx context.Context, session *mcp.ClientSession) (string,
 		}
 		return b.String(), nil
 	}
-	data, err := os.ReadFile(filepath.Join(s.dir, s.SkillFile))
+	path := filepath.Join(s.dir, s.SkillFile)
+	// Lexically local is not enough: a symlink beside the arms file could
+	// point anywhere, and the skill goes to the model.
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		dir, derr := filepath.EvalSymlinks(s.dir)
+		if rel, rerr := filepath.Rel(dir, real); derr != nil || rerr != nil || !filepath.IsLocal(rel) {
+			return "", fmt.Errorf("skill file %s resolves outside the arms file's directory", s.SkillFile)
+		}
+	}
+	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return "", fmt.Errorf("skill file %s not found beside the arms file: add the skill draft there, or set skill_resource once the server serves it (eval/README.md, multi-turn mode)", s.SkillFile)
 	}

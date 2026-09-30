@@ -509,6 +509,19 @@ func TestRecordThenReplay(t *testing.T) {
 	assert.ErrorContains(t, err, "one task")
 }
 
+func TestSkillFileSymlinkMayNotLeaveTheArmsDirectory(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "secret.env")
+	require.NoError(t, os.WriteFile(outside, []byte("TOKEN=x"), 0o644))
+	dir := t.TempDir()
+	require.NoError(t, os.Symlink(outside, filepath.Join(dir, "skill.md")))
+	path := filepath.Join(dir, "arms.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"server":"s","guide_tools":[],"skill_file":"skill.md","arms":[{"name":"skill","skill":true}]}`), 0o644))
+	a, err := LoadArms(path)
+	require.NoError(t, err)
+	_, err = a.skill(context.Background(), nil)
+	assert.ErrorContains(t, err, "resolves outside")
+}
+
 func TestSkillFileStaysBesideTheArmsFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "arms.json")

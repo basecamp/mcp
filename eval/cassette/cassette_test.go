@@ -2,6 +2,7 @@ package cassette
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -444,4 +445,41 @@ func TestRecorderKeepsEveryLinkField(t *testing.T) {
 	_, _, hdr := get(t, url+"/123/list.json")
 	assert.Contains(t, hdr.Get("Link"), `rel="next"`)
 	assert.Contains(t, rec.Cassette("x", "").Interactions[0].Response.Headers["Link"], `rel="next"`)
+}
+
+func TestRepeatedWritesAreDistinctStatesAndTheTokenIsScrubbed(t *testing.T) {
+	comments := 0
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			comments++
+			w.WriteHeader(201)
+			_, _ = io.WriteString(w, `{"echo":"`+strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")+`"}`)
+			return
+		}
+		_, _ = io.WriteString(w, fmt.Sprintf(`{"comments":%d}`, comments))
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "super-secret-token")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"123"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+	for i := 0; i < 2; i++ {
+		do(t, "POST", url+"/123/recordings/1/comments.json", `{}`)
+		get(t, url+"/123/recordings/1.json")
+	}
+	c := rec.Cassette("x", "")
+	data, _ := json.Marshal(c)
+	assert.NotContains(t, string(data), "super-secret-token")
+
+	p := NewPlayer(c)
+	purl := p.Start()
+	defer p.Close()
+	do(t, "POST", purl+"/123/recordings/1/comments.json", `{}`)
+	_, b1, _ := get(t, purl+"/123/recordings/1.json")
+	do(t, "POST", purl+"/123/recordings/1/comments.json", `{}`)
+	_, b2, _ := get(t, purl+"/123/recordings/1.json")
+	assert.JSONEq(t, `{"comments":1}`, b1)
+	assert.JSONEq(t, `{"comments":2}`, b2, "the second occurrence of a write is a state of its own")
 }

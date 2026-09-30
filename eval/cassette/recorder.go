@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -123,7 +122,7 @@ type Recorder struct {
 	mu           sync.Mutex
 	interactions []Interaction
 	log          []Exchange
-	landed       []string // writeKey of each write landed upstream so far, in order
+	landed       []string // writeKey of each write landed upstream so far, one per occurrence
 	base         string
 	srv          *httptest.Server
 }
@@ -154,8 +153,18 @@ func NewRecorder(p *Profile) (*Recorder, error) {
 		// every episode and run recorded under one profile (merged cassettes
 		// agree on who person-… is) without being reversible by anyone who
 		// lacks the token.
-		scrubber: NewScrubber(p.Upstream, p.Redact, token),
+		scrubber: NewScrubber(p.Upstream, withToken(p.Redact, token), token),
 	}, nil
+}
+
+// withToken adds the credential itself to the redactions, so an upstream
+// that echoes it (a body, a Location, a Link) never puts it in a cassette.
+func withToken(redact map[string]string, token string) map[string]string {
+	out := map[string]string{token: "[redacted-token]"}
+	for k, v := range redact {
+		out[k] = v
+	}
+	return out
 }
 
 // Start serves the recorder on loopback and returns its URL.
@@ -380,11 +389,10 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		r.record(req, body, resp.StatusCode, headers, scrubbed)
 	}
 	if req.Method != http.MethodGet && req.Method != http.MethodHead && resp.StatusCode < 400 {
-		k := writeKey(req.Method, req.URL.Path)
+		// Every occurrence counts: two comments posted to one recording are
+		// two writes, and a read after the second is a state of its own.
 		r.mu.Lock()
-		if !slices.Contains(r.landed, k) {
-			r.landed = append(r.landed, k)
-		}
+		r.landed = append(r.landed, writeKey(req.Method, req.URL.Path))
 		r.mu.Unlock()
 	}
 	ex.Status, ex.Matched = resp.StatusCode, resp.StatusCode != http.StatusNotFound

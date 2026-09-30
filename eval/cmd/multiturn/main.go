@@ -245,11 +245,14 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 			}
 		}
 	}
-	f, err := os.OpenFile(o.out, os.O_WRONLY|os.O_CREATE, 0o644)
+	// Results are written to a temp file beside --out and renamed, so that
+	// is what must work: probe the same way.
+	f, err := os.CreateTemp(filepath.Dir(o.out), ".multiturn-probe-*")
 	if err != nil {
-		return fail(fmt.Errorf("output %s is not writable: %w", o.out, err))
+		return fail(fmt.Errorf("output directory for %s is not writable: %w", o.out, err))
 	}
 	_ = f.Close()
+	_ = os.Remove(f.Name())
 
 	var base *multiturn.Baseline
 	if o.baseline != "" {
