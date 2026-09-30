@@ -121,6 +121,7 @@ type Recorder struct {
 	interactions []Interaction
 	log          []Exchange
 	landed       []string // writeKey of each write landed upstream so far, one per occurrence
+	faults       []string
 	base         string
 	srv          *httptest.Server
 }
@@ -290,29 +291,33 @@ func (r *Recorder) allowed(path string) bool {
 // ServeHTTP forwards one request upstream with the profile token, records the
 // scrubbed exchange, and answers the client with the live response (upstream
 // origin rewritten to the recorder so follow-up requests stay proxied).
+//
+// Every anomaly — a refusal the recorder makes, or an upstream answer that is
+// not a clean recording (a 5xx, a 429) — is a fault. A recording with any
+// fault is incomplete: Faults reports them and the caller does not save it.
+// One rule instead of a guard per failure mode: rerun on a reseeded account.
 func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	body, readErr := io.ReadAll(req.Body)
 	ex := Exchange{Method: req.Method, Path: req.URL.Path, Query: canonicalQuery(r.scrubQuery(req.URL.Query())), Body: compactJSON(r.scrubber.Bytes(body))}
-	if readErr != nil {
-		// A request cut off mid-body must not reach the live account as if
-		// it were whole.
-		ex.Status = http.StatusBadRequest
+	refuse := func(status int, why string) {
+		ex.Status = status
 		r.appendLog(ex)
-		http.Error(w, `{"error":"recorder: request body truncated"}`, http.StatusBadRequest)
+		r.fault(req, why)
+		msg, _ := json.Marshal(map[string]string{"error": "recorder: " + why})
+		http.Error(w, string(msg), status)
+	}
+	if readErr != nil {
+		// A request cut off mid-body must not reach the live account.
+		refuse(http.StatusBadRequest, "request body truncated")
 		return
 	}
 	if !r.allowed(req.URL.Path) {
-		ex.Status = http.StatusForbidden
-		r.appendLog(ex)
-		http.Error(w, `{"error":"recorder: account not in the test profile"}`, http.StatusForbidden)
+		refuse(http.StatusForbidden, "account not in the test profile")
 		return
 	}
 	up, err := http.NewRequestWithContext(req.Context(), req.Method, strings.TrimSuffix(r.profile.Upstream, "/")+req.URL.RequestURI(), bytes.NewReader(body))
 	if err != nil {
-		ex.Status = http.StatusBadGateway
-		r.appendLog(ex)
-		// The error text can carry the live URL; scrub it like any answer.
-		http.Error(w, r.scrubber.String(err.Error()), http.StatusBadGateway)
+		refuse(http.StatusBadGateway, r.scrubber.String(err.Error())) // may carry the live URL
 		return
 	}
 	// Only the headers a JSON API call needs. The inbound Authorization (the
@@ -325,19 +330,13 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	resp, err := r.client.Do(up)
 	if err != nil {
-		ex.Status = http.StatusBadGateway
-		r.appendLog(ex)
-		// The error text can carry the live URL; scrub it like any answer.
-		http.Error(w, r.scrubber.String(err.Error()), http.StatusBadGateway)
+		refuse(http.StatusBadGateway, r.scrubber.String(err.Error()))
 		return
 	}
 	defer resp.Body.Close()
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		// A body cut off mid-read must not become a recorded answer.
-		ex.Status = http.StatusBadGateway
-		r.appendLog(ex)
-		http.Error(w, r.scrubber.String("recorder: upstream body truncated: "+err.Error()), http.StatusBadGateway)
+		refuse(http.StatusBadGateway, "upstream body truncated")
 		return
 	}
 
@@ -345,29 +344,20 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	base := r.base
 	r.mu.Unlock()
 
-	// A redirect off the upstream origin would send the server under test
-	// somewhere the recorder cannot see or scrub (a CDN, a signed URL); it is
-	// refused rather than handed on or recorded.
-	if loc := resp.Header.Get("Location"); loc != "" {
-		// Any Location naming a host — absolute or network-path (//host/…) —
-		// must name the upstream's own origin.
-		if u, err := url.Parse(loc); err != nil || (u.Host != "" && (u.Scheme != "https" || "https://"+u.Host != strings.TrimSuffix(r.profile.Upstream, "/"))) {
-			ex.Status = http.StatusBadGateway
-			r.appendLog(ex)
-			http.Error(w, `{"error":"recorder: upstream redirected off its origin"}`, http.StatusBadGateway)
-			return
-		}
+	// Any URL the upstream hands back for the server to follow — a redirect,
+	// a pagination link — must stay on the upstream origin: anywhere else (a
+	// CDN, a signed URL) the recorder can neither see nor scrub.
+	if bad := r.offOrigin(resp.Header); bad != "" {
+		refuse(http.StatusBadGateway, bad+" points off the upstream origin")
+		return
 	}
 
 	// An account-less answer (an identity document) may list every account
-	// the token reaches. A token that reaches beyond the profile is refused
-	// outright rather than recorded: a seeded test credential belongs to the
-	// test accounts only.
+	// the token reaches. A token that reaches beyond the profile is refused:
+	// a seeded test credential belongs to the test accounts only.
 	if !r.pathHasAccount(req.URL.Path) {
 		if foreign := foreignAccounts(respBody, r.profile.AccountIDs); len(foreign) > 0 {
-			ex.Status = http.StatusForbidden
-			r.appendLog(ex)
-			http.Error(w, fmt.Sprintf(`{"error":"recorder: the token reaches %d account(s) outside the profile; record with a credential scoped to the test account"}`, len(foreign)), http.StatusForbidden)
+			refuse(http.StatusForbidden, fmt.Sprintf("the token reaches %d account(s) outside the profile; record with a credential scoped to the test account", len(foreign)))
 			return
 		}
 	}
@@ -382,13 +372,13 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	scrubbed := r.scrubber.Bytes(respBody)
 	if json.Valid(respBody) && !json.Valid(scrubbed) {
-		// A redaction literal matched JSON structure rather than text (a
-		// bare number, a key). Serving or recording the result would be a
-		// corrupt answer; refuse the exchange and name the cause.
-		ex.Status = http.StatusBadGateway
-		r.appendLog(ex)
-		http.Error(w, `{"error":"recorder: a profile redaction broke this response's JSON; redact text, not structure"}`, http.StatusBadGateway)
+		refuse(http.StatusBadGateway, "a profile redaction broke this response's JSON; redact text, not structure")
 		return
+	}
+	if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
+		// Transient: the server may retry and succeed, but a recording that
+		// kept this answer would replay the failure forever.
+		r.fault(req, fmt.Sprintf("upstream answered %d", resp.StatusCode))
 	}
 	// A 404 is not recorded: replayed, the same request stays a miss (and a
 	// wrong id), exactly as it was live.
@@ -414,6 +404,44 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(bytes.ReplaceAll(scrubbed, []byte(BasePlaceholder), []byte(base)))
+}
+
+// linkTarget pulls each <URI> out of a Link header value.
+var linkTarget = regexp.MustCompile(`<([^>]*)>`)
+
+// offOrigin names the first followable URL (Location, or a Link target) that
+// names a host other than the upstream's, or "" when all stay on it.
+func (r *Recorder) offOrigin(h http.Header) string {
+	origin := strings.TrimSuffix(r.profile.Upstream, "/")
+	bad := func(raw string) bool {
+		u, err := url.Parse(strings.TrimSpace(raw))
+		return err != nil || (u.Host != "" && (u.Scheme != "https" || "https://"+u.Host != origin))
+	}
+	if loc := h.Get("Location"); loc != "" && bad(loc) {
+		return "a redirect"
+	}
+	for _, v := range h.Values("Link") {
+		for _, m := range linkTarget.FindAllStringSubmatch(v, -1) {
+			if bad(m[1]) {
+				return "a Link target"
+			}
+		}
+	}
+	return ""
+}
+
+func (r *Recorder) fault(req *http.Request, why string) {
+	r.mu.Lock()
+	r.faults = append(r.faults, req.Method+" "+req.URL.Path+": "+why)
+	r.mu.Unlock()
+}
+
+// Faults returns every anomaly seen so far. A recording with any is
+// incomplete and must not be saved.
+func (r *Recorder) Faults() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.faults...)
 }
 
 func (r *Recorder) appendLog(ex Exchange) {

@@ -269,6 +269,11 @@ func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task
 		// would save (or merge in) a partial cassette.
 		if runErr != nil {
 			r.Error, r.Pass = recordErrPrefix+"episode errored, nothing saved: "+runErr.Error(), false
+		} else if faults := rec.Faults(); len(faults) > 0 {
+			// The agent may have recovered, but the recording did not: an
+			// answer the recorder refused or a transient upstream failure
+			// would replay wrong. Reseed and record again.
+			r.Error, r.Pass = recordErrPrefix+fmt.Sprintf("recording incomplete, nothing saved (%d fault(s), first: %s)", len(faults), faults[0]), false
 		} else if err := saveRecording(cfg, task, rec); err != nil {
 			r.Error, r.Pass = recordErrPrefix+err.Error(), false
 		}
