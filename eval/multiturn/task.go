@@ -208,10 +208,16 @@ func (c *Corpus) validate() error {
 // creates them.)
 func (c *Corpus) CheckCassettes() error {
 	for _, t := range c.Tasks {
+		var layers []*cassette.Cassette
 		for _, name := range t.Cassettes {
-			if _, err := cassette.Load(c.CassettePath(name)); err != nil {
+			cs, err := cassette.Load(c.CassettePath(name))
+			if err != nil {
 				return fmt.Errorf("task %s: %w", t.ID, err)
 			}
+			layers = append(layers, cs)
+		}
+		if err := cassette.ValidateLayers(layers...); err != nil {
+			return fmt.Errorf("task %s: %w", t.ID, err)
 		}
 	}
 	return nil

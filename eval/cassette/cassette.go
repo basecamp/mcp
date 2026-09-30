@@ -20,9 +20,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -153,6 +155,53 @@ func (c *Cassette) Validate() error {
 		}
 		if len(in.Response.Body) > 0 && in.Response.BodyText != "" {
 			return fmt.Errorf("interaction #%d (%s %s): both body and body_text set", i+1, r.Method, r.Path)
+		}
+		for k, v := range in.Response.Headers {
+			// The recorder's allowlist, for hand-authored cassettes too:
+			// framing headers (Content-Length) are the transport's to set.
+			if !slices.Contains(keptResponseHeaders, http.CanonicalHeaderKey(k)) {
+				return fmt.Errorf("interaction #%d (%s %s): header %q is not one a cassette may carry (%s)", i+1, r.Method, r.Path, k, strings.Join(keptResponseHeaders, ", "))
+			}
+			// A followable URL must stay on the Player: relative, or {{base}}.
+			if h := http.CanonicalHeaderKey(k); h == "Location" || h == "Link" {
+				targets := []string{v}
+				if h == "Link" {
+					targets = nil
+					for _, m := range linkTarget.FindAllStringSubmatch(v, -1) {
+						targets = append(targets, m[1])
+					}
+				}
+				for _, t := range targets {
+					if u, err := url.Parse(strings.ReplaceAll(strings.TrimSpace(t), BasePlaceholder, "")); err != nil || u.Host != "" || u.Scheme != "" {
+						return fmt.Errorf("interaction #%d (%s %s): %s target %q leaves the Player (use a relative path or %s)", i+1, r.Method, r.Path, h, t, BasePlaceholder)
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// ValidateLayers checks what a single cassette cannot: that every state a
+// layered set of cassettes names in after is reachable — some layer answers
+// that write with a success — so a replay never waits on a write it can't land.
+func ValidateLayers(cassettes ...*Cassette) error {
+	answers := map[string]bool{}
+	for _, c := range cassettes {
+		for _, in := range c.Interactions {
+			if in.Request.Method != "GET" && in.Request.Method != "HEAD" && in.Response.Status < 400 {
+				answers[writeKey(in.Request.Method, in.Request.Path)] = true
+			}
+		}
+	}
+	for _, c := range cassettes {
+		for _, in := range c.Interactions {
+			for _, w := range in.After {
+				m, path, _ := strings.Cut(w, " ")
+				if !answers[writeKey(m, path)] {
+					return fmt.Errorf("cassette %s: %s %s waits on %q, which no layer answers with a success", c.Name, in.Request.Method, in.Request.Path, w)
+				}
+			}
 		}
 	}
 	return nil
