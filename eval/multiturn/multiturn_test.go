@@ -698,3 +698,15 @@ func TestSummaryExcludesErroredEpisodes(t *testing.T) {
 	assert.Contains(t, out, "1/1      100%   1     4.0")
 	assert.Contains(t, out, "$0.5000")
 }
+
+func TestStartupReadsAreNotAnswerEvidence(t *testing.T) {
+	startup := cassette.Exchange{Method: "GET", Path: "/authorization.json", Status: 200, Matched: true}
+	ep := &Episode{
+		Task:         Task{ID: "t", ReadOnly: true, Expect: Expect{Answer: []string{"(?i)launch"}}},
+		Answer:       "Launch notes.",
+		backend:      logBackend{startup},
+		attributedAt: map[int]bool{},
+	}
+	r := grade(ep, func(string) bool { return false })
+	assert.False(t, r.Pass, "the server's own startup read is not the agent consulting the account")
+}
