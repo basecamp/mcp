@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -177,14 +178,17 @@ func preflightArms(ctx context.Context, cfg Config) error {
 		for _, arm := range cfg.Arms.Arms {
 			p := cassette.NewPlayer(cs...)
 			url := p.Start()
-			session, cleanup, err := cfg.Launch(ctx, arm, url)
+			lctx, cancel := context.WithTimeout(ctx, launchTimeout)
+			session, cleanup, err := cfg.Launch(lctx, arm, url)
 			if err != nil {
+				cancel()
 				p.Close()
 				return fmt.Errorf("arm %q (cassettes %v): launch: %w", arm.Name, task.Cassettes, err)
 			}
-			_, err = cfg.Arms.Realize(ctx, session, arm)
+			_, err = cfg.Arms.Realize(lctx, session, arm)
 			cleanup()
 			p.Close()
+			cancel()
 			if err != nil {
 				return fmt.Errorf("cassettes %v: %w", task.Cassettes, err)
 			}
@@ -237,7 +241,17 @@ type backend interface {
 	Close()
 }
 
+// episodeTimeout bounds one episode end to end — launch, tools/list, every
+// call, the agent — so a server that stalls errors the episode instead of
+// hanging the run. Generous: a frontier model's episode takes minutes.
+var episodeTimeout = 30 * time.Minute
+
+// launchTimeout bounds a preflight launch and surface read.
+var launchTimeout = 2 * time.Minute
+
 func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task) Record {
+	ctx, cancel := context.WithTimeout(ctx, episodeTimeout)
+	defer cancel()
 	fail := func(err error) Record {
 		r := Record{Model: agent.Label(), ModelID: agent.ModelID(), Arm: arm.Name, TaskID: task.ID, TaskDigest: task.Digest(), Error: err.Error()}
 		if cfg.Record != nil {

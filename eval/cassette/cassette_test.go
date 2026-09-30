@@ -834,3 +834,23 @@ func TestScrubberRewritesTheOriginCaseInsensitively(t *testing.T) {
 	assert.NotContains(t, strings.ToLower(out), "api.example")
 	assert.Contains(t, out, "{{base}}/p")
 }
+
+func TestEncodedRedactionsDefaultPortsAndBodyTieBreaks(t *testing.T) {
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	r, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://api.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN", Redact: map[string]string{"Alice & Bob": "Fixture Pair"}})
+	require.NoError(t, err)
+	assert.True(t, r.leaksRedacted([]byte(`{"name":"Alice \u0026 Bob"}`)), "an escaped redaction literal")
+	h := http.Header{}
+	h.Set("Location", "https://api.example:443/next")
+	assert.Empty(t, r.offOrigin(h), "the default port names the same origin")
+	assert.Contains(t, NewScrubber("https://api.example", nil, "k").String(`"https://api.example:443/x"`), `"{{base}}/x"`)
+
+	p := NewPlayer(&Cassette{Name: "q", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/x", Query: map[string]string{"status": "open"}, Body: json.RawMessage(`{"a":1}`)}, Response: Response{Status: 201}},
+		{Request: Request{Method: "POST", Path: "/x", Query: map[string]string{"assignee": "me"}, Body: json.RawMessage(`{"b":2}`)}, Response: Response{Status: 202}},
+	}})
+	url := p.Start()
+	defer p.Close()
+	assert.Equal(t, 202, do(t, "POST", url+"/x?status=open&assignee=me", `{"b":2}`), "the body resolves what the query could not")
+	assert.Equal(t, http.StatusUnsupportedMediaType, do(t, "POST", url+"/x?status=open", "  "), "whitespace-only is not JSON")
+}

@@ -206,7 +206,7 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if len(bytes.TrimSpace(body)) > 0 && !json.Valid(body) {
+	if len(body) > 0 && !json.Valid(body) { // whitespace-only included: not JSON
 		// The recorder refuses non-JSON bodies, so no cassette answers one
 		// truthfully: unmatched, like any request nobody recorded.
 		resp := Response{Status: http.StatusUnsupportedMediaType}
@@ -314,6 +314,10 @@ func (p *Player) match(r *http.Request, body string) int {
 			// Only a candidate still tied after layer and state precedence
 			// makes the choice ambiguous.
 			if e.layer != b.layer || len(e.in.After) != len(b.in.After) {
+				continue
+			}
+			// Nor one the body tie-break already ruled out.
+			if canonicalJSON(b.in.Request.Body) == body && canonicalJSON(req.Body) != body {
 				continue
 			}
 			if len(req.Query) == len(p.entries[best].in.Request.Query) && canonicalQuery(toValues(req.Query)) != bq {

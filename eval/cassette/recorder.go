@@ -350,7 +350,7 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-	if len(bytes.TrimSpace(body)) > 0 && !json.Valid(body) {
+	if len(body) > 0 && !json.Valid(body) { // whitespace-only included: not JSON
 		// A cassette keys writes by their JSON body; a form or multipart
 		// body could not be told apart from its retry on replay.
 		refuse(http.StatusUnsupportedMediaType, "non-JSON request body cannot be recorded")
@@ -473,6 +473,10 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		refuse(http.StatusBadGateway, "the upstream origin matched inside a longer authority")
 		return
 	}
+	if r.leaksRedacted(scrubbed) {
+		refuse(http.StatusBadGateway, "a profile redaction survives scrubbing in an encoded form")
+		return
+	}
 	if leaksPersonal(scrubbed) {
 		refuse(http.StatusBadGateway, "an email or avatar URL survives scrubbing in an encoded form")
 		return
@@ -529,7 +533,17 @@ func (r *Recorder) offOrigin(h http.Header) string {
 	origin := strings.TrimSuffix(r.profile.Upstream, "/")
 	bad := func(raw string) bool {
 		u, err := url.Parse(strings.TrimSpace(raw))
-		return err != nil || u.User != nil || (u.Host != "" && (u.Scheme != "https" || "https://"+strings.ToLower(u.Host) != origin))
+		if err != nil || u.User != nil {
+			return true
+		}
+		if u.Host == "" {
+			return false
+		}
+		host := strings.ToLower(u.Host)
+		if u.Port() == "443" {
+			host = strings.ToLower(u.Hostname()) // the default port names the same origin
+		}
+		return u.Scheme != "https" || "https://"+host != origin
 	}
 	if loc := h.Get("Location"); loc != "" && bad(loc) {
 		return "a redirect"
@@ -572,6 +586,43 @@ func (r *Recorder) leaksOrigin(body []byte) bool {
 		case map[string]any:
 			for k, c := range t {
 				if strings.Contains(strings.ToLower(k), host) || walk(c) {
+					return true
+				}
+			}
+		case []any:
+			for _, c := range t {
+				if walk(c) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return walk(doc)
+}
+
+// leaksRedacted reports whether any profile redaction literal survives, once
+// the JSON is decoded (Alice \u0026 Bob is Alice & Bob), in a scrubbed body.
+func (r *Recorder) leaksRedacted(body []byte) bool {
+	if len(r.profile.Redact) == 0 {
+		return false
+	}
+	var doc any
+	if json.Unmarshal(body, &doc) != nil {
+		return false
+	}
+	var walk func(any) bool
+	walk = func(v any) bool {
+		switch t := v.(type) {
+		case string:
+			for lit := range r.profile.Redact {
+				if strings.Contains(t, lit) {
+					return true
+				}
+			}
+		case map[string]any:
+			for k, c := range t {
+				if walk(k) || walk(c) {
 					return true
 				}
 			}

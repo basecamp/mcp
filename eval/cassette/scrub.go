@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -65,7 +66,16 @@ func (s *Scrubber) Bytes(in []byte) []byte {
 	if s.upstream != "" {
 		// Case-insensitively (hosts are), in the plain spelling and with the
 		// slashes a JSON encoder may escape.
-		for _, form := range []string{s.upstream, strings.ReplaceAll(s.upstream, "/", `\/`)} {
+		forms := []string{s.upstream}
+		if u, err := url.Parse(s.upstream); err == nil && u.Port() == "" {
+			forms = append(forms, s.upstream+":443") // the same origin, default port spelled out
+		}
+		for _, f := range append([]string(nil), forms...) {
+			forms = append(forms, strings.ReplaceAll(f, "/", `\/`))
+		}
+		// Longest first, so the :443 spelling is not half-rewritten.
+		sort.Slice(forms, func(i, j int) bool { return len(forms[i]) > len(forms[j]) })
+		for _, form := range forms {
 			out = regexp.MustCompile(`(?i)`+regexp.QuoteMeta(form)).ReplaceAll(out, []byte(BasePlaceholder))
 		}
 	}
