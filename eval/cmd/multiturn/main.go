@@ -81,6 +81,12 @@ func run() error {
 	flag.StringVar(&o.recordDir, "record-dir", "", "directory recorded cassettes are written to (with --record-profile)")
 	flag.BoolVar(&o.quiet, "quiet", false, "suppress per-episode progress lines")
 	flag.Parse()
+	// flag stops at the first non-flag argument, silently dropping every
+	// flag after it — a stray word could turn --only/--arms into a full,
+	// paid matrix.
+	if flag.NArg() > 0 {
+		return fmt.Errorf("unexpected argument %q (flags after it would be ignored)", flag.Arg(0))
+	}
 
 	ctx := context.Background()
 	cfg, plan, base, err := preflight(&o)
@@ -485,15 +491,16 @@ func splitCSV(s string) []string {
 // sameDir reports whether two directories are one, symlinks resolved, so a
 // symlinked alias of --record-dir is caught too.
 func sameDir(a, b string) bool {
-	ra, err := filepath.EvalSymlinks(a)
-	if err != nil {
-		return filepath.Clean(a) == filepath.Clean(b)
+	resolve := func(p string) string {
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			p = r
+		}
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
+		return filepath.Clean(p)
 	}
-	rb, err := filepath.EvalSymlinks(b)
-	if err != nil {
-		return false
-	}
-	return ra == rb
+	return resolve(a) == resolve(b)
 }
 
 func sameFile(a, b string) bool {

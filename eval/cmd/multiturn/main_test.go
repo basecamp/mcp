@@ -145,5 +145,9 @@ func TestRecordDirAliasIsCaught(t *testing.T) {
 	alias := filepath.Join(t.TempDir(), "alias")
 	require.NoError(t, os.Symlink(real, alias))
 	assert.True(t, sameDir(alias, real))
+	wd, _ := os.Getwd()
+	rel, err := filepath.Rel(wd, real)
+	require.NoError(t, err)
+	assert.True(t, sameDir(rel, real), "relative and absolute spellings of one directory")
 	assert.False(t, sameDir(t.TempDir(), real))
 }

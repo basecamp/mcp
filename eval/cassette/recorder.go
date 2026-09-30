@@ -312,6 +312,14 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		msg, _ := json.Marshal(map[string]string{"error": "recorder: " + why})
 		http.Error(w, string(msg), status)
 	}
+	switch req.Method {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+	default:
+		// A cassette cannot replay it, so it must not reach the live
+		// account or the recording.
+		refuse(http.StatusMethodNotAllowed, "method "+req.Method+" cannot be recorded")
+		return
+	}
 	if readErr != nil {
 		// A request cut off mid-body must not reach the live account.
 		refuse(http.StatusBadRequest, "request body truncated")

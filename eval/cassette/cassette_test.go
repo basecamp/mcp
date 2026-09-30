@@ -114,13 +114,14 @@ func TestLoadValidates(t *testing.T) {
 		return path
 	}
 	for name, body := range map[string]string{
-		"noname.json":   `{"interactions":[]}`,
-		"method.json":   `{"name":"x","interactions":[{"request":{"method":"TRACE","path":"/a"},"response":{"status":200}}]}`,
-		"query.json":    `{"name":"x","interactions":[{"request":{"method":"GET","path":"/a?b=1"},"response":{"status":200}}]}`,
-		"status.json":   `{"name":"x","interactions":[{"request":{"method":"GET","path":"/a"},"response":{"status":0}}]}`,
-		"unknown.json":  `{"name":"x","interactions":[],"extra":1}`,
-		"trailing.json": `{"name":"x","interactions":[]} {"name":"y"}`,
-		"bothbody.json": `{"name":"x","interactions":[{"request":{"method":"GET","path":"/a"},"response":{"status":200,"body":{},"body_text":"x"}}]}`,
+		"noname.json":    `{"interactions":[]}`,
+		"method.json":    `{"name":"x","interactions":[{"request":{"method":"TRACE","path":"/a"},"response":{"status":200}}]}`,
+		"query.json":     `{"name":"x","interactions":[{"request":{"method":"GET","path":"/a?b=1"},"response":{"status":200}}]}`,
+		"status.json":    `{"name":"x","interactions":[{"request":{"method":"GET","path":"/a"},"response":{"status":0}}]}`,
+		"status1xx.json": `{"name":"x","interactions":[{"request":{"method":"GET","path":"/a"},"response":{"status":103}}]}`,
+		"unknown.json":   `{"name":"x","interactions":[],"extra":1}`,
+		"trailing.json":  `{"name":"x","interactions":[]} {"name":"y"}`,
+		"bothbody.json":  `{"name":"x","interactions":[{"request":{"method":"GET","path":"/a"},"response":{"status":200,"body":{},"body_text":"x"}}]}`,
 	} {
 		_, err := Load(write(name, body))
 		assert.Error(t, err, name)
@@ -281,6 +282,7 @@ func TestRecorderRedirectsQueriesAndRepeatedReads(t *testing.T) {
 	_ = resp.Body.Close()
 	assert.Equal(t, http.StatusFound, resp.StatusCode)
 	assert.Equal(t, 403, do(t, "GET", url+"/999/secret.json", ""))
+	assert.Equal(t, http.StatusMethodNotAllowed, do(t, "OPTIONS", url+"/123/thing.json", ""), "a method no cassette can replay")
 	resp, err = noFollow.Get(url + "/123/offsite")
 	require.NoError(t, err)
 	_ = resp.Body.Close()
