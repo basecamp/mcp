@@ -168,6 +168,18 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	for _, vs := range r.URL.Query() {
+		if len(vs) > 1 {
+			// Cassette queries are single-valued; the recorder refuses
+			// such traffic, so no answer here would be the real one.
+			ex.Status = http.StatusBadRequest
+			p.mu.Lock()
+			p.log = append(p.log, ex)
+			p.mu.Unlock()
+			http.Error(w, `{"error":"repeated query key"}`, http.StatusBadRequest)
+			return
+		}
+	}
 	if len(bytes.TrimSpace(body)) > 0 && !json.Valid(body) {
 		// The recorder refuses non-JSON bodies, so no cassette answers one
 		// truthfully: unmatched, like any request nobody recorded.

@@ -110,6 +110,12 @@ func TestPreflightRecording(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, cfg.Record)
 
+	// --out among the recording targets, in any case spelling of .json.
+	o2 := o
+	o2.out = filepath.Join(dir, "results.JSON")
+	_, _, _, err = preflight(&o2)
+	assert.ErrorContains(t, err, "among the recorded cassettes")
+
 	// A target that cannot even be stat'ed (a symlink loop) fails too.
 	loop := filepath.Join(dir, "add-todo.json")
 	require.NoError(t, os.Symlink(loop, loop))

@@ -412,6 +412,10 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		refuse(http.StatusBadGateway, "a response URL puts userinfo after the upstream origin")
 		return
 	}
+	if r.leaksOrigin(scrubbed) {
+		refuse(http.StatusBadGateway, "the upstream origin survives scrubbing in an encoded form")
+		return
+	}
 	if json.Valid(respBody) && !json.Valid(scrubbed) {
 		refuse(http.StatusBadGateway, "a profile redaction broke this response's JSON; redact text, not structure")
 		return
@@ -459,7 +463,7 @@ func (r *Recorder) offOrigin(h http.Header) string {
 	origin := strings.TrimSuffix(r.profile.Upstream, "/")
 	bad := func(raw string) bool {
 		u, err := url.Parse(strings.TrimSpace(raw))
-		return err != nil || (u.Host != "" && (u.Scheme != "https" || "https://"+u.Host != origin))
+		return err != nil || u.User != nil || (u.Host != "" && (u.Scheme != "https" || "https://"+u.Host != origin))
 	}
 	if loc := h.Get("Location"); loc != "" && bad(loc) {
 		return "a redirect"
@@ -478,6 +482,38 @@ func (r *Recorder) fault(req *http.Request, why string) {
 	r.mu.Lock()
 	r.faults = append(r.faults, req.Method+" "+req.URL.Path+": "+why)
 	r.mu.Unlock()
+}
+
+// leaksOrigin reports whether the live upstream origin (or host) survives
+// in a scrubbed JSON body in any encoding — \u002f escapes and the like are
+// decoded here, so a spelling the byte-level rewrite missed is caught.
+func (r *Recorder) leaksOrigin(body []byte) bool {
+	var doc any
+	if json.Unmarshal(body, &doc) != nil {
+		return false
+	}
+	host := strings.TrimPrefix(strings.TrimSuffix(r.profile.Upstream, "/"), "https://")
+	var walk func(any) bool
+	walk = func(v any) bool {
+		switch t := v.(type) {
+		case string:
+			return strings.Contains(t, host)
+		case map[string]any:
+			for k, c := range t {
+				if strings.Contains(k, host) || walk(c) {
+					return true
+				}
+			}
+		case []any:
+			for _, c := range t {
+				if walk(c) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return walk(doc)
 }
 
 // Faults returns every anomaly seen so far. A recording with any is

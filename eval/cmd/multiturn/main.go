@@ -261,7 +261,7 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 			}
 		}
 	}
-	if o.recordDir != "" && sameDir(filepath.Dir(o.out), o.recordDir) && strings.HasSuffix(o.out, ".json") {
+	if o.recordDir != "" && sameDir(filepath.Dir(o.out), o.recordDir) && strings.EqualFold(filepath.Ext(o.out), ".json") {
 		return fail(fmt.Errorf("--out %s would land among the recorded cassettes in %s", o.out, o.recordDir))
 	}
 	for _, t := range corpus.Tasks {

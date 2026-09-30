@@ -236,7 +236,9 @@ func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task
 	if err != nil {
 		return fail(fmt.Errorf("launch: %w", err))
 	}
-	defer cleanup()
+	var once sync.Once
+	stop := func() { once.Do(cleanup) }
+	defer stop()
 
 	surf, err := cfg.Arms.Realize(ctx, session, arm)
 	if err != nil {
@@ -257,6 +259,10 @@ func runEpisode(ctx context.Context, cfg Config, agent Agent, arm Arm, task Task
 	}
 	ep := NewEpisode(task, surf, SystemPrompt(prompt, cfg.Corpus.Today), turns, session, be)
 	runErr := agent.Run(ctx, ep)
+	// Stop the server before reading the backend's final state: a request it
+	// makes after its last answer, or while shutting down, belongs to the
+	// episode too. The Player or recorder stays up until return.
+	stop()
 
 	r := grade(ep, cfg.Arms.isGuideTool)
 	r.Model, r.ModelID, r.Arm = agent.Label(), agent.ModelID(), arm.Name

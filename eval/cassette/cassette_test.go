@@ -692,3 +692,44 @@ func TestOriginUserinfoIsRefused(t *testing.T) {
 	assert.Empty(t, foreignAccounts([]byte(`{"accounts":[{"id":9007199254740992}]}`), []string{"9007199254740992"}))
 	assert.Equal(t, []string{"9007199254740993"}, foreignAccounts([]byte(`{"accounts":[{"id":9007199254740993}]}`), []string{"9007199254740992"}), "no float rounding")
 }
+
+func TestRecorderFaultsOnEncodedOriginsAndUserinfoRedirects(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		switch r.URL.Path {
+		case "/1/escaped.json":
+			_, _ = io.WriteString(w, `{"url":"https:\u002f\u002f`+host+`/1/x"}`)
+		case "/1/userinfo":
+			w.Header().Set("Location", "https://user@"+host+"/1/x")
+			w.WriteHeader(302)
+		}
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+	status, _, _ := get(t, url+"/1/escaped.json")
+	assert.Equal(t, http.StatusBadGateway, status)
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := noFollow.Get(url + "/1/userinfo")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
+	assert.Len(t, rec.Faults(), 2)
+	assert.Empty(t, rec.Cassette("x", "").Interactions)
+}
+
+func TestPlayerRefusesRepeatedQueryKeysAndLayersShadowAcrossBodies(t *testing.T) {
+	p := NewPlayer(&Cassette{Name: "q", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x", Query: map[string]string{"id": "1"}}, Response: Response{Status: 204}}}})
+	url := p.Start()
+	defer p.Close()
+	assert.Equal(t, 400, do(t, "POST", url+"/x?id=1&id=2", ""))
+
+	wait := &Cassette{Name: "w", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200}, After: []string{"POST /x"}}}}
+	lower := &Cassette{Name: "l", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x", Body: json.RawMessage(`{"a":1}`)}, Response: Response{Status: 201}}}}
+	upper := &Cassette{Name: "u", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x", Body: json.RawMessage(`{"b":2}`)}, Response: Response{Status: 422}}}}
+	assert.Error(t, ValidateLayers(lower, upper, wait), "the later layer answers every body")
+}
