@@ -129,8 +129,12 @@ type Recorder struct {
 	log          []Exchange
 	landed       []string // writeKey of each write landed upstream so far, one per occurrence
 	faults       []string
-	base         string
-	srv          *httptest.Server
+	// serial makes each exchange — forward, record, land — one step, so a
+	// concurrent request cannot record a post-write answer before that
+	// write is counted landed. Recording is one episode; throughput is moot.
+	serial sync.Mutex
+	base   string
+	srv    *httptest.Server
 }
 
 // NewRecorder builds a recorder for a validated profile. The token is read
@@ -306,6 +310,8 @@ func (r *Recorder) allowed(path string) bool {
 // fault is incomplete: Faults reports them and the caller does not save it.
 // One rule instead of a guard per failure mode: rerun on a reseeded account.
 func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	r.serial.Lock()
+	defer r.serial.Unlock()
 	body, readErr := io.ReadAll(req.Body)
 	ex := Exchange{Method: req.Method, Path: req.URL.Path, Query: canonicalQuery(r.scrubQuery(req.URL.Query())), Body: compactJSON(r.scrubber.Bytes(body))}
 	refuse := func(status int, why string) {
@@ -500,17 +506,18 @@ func (r *Recorder) leaksOrigin(body []byte) bool {
 	if json.Unmarshal(body, &doc) != nil {
 		return false
 	}
-	host := strings.TrimPrefix(strings.TrimSuffix(r.profile.Upstream, "/"), "https://")
+	// Hostnames are case-insensitive: compare lowercased.
+	host := strings.ToLower(strings.TrimPrefix(strings.TrimSuffix(r.profile.Upstream, "/"), "https://"))
 	var walk func(any) bool
 	walk = func(v any) bool {
 		switch t := v.(type) {
 		case string:
 			// Decoded, so \u0040 and friends are plain here: the origin
 			// itself, or {{base}}@ (the replay origin turned userinfo).
-			return strings.Contains(t, host) || strings.Contains(t, BasePlaceholder+"@")
+			return strings.Contains(strings.ToLower(t), host) || strings.Contains(t, BasePlaceholder+"@")
 		case map[string]any:
 			for k, c := range t {
-				if strings.Contains(k, host) || walk(c) {
+				if strings.Contains(strings.ToLower(k), host) || walk(c) {
 					return true
 				}
 			}

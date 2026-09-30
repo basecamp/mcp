@@ -205,6 +205,9 @@ func (c *Cassette) Validate() error {
 		if strings.Contains(string(in.Response.Body)+in.Response.BodyText, BasePlaceholder+"@") || decodedContains(in.Response.Body, BasePlaceholder+"@") {
 			return fmt.Errorf("interaction #%d (%s %s): %s@ in a body would make the Player's origin userinfo", i+1, r.Method, r.Path, BasePlaceholder)
 		}
+		if len(r.Body) > 0 && !json.Valid(r.Body) {
+			return fmt.Errorf("interaction #%d (%s %s): request body is not JSON (the Player refuses non-JSON bodies)", i+1, r.Method, r.Path)
+		}
 		if len(in.Response.Body) > 0 && !json.Valid(in.Response.Body) {
 			return fmt.Errorf("interaction #%d (%s %s): response body is not JSON (use body_text)", i+1, r.Method, r.Path)
 		}
