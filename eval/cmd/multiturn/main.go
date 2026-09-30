@@ -300,6 +300,13 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 		if err := base.CheckExperiment(o.server, o.backend); err != nil {
 			return fail(err)
 		}
+		digests := map[string]string{}
+		for _, t := range corpus.Tasks {
+			digests[t.ID] = t.Digest()
+		}
+		if err := base.CheckDigests(digests); err != nil {
+			return fail(err)
+		}
 		var labels, armNames, taskIDs []string
 		for l := range plan {
 			labels = append(labels, l)

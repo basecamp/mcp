@@ -435,7 +435,7 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	switch {
-	case resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests:
+	case resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusRequestTimeout:
 		// Transient: the server may retry and succeed, but a recording that
 		// kept this answer would replay the failure forever.
 		r.fault(req, fmt.Sprintf("upstream answered %d", resp.StatusCode))
@@ -502,12 +502,13 @@ func (r *Recorder) fault(req *http.Request, why string) {
 // in a scrubbed JSON body in any encoding — \u002f escapes and the like are
 // decoded here, so a spelling the byte-level rewrite missed is caught.
 func (r *Recorder) leaksOrigin(body []byte) bool {
-	var doc any
-	if json.Unmarshal(body, &doc) != nil {
-		return false
-	}
 	// Hostnames are case-insensitive: compare lowercased.
 	host := strings.ToLower(strings.TrimPrefix(strings.TrimSuffix(r.profile.Upstream, "/"), "https://"))
+	var doc any
+	if json.Unmarshal(body, &doc) != nil {
+		// Not JSON: the text itself, in any case.
+		return strings.Contains(strings.ToLower(string(body)), host)
+	}
 	var walk func(any) bool
 	walk = func(v any) bool {
 		switch t := v.(type) {

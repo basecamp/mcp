@@ -10,7 +10,7 @@ import (
 )
 
 func rec(model, arm, task string, pass bool, score float64, safety int) Record {
-	return Record{Server: "fake", Backend: "api", Model: model, ModelID: model + "-id", Arm: arm, TaskID: task, Pass: pass, Score: score, Safety: safety}
+	return Record{Server: "fake", Backend: "api", TaskDigest: "d-" + task, Model: model, ModelID: model + "-id", Arm: arm, TaskID: task, Pass: pass, Score: score, Safety: safety}
 }
 
 func baselineOf(t *testing.T, records ...Record) *Baseline {
@@ -79,6 +79,12 @@ func TestCompareRefusesNothingToCompareAndModelSwaps(t *testing.T) {
 	assert.ErrorContains(t, base.CheckExperiment("basecamp", "api"), "not the same experiment")
 	assert.ErrorContains(t, base.CheckExperiment("fake", "cli"), "not the same experiment")
 	assert.NoError(t, base.CheckExperiment("fake", "api"))
+	assert.ErrorContains(t, base.CheckDigests(map[string]string{"a": "changed"}), "changed since the baseline")
+	assert.NoError(t, base.CheckDigests(map[string]string{"a": "d-a"}))
+	moved := rec("haiku", "bare", "a", true, 1, 0)
+	moved.TaskDigest = "changed"
+	_, err = Compare(base, []Record{moved})
+	assert.ErrorContains(t, err, "changed since the baseline")
 	other := rec("haiku", "bare", "a", true, 1, 0)
 	other.Backend = "cli"
 	_, err = Compare(base, []Record{other})

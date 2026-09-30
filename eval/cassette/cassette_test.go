@@ -456,6 +456,9 @@ func TestRecorderKeepsEveryLinkField(t *testing.T) {
 		case "/123/unauth.json":
 			w.WriteHeader(401)
 			return
+		case "/123/timeout.json":
+			w.WriteHeader(408)
+			return
 		default:
 			self := "https://" + r.Host
 			w.Header().Add("Link", `<`+self+`/123/list.json?page=1>; rel="prev"`)
@@ -484,8 +487,10 @@ func TestRecorderKeepsEveryLinkField(t *testing.T) {
 	assert.Equal(t, 503, status)
 	status, _, _ = get(t, url+"/123/unauth.json")
 	assert.Equal(t, 401, status)
+	status, _, _ = get(t, url+"/123/timeout.json")
+	assert.Equal(t, 408, status)
 	faults := rec.Faults()
-	require.Len(t, faults, 3)
+	require.Len(t, faults, 4)
 	assert.Contains(t, faults[0], "Link target")
 	assert.Contains(t, faults[1], "503")
 	assert.Contains(t, faults[2], "401")
@@ -726,6 +731,7 @@ func TestRecorderFaultsOnEncodedOriginsAndUserinfoRedirects(t *testing.T) {
 	named, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://3.basecampapi.com", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
 	require.NoError(t, err)
 	assert.True(t, named.leaksOrigin([]byte(`{"url":"https://3.BASECAMPAPI.COM/1/x"}`)), "a host is case-insensitive")
+	assert.True(t, named.leaksOrigin([]byte(`see https://3.BasecampAPI.com/1/x`)), "in plain text too")
 }
 
 func TestPlayerRefusesRepeatedQueryKeysAndLayersShadowAcrossBodies(t *testing.T) {
