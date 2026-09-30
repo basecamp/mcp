@@ -442,6 +442,9 @@ func TestRecorderKeepsEveryLinkField(t *testing.T) {
 		case "/123/flaky.json":
 			w.WriteHeader(503)
 			return
+		case "/123/unauth.json":
+			w.WriteHeader(401)
+			return
 		default:
 			self := "https://" + r.Host
 			w.Header().Add("Link", `<`+self+`/123/list.json?page=1>; rel="prev"`)
@@ -468,10 +471,13 @@ func TestRecorderKeepsEveryLinkField(t *testing.T) {
 	assert.Equal(t, http.StatusBadGateway, status)
 	status, _, _ = get(t, url+"/123/flaky.json")
 	assert.Equal(t, 503, status)
+	status, _, _ = get(t, url+"/123/unauth.json")
+	assert.Equal(t, 401, status)
 	faults := rec.Faults()
-	require.Len(t, faults, 2)
+	require.Len(t, faults, 3)
 	assert.Contains(t, faults[0], "Link target")
 	assert.Contains(t, faults[1], "503")
+	assert.Contains(t, faults[2], "401")
 	data, _ := json.Marshal(rec.Cassette("x", ""))
 	assert.NotContains(t, string(data), "SECRET")
 }
@@ -529,6 +535,16 @@ func TestACorrectedRetryIsAnsweredByItsOwnBody(t *testing.T) {
 	defer p.Close()
 	assert.Equal(t, 422, do(t, "POST", url+"/1/todos.json", `{"due_on":"Friday"}`))
 	assert.Equal(t, 201, do(t, "POST", url+"/1/todos.json", `{"due_on": "2026-10-02"}`))
+
+	// A bodyless retry picks its own bodyless answer, too.
+	c2 := &Cassette{Name: "e", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/1/x.json", Body: json.RawMessage(`{"bad":1}`)}, Response: Response{Status: 422}},
+		{Request: Request{Method: "POST", Path: "/1/x.json"}, Response: Response{Status: 204}},
+	}}
+	p2 := NewPlayer(c2)
+	url2 := p2.Start()
+	defer p2.Close()
+	assert.Equal(t, 204, do(t, "POST", url2+"/1/x.json", ""))
 }
 
 func TestRecorderRefusesARedactionThatBreaksJSON(t *testing.T) {

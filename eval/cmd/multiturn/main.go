@@ -30,6 +30,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -228,6 +229,13 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 		// not replace a file the run reads.
 		for _, t := range corpus.Tasks {
 			target := filepath.Join(o.recordDir, t.ID+".json")
+			// An existing cassette there is merged into after the episode;
+			// one that cannot be loaded must fail now, before live writes.
+			if _, err := os.Stat(target); err == nil {
+				if _, err := cassette.Load(target); err != nil {
+					return fail(fmt.Errorf("existing recording target: %w", err))
+				}
+			}
 			for _, in := range []string{o.tasks, o.armsFile, o.recordProfile, o.out} {
 				if sameFile(target, in) {
 					return fail(fmt.Errorf("task %s would record over %s", t.ID, in))
@@ -380,6 +388,8 @@ var stdioProfiles = map[string]stdioProfile{
 // reservedEnv are the variables the launcher sets to isolate the server; an
 // arm overriding one could point it past the Player or at the operator's
 // real config.
+var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
 var reservedEnv = map[string]bool{"PATH": true, "HOME": true, "TMPDIR": true}
 
 func init() {
@@ -437,6 +447,10 @@ func launcher(server, serverCmd string) (multiturn.Launcher, error) {
 			prof.tokenEnv + "=eval-replay-dummy-token",
 		}
 		for k, v := range arm.ServerEnv {
+			if !envName.MatchString(k) {
+				_ = os.RemoveAll(home)
+				return nil, nil, fmt.Errorf("arm %q: server_env key %q is not a variable name", arm.Name, k)
+			}
 			if reservedEnv[k] {
 				_ = os.RemoveAll(home)
 				return nil, nil, fmt.Errorf("arm %q: server_env may not set %s: the harness owns it to keep the server hermetic", arm.Name, k)
