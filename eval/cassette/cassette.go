@@ -44,7 +44,8 @@ type Cassette struct {
 // /path") that had landed before it was recorded. A read recorded before and
 // after `POST /x` is two interactions, the second with After ["POST /x"],
 // and the Player serves a response only once its own replay has landed every
-// write in its After — so state follows the agent's own writes: re-reading
+// write in its After (a write named twice must land twice) — so state
+// follows the agent's own writes: re-reading
 // never advances it, an unrelated write never unlocks it, and a resource
 // first seen after its creation is a miss until the replay creates it.
 type Interaction struct {

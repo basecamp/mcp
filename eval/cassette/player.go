@@ -57,7 +57,7 @@ func (e Exchange) Line() string {
 type Player struct {
 	mu      sync.Mutex
 	entries []entry
-	landed  map[string]bool // writeKey of every write landed so far
+	landed  map[string]int // writeKey -> occurrences landed so far
 	log     []Exchange
 	base    string
 	srv     *httptest.Server
@@ -71,7 +71,7 @@ type entry struct {
 // NewPlayer builds a Player over the cassettes, in precedence order (last
 // wins).
 func NewPlayer(cassettes ...*Cassette) *Player {
-	p := &Player{landed: map[string]bool{}}
+	p := &Player{landed: map[string]int{}}
 	for layer, c := range cassettes {
 		for _, in := range c.Interactions {
 			p.entries = append(p.entries, entry{layer: layer, in: in})
@@ -168,7 +168,7 @@ func (p *Player) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ex.Status = resp.Status
 	if ex.Matched && ex.IsWrite() && ex.Status < 400 {
-		p.landed[writeKey(ex.Method, ex.Path)] = true
+		p.landed[writeKey(ex.Method, ex.Path)]++
 	}
 	p.log = append(p.log, ex)
 	base := p.base
@@ -224,10 +224,16 @@ func (p *Player) match(r *http.Request) int {
 	return best
 }
 
+// reached reports whether every write in the interaction's After has landed
+// — as many times as After names it.
 func (p *Player) reached(in Interaction) bool {
+	need := map[string]int{}
 	for _, w := range in.After {
 		m, path, _ := strings.Cut(w, " ")
-		if !p.landed[writeKey(m, path)] {
+		need[writeKey(m, path)]++
+	}
+	for k, n := range need {
+		if p.landed[k] < n {
 			return false
 		}
 	}
