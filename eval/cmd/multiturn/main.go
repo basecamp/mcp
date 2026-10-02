@@ -129,6 +129,9 @@ func run() error {
 	if recordErr != nil {
 		return recordErr
 	}
+	if err := multiturn.RequireMeasured(rep.Records); err != nil {
+		return err
+	}
 
 	if base != nil {
 		cmp, err := multiturn.Compare(base, rep.Records)

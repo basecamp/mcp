@@ -783,3 +783,9 @@ func TestScriptArgumentsKeepIntegersBeyondFloatPrecision(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(out), "9007199254740993")
 }
+
+func TestRequireMeasuredFailsOnlyWhenNothingWasMeasured(t *testing.T) {
+	assert.Error(t, RequireMeasured(nil))
+	assert.ErrorContains(t, RequireMeasured([]Record{{Error: "boom", Model: "m", Arm: "a", TaskID: "t"}, {Error: "boom"}}), "no episode was measured")
+	assert.NoError(t, RequireMeasured([]Record{{Error: "boom"}, {Pass: false}}), "a mixed run reports its errors apart")
+}
