@@ -1,0 +1,936 @@
+package cassette
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func get(t *testing.T, url string) (int, string, http.Header) {
+	t.Helper()
+	resp, err := http.Get(url)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(body), resp.Header
+}
+
+func do(t *testing.T, method, url, body string) int {
+	t.Helper()
+	req, err := http.NewRequest(method, url, strings.NewReader(body))
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	return resp.StatusCode
+}
+
+func TestPlayerMatchesAndLogs(t *testing.T) {
+	base := &Cassette{Name: "base", Interactions: []Interaction{
+		{Request: Request{Method: "GET", Path: "/1/projects.json"},
+			Response: Response{Status: 200, Body: json.RawMessage(`[{"id":1,"url":"{{base}}/1/projects/1.json"}]`),
+				Headers: map[string]string{"Link": `<{{base}}/1/projects.json?page=2>; rel="next"`}}},
+		{Request: Request{Method: "GET", Path: "/1/projects.json", Query: map[string]string{"page": "2"}},
+			Response: Response{Status: 200, Body: json.RawMessage(`[{"id":2}]`)}},
+		{Request: Request{Method: "GET", Path: "/1/todos/5"}, Response: Response{Status: 200, Body: json.RawMessage(`{"v":"base"}`)}},
+		{Request: Request{Method: "POST", Path: "/1/todos/5/completion.json"}, Response: Response{Status: 204}},
+	}}
+	task := &Cassette{Name: "task", Interactions: []Interaction{
+		{Request: Request{Method: "GET", Path: "/1/todos/5"}, Response: Response{Status: 200, Body: json.RawMessage(`{"v":"task-1"}`)}},
+		{Request: Request{Method: "GET", Path: "/1/todos/5"}, Response: Response{Status: 200, Body: json.RawMessage(`{"v":"task-2"}`)}, After: []string{"POST /1/todos/5/completion.json"}},
+	}}
+	p := NewPlayer(base, task)
+	url := p.Start()
+	defer p.Close()
+
+	// {{base}} is substituted in bodies and headers; unrelated query params
+	// are ignored (subset match).
+	status, body, hdr := get(t, url+"/1/projects.json?status=active")
+	assert.Equal(t, 200, status)
+	assert.Contains(t, body, url+"/1/projects/1.json")
+	assert.Contains(t, hdr.Get("Link"), url+"/1/projects.json?page=2")
+
+	// The most specific query match wins.
+	_, body, _ = get(t, url+"/1/projects.json?page=2")
+	assert.JSONEq(t, `[{"id":2}]`, body)
+
+	// A later cassette overrides an earlier one, and ".json" is optional.
+	// State advances on writes, not on re-reads.
+	_, body, _ = get(t, url+"/1/todos/5.json")
+	assert.JSONEq(t, `{"v":"task-1"}`, body)
+	_, body, _ = get(t, url+"/1/todos/5")
+	assert.JSONEq(t, `{"v":"task-1"}`, body)
+
+	// Writes are answered by path and logged with the body sent.
+	assert.Equal(t, 204, do(t, "POST", url+"/1/todos/5/completion.json", `{ "a" : 1 }`))
+	_, body, _ = get(t, url+"/1/todos/5")
+	assert.JSONEq(t, `{"v":"task-2"}`, body)
+
+	// A miss is a 404, logged as unmatched.
+	status, _, _ = get(t, url+"/1/todos/999")
+	assert.Equal(t, 404, status)
+
+	log := p.Log()
+	require.Len(t, log, 7)
+	assert.Equal(t, "status=active", log[0].Query)
+	assert.True(t, log[4].IsWrite())
+	assert.Equal(t, `POST /1/todos/5/completion.json {"a":1}`, log[4].Line())
+	assert.False(t, log[6].Matched)
+	assert.True(t, log[0].Matched)
+
+	mark := 5
+	assert.Len(t, p.Since(mark), 2)
+	assert.Equal(t, 7, p.Len())
+}
+
+func TestEmptyQueryValueMustBePresent(t *testing.T) {
+	p := NewPlayer(&Cassette{Name: "q", Interactions: []Interaction{
+		{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200, Body: json.RawMessage(`"plain"`)}},
+		{Request: Request{Method: "GET", Path: "/a", Query: map[string]string{"archived": ""}}, Response: Response{Status: 200, Body: json.RawMessage(`"archived"`)}},
+	}})
+	url := p.Start()
+	defer p.Close()
+	_, body, _ := get(t, url+"/a")
+	assert.Equal(t, `"plain"`, body)
+	_, body, _ = get(t, url+"/a?archived=")
+	assert.Equal(t, `"archived"`, body)
+}
+
+func TestLoadValidates(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, s string) string {
+		path := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(path, []byte(s), 0o644))
+		return path
+	}
+	for name, body := range map[string]string{
+		"noname.json":    `{"interactions":[]}`,
+		"method.json":    `{"name":"x","interactions":[{"request":{"method":"TRACE","path":"/a"},"response":{"status":200}}]}`,
+		"query.json":     `{"name":"x","interactions":[{"request":{"method":"GET","path":"/a?b=1"},"response":{"status":200}}]}`,
+		"status.json":    `{"name":"x","interactions":[{"request":{"method":"GET","path":"/a"},"response":{"status":0}}]}`,
+		"status1xx.json": `{"name":"x","interactions":[{"request":{"method":"GET","path":"/a"},"response":{"status":103}}]}`,
+		"unknown.json":   `{"name":"x","interactions":[],"extra":1}`,
+		"trailing.json":  `{"name":"x","interactions":[]} {"name":"y"}`,
+		"bothbody.json":  `{"name":"x","interactions":[{"request":{"method":"GET","path":"/a"},"response":{"status":200,"body":{},"body_text":"x"}}]}`,
+	} {
+		_, err := Load(write(name, body))
+		assert.Error(t, err, name)
+	}
+	c, err := Load(write("ok.json", `{"name":"ok","interactions":[{"request":{"method":"GET","path":"/a"},"response":{"status":200,"body":{"a":1}}}]}`))
+	require.NoError(t, err)
+	assert.Equal(t, "ok", c.Name)
+
+	// Round trip.
+	out := filepath.Join(dir, "saved.json")
+	require.NoError(t, c.Save(out))
+	back, err := Load(out)
+	require.NoError(t, err)
+	assert.Equal(t, c.Interactions[0].Request, back.Interactions[0].Request)
+}
+
+func TestProfileValidation(t *testing.T) {
+	good := Profile{Name: "seed", TestAccount: true, Upstream: "https://3.basecampapi.com", AccountIDs: []string{"123"}, TokenEnv: "EVAL_TOKEN"}
+	require.NoError(t, good.Validate())
+
+	cases := map[string]func(p *Profile){
+		"not declared test":  func(p *Profile) { p.TestAccount = false },
+		"cleartext upstream": func(p *Profile) { p.Upstream = "http://3.basecampapi.com" },
+		"upstream with path": func(p *Profile) { p.Upstream = "https://3.basecampapi.com/123" },
+		"no accounts":        func(p *Profile) { p.AccountIDs = nil },
+		"non-numeric acct":   func(p *Profile) { p.AccountIDs = []string{"abc"} },
+		"no token env":       func(p *Profile) { p.TokenEnv = "" },
+		"quote in redact":    func(p *Profile) { p.Redact = map[string]string{`A "B"`: "C"} },
+		"upstream query":     func(p *Profile) { p.Upstream = "https://3.basecampapi.com?tenant=x" },
+		"upstream fragment":  func(p *Profile) { p.Upstream = "https://3.basecampapi.com#x" },
+		"default port":       func(p *Profile) { p.Upstream = "https://3.basecampapi.com:443" },
+		"padded port":        func(p *Profile) { p.Upstream = "https://3.basecampapi.com:0443" },
+		"empty query":        func(p *Profile) { p.Upstream = "https://3.basecampapi.com?" },
+		"empty fragment":     func(p *Profile) { p.Upstream = "https://3.basecampapi.com/#" },
+		"uppercase host":     func(p *Profile) { p.Upstream = "https://3.BasecampAPI.com" },
+		"empty port":         func(p *Profile) { p.Upstream = "https://3.basecampapi.com:" },
+		"placeholder redact": func(p *Profile) { p.Redact = map[string]string{"Real": "{{base}}"} },
+		"control in redact":  func(p *Profile) { p.Redact = map[string]string{"A": "B\nC"} },
+		"numeric redact":     func(p *Profile) { p.Redact = map[string]string{"123": "456"} },
+		"literal redact":     func(p *Profile) { p.Redact = map[string]string{"true": "false"} },
+	}
+	for name, mutate := range cases {
+		p := good
+		mutate(&p)
+		assert.Error(t, p.Validate(), name)
+	}
+}
+
+func TestRecorderProxiesScrubsAndRefusesOtherAccounts(t *testing.T) {
+	var gotAuth []string
+	var upstreamHits []string
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = append(gotAuth, r.Header.Get("Authorization"))
+		upstreamHits = append(upstreamHits, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Set-Cookie", "session=secret")
+		w.Header().Set("X-Request-Id", "abc")
+		self := "https://" + r.Host
+		switch r.URL.Path {
+		case "/123/people.json":
+			_, _ = io.WriteString(w, `[{"id":1,"name":"Real Person","email_address":"real.person@corp.example","avatar_url":"https://cdn.example/avatar?sig=SECRET","url":"`+self+`/123/people/1.json"}]`)
+		default:
+			w.WriteHeader(201)
+			_, _ = io.WriteString(w, `{"ok":true}`)
+		}
+	}))
+	defer upstream.Close()
+
+	t.Setenv("EVAL_REC_TOKEN", "real-token")
+	p := &Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"123"}, TokenEnv: "EVAL_REC_TOKEN",
+		Redact: map[string]string{"Real Person": "Fixture Person"}}
+	rec, err := NewRecorder(p)
+	require.NoError(t, err)
+	rec.client = upstream.Client()
+	url := rec.Start()
+	defer rec.Close()
+
+	req, _ := http.NewRequest("GET", url+"/123/people.json", nil)
+	req.Header.Set("Authorization", "Bearer dummy")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	live, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	// The live answer points follow-ups back at the recorder.
+	assert.Contains(t, string(live), url+"/123/people/1.json")
+
+	assert.Equal(t, 201, do(t, "POST", url+"/123/comments.json", `{"content":"hi real.person@corp.example"}`))
+
+	// Another account is refused locally and never reaches the upstream.
+	assert.Equal(t, 403, do(t, "GET", url+"/999/people.json", ""))
+	assert.Len(t, upstreamHits, 2)
+	assert.Equal(t, []string{"Bearer real-token", "Bearer real-token"}, gotAuth, "the profile token replaces the server's dummy")
+
+	c := rec.Cassette("people", "")
+	data, err := json.Marshal(c)
+	require.NoError(t, err)
+	s := string(data)
+	for _, leaked := range []string{"real-token", "dummy", "session=secret", "X-Request-Id", "real.person@corp.example", "SECRET", "Real Person", upstream.URL} {
+		assert.NotContains(t, s, leaked)
+	}
+	assert.Contains(t, s, BasePlaceholder+"/123/people/1.json")
+	alias := regexp.MustCompile(`person-[0-9a-f]{10}@example\.com`).FindString(s)
+	require.NotEmpty(t, alias)
+	assert.Contains(t, s, "Fixture Person")
+	require.Len(t, c.Interactions, 2)
+	assert.JSONEq(t, `{"content":"hi `+alias+`"}`, string(c.Interactions[1].Request.Body))
+	// The live answer the server saw was scrubbed too.
+	assert.NotContains(t, string(live), "real.person@corp.example")
+	assert.Contains(t, string(live), alias)
+
+	// The recorder keeps the same exchange log a player does.
+	log := rec.Since(0)
+	require.Len(t, log, 3)
+	assert.Equal(t, 403, log[2].Status)
+
+	// A recorded cassette replays.
+	pl := NewPlayer(c)
+	purl := pl.Start()
+	defer pl.Close()
+	status, body, _ := get(t, purl+"/123/people.json")
+	assert.Equal(t, 200, status)
+	assert.Contains(t, body, purl+"/123/people/1.json")
+}
+
+func TestNewRecorderNeedsToken(t *testing.T) {
+	t.Setenv("EVAL_MISSING_TOKEN", "")
+	_, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://x.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_MISSING_TOKEN"})
+	assert.ErrorContains(t, err, "EVAL_MISSING_TOKEN is not set")
+}
+
+func TestRecorderRedirectsQueriesAndRepeatedReads(t *testing.T) {
+	state := "before"
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/123/netpath":
+			w.Header().Set("Location", "//cdn.example/signed?sig=SECRET")
+			w.WriteHeader(http.StatusFound)
+		case r.URL.Path == "/123/offsite":
+			http.Redirect(w, r, "https://cdn.example/signed?sig=SECRET", http.StatusFound)
+		case r.URL.Path == "/123/moved":
+			http.Redirect(w, r, "/999/secret.json", http.StatusFound)
+		case r.URL.Path == "/999/secret.json":
+			t.Error("the upstream was asked for an account outside the profile")
+		case r.Method == "POST":
+			state = "after"
+			w.WriteHeader(204)
+		default:
+			_, _ = io.WriteString(w, `{"state":"`+state+`"}`)
+		}
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"123"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	tr := upstream.Client().Transport
+	rec.client.Transport = tr
+	url := rec.Start()
+	defer rec.Close()
+
+	// The redirect is handed back, not followed; following it through the
+	// recorder is refused.
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := noFollow.Get(url + "/123/moved")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusFound, resp.StatusCode)
+	assert.Equal(t, 403, do(t, "GET", url+"/999/secret.json", ""))
+	assert.Equal(t, http.StatusMethodNotAllowed, do(t, "OPTIONS", url+"/123/thing.json", ""), "a method no cassette can replay")
+	assert.Equal(t, http.StatusBadRequest, do(t, "GET", url+"/123/%2e%2e/999/secret.json", ""), "an encoded dot segment")
+	assert.True(t, hasDotSegment("//999/projects"), "an empty segment a router could collapse")
+	assert.Equal(t, http.StatusBadRequest, do(t, "GET", url+"/123/x.json?filter=%zz", ""), "a malformed query")
+	assert.Equal(t, http.StatusBadRequest, do(t, "GET", url+"/123/people/alice@corp.example", ""), "personal data in the path")
+	assert.Equal(t, http.StatusBadRequest, do(t, "POST", url+"/123/x.json", `{"email":"alice\u0040corp.example"}`), "escaped personal data in a request body")
+	assert.False(t, hasDotSegment("/123/projects.json"))
+	resp, err = noFollow.Get(url + "/123/offsite")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusBadGateway, resp.StatusCode, "an off-origin redirect is refused")
+	assert.Empty(t, resp.Header.Get("Location"))
+	resp, err = noFollow.Get(url + "/123/netpath")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusBadGateway, resp.StatusCode, "a network-path redirect is refused too")
+
+	// Query values are scrubbed in the cassette and the log.
+	get(t, url+"/123/search.json?q=someone@corp.example")
+	// read, read (unchanged: dropped), write, read (changed: kept).
+	get(t, url+"/123/thing.json")
+	get(t, url+"/123/thing.json")
+	do(t, "POST", url+"/123/thing/touch.json", "")
+	get(t, url+"/123/thing.json")
+
+	c := rec.Cassette("x", "")
+	data, _ := json.Marshal(c)
+	assert.NotContains(t, string(data), "someone@corp.example")
+	assert.NotContains(t, string(data), "someone%40corp.example")
+	assert.NotContains(t, string(data), "SECRET")
+	for _, ex := range rec.Since(0) {
+		assert.NotContains(t, ex.Query, "someone@corp.example")
+		assert.NotContains(t, ex.Query, "someone%40corp.example", "scrubbed before encoding")
+	}
+	var reads []string
+	for _, in := range c.Interactions {
+		if in.Request.Path == "/123/thing.json" {
+			reads = append(reads, string(in.Response.Body))
+		}
+	}
+	assert.Equal(t, []string{`{"state":"before"}`, `{"state":"after"}`}, reads)
+
+	// Replay walks the same states, advancing on the replay's own write.
+	p := NewPlayer(c)
+	purl := p.Start()
+	defer p.Close()
+	_, b1, _ := get(t, purl+"/123/thing.json")
+	_, b2, _ := get(t, purl+"/123/thing.json")
+	assert.JSONEq(t, `{"state":"before"}`, b1)
+	assert.JSONEq(t, `{"state":"before"}`, b2, "re-reading does not advance state")
+	do(t, "POST", purl+"/123/thing/touch.json", "")
+	_, b3, _ := get(t, purl+"/123/thing.json")
+	assert.JSONEq(t, `{"state":"after"}`, b3)
+}
+
+func TestScrubberAliasesAreKeyedAndStable(t *testing.T) {
+	a := NewScrubber("", nil, "k1").String("x@corp.example")
+	assert.Equal(t, a, NewScrubber("", nil, "k1").String("X@corp.example"))
+	assert.NotEqual(t, a, NewScrubber("", nil, "k2").String("x@corp.example"))
+	assert.Equal(t, "keep@example.com", NewScrubber("", nil, "k1").String("keep@example.com"))
+}
+
+func TestMergeKeepsFirstAnswerPerPattern(t *testing.T) {
+	a := &Cassette{Name: "a", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/x"}, Response: Response{Status: 200, Body: json.RawMessage(`1`)}}}}
+	b := &Cassette{Name: "b", Interactions: []Interaction{
+		{Request: Request{Method: "GET", Path: "/x.json"}, Response: Response{Status: 200, Body: json.RawMessage(`2`)}},
+		{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200, Body: json.RawMessage(`3`)}},
+	}}
+	b.Interactions = append(b.Interactions, Interaction{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200, Body: json.RawMessage(`4`)}, After: []string{"POST /y"}})
+	Merge(a, b)
+	require.Len(t, a.Interactions, 3, "every recorded state of a new pattern")
+	assert.Equal(t, json.RawMessage(`1`), a.Interactions[0].Response.Body)
+	assert.Equal(t, "/y", a.Interactions[1].Request.Path)
+}
+
+func TestMergeExtendsAPatternsStates(t *testing.T) {
+	read := func(v string) Interaction {
+		return Interaction{Request: Request{Method: "GET", Path: "/t"}, Response: Response{Status: 200, Body: json.RawMessage(v)}}
+	}
+	dst := &Cassette{Name: "d", Interactions: []Interaction{read(`"before"`)}}
+	after := read(`"after"`)
+	after.After = []string{"POST /t/touch"}
+	Merge(dst, &Cassette{Name: "s", Interactions: []Interaction{read(`"before-again"`), after}})
+	require.Len(t, dst.Interactions, 2)
+	assert.Equal(t, json.RawMessage(`"before"`), dst.Interactions[0].Response.Body)
+	assert.Equal(t, json.RawMessage(`"after"`), dst.Interactions[1].Response.Body)
+}
+
+func TestHeadIsAValidMethod(t *testing.T) {
+	c := &Cassette{Name: "h", Interactions: []Interaction{{Request: Request{Method: "HEAD", Path: "/a"}, Response: Response{Status: 200}}}}
+	assert.NoError(t, c.Validate())
+}
+
+func TestRecorderRefusesForeignAccountsAndRecords404sAsMisses(t *testing.T) {
+	accounts := `[{"id":123,"name":"Seed"}]`
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/authorization.json":
+			_, _ = io.WriteString(w, `{"identity":{"id":1},"accounts":`+accounts+`}`)
+		default:
+			w.WriteHeader(404)
+			_, _ = io.WriteString(w, `{"error":"Not Found"}`)
+		}
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"123"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+
+	status, _, _ := get(t, url+"/authorization.json")
+	assert.Equal(t, 200, status)
+	status, _, _ = get(t, url+"/123/todos/999")
+	assert.Equal(t, 404, status)
+	recorded := rec.Cassette("x", "")
+	require.Len(t, recorded.Interactions, 2, "the 404 is recorded: it may override a lower layer")
+	// Replayed, it answers 404 and is still a miss, over a stale lower layer.
+	stale := &Cassette{Name: "stale", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/123/todos/999"}, Response: Response{Status: 200, Body: json.RawMessage(`{"id":999}`)}}}}
+	pl := NewPlayer(stale, recorded)
+	purl := pl.Start()
+	defer pl.Close()
+	status, _, _ = get(t, purl+"/123/todos/999")
+	assert.Equal(t, 404, status)
+	assert.False(t, pl.Log()[0].Matched)
+
+	accounts = `[{"id":123,"name":"Seed"},{"id":456,"name":"Production"}]`
+	status, body, _ := get(t, url+"/authorization.json")
+	assert.Equal(t, 403, status)
+	assert.NotContains(t, body, "Production")
+	require.Len(t, rec.Cassette("x", "").Interactions, 2, "nothing more recorded from a token that reaches other accounts")
+}
+
+func TestReplayStateFollowsTheWritesThatProducedIt(t *testing.T) {
+	c := &Cassette{Name: "s", Interactions: []Interaction{
+		{Request: Request{Method: "GET", Path: "/1/todos/5"}, Response: Response{Status: 200, Body: json.RawMessage(`"open"`)}},
+		{Request: Request{Method: "GET", Path: "/1/todos/5"}, Response: Response{Status: 200, Body: json.RawMessage(`"done"`)}, After: []string{"POST /1/todos/5/completion"}},
+		{Request: Request{Method: "GET", Path: "/1/todos/6"}, Response: Response{Status: 200, Body: json.RawMessage(`"created"`)}, After: []string{"POST /1/todos"}},
+		{Request: Request{Method: "POST", Path: "/1/todos/5/completion.json"}, Response: Response{Status: 204}},
+		{Request: Request{Method: "POST", Path: "/1/todos/9/completion.json"}, Response: Response{Status: 204}},
+		{Request: Request{Method: "POST", Path: "/1/todos.json"}, Response: Response{Status: 201, Body: json.RawMessage(`{"id":6}`)}},
+	}}
+	require.NoError(t, c.Validate())
+	p := NewPlayer(c)
+	url := p.Start()
+	defer p.Close()
+
+	// A resource first recorded after its creation is a miss before it.
+	status, _, _ := get(t, url+"/1/todos/6")
+	assert.Equal(t, 404, status)
+	// An unrelated write does not unlock the completed state.
+	do(t, "POST", url+"/1/todos/9/completion.json", "")
+	_, body, _ := get(t, url+"/1/todos/5")
+	assert.Equal(t, `"open"`, body)
+	do(t, "POST", url+"/1/todos/5/completion.json", "")
+	_, body, _ = get(t, url+"/1/todos/5")
+	assert.Equal(t, `"done"`, body)
+	do(t, "POST", url+"/1/todos.json", `{}`)
+	status, body, _ = get(t, url+"/1/todos/6")
+	assert.Equal(t, 200, status)
+	assert.Equal(t, `"created"`, body)
+
+	for _, after := range []string{"GET /a", "POTS /a", "POST /a?mode=done", "POST a"} {
+		bad := &Cassette{Name: "b", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200}, After: []string{after}}}}
+		assert.Error(t, bad.Validate(), "after %q is unreachable", after)
+	}
+}
+
+func TestRecorderKeepsEveryLinkField(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/123/offsite.json":
+			w.Header().Add("Link", `<https://cdn.example/3?sig=SECRET>; rel="next"`)
+		case "/123/flaky.json":
+			w.WriteHeader(503)
+			return
+		case "/123/unauth.json":
+			w.WriteHeader(401)
+			return
+		case "/123/timeout.json":
+			w.WriteHeader(408)
+			return
+		default:
+			self := "https://" + r.Host
+			w.Header().Add("Link", `<`+self+`/123/list.json?page=1>; rel="prev"`)
+			w.Header().Add("Link", `</123/list.json?page=3>; rel="next"`)
+		}
+		_, _ = io.WriteString(w, `[]`)
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"123"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+	_, _, hdr := get(t, url+"/123/list.json")
+	assert.Contains(t, hdr.Get("Link"), `rel="next"`)
+	assert.Contains(t, hdr.Get("Link"), url+"/123/list.json?page=1", "an on-origin link points back at the recorder")
+	assert.Contains(t, rec.Cassette("x", "").Interactions[0].Response.Headers["Link"], `rel="next"`)
+	assert.Empty(t, rec.Faults())
+
+	// An off-origin Link target is refused; a transient upstream failure is
+	// served but faults the recording.
+	status, _, _ := get(t, url+"/123/offsite.json")
+	assert.Equal(t, http.StatusBadGateway, status)
+	status, _, _ = get(t, url+"/123/flaky.json")
+	assert.Equal(t, 503, status)
+	status, _, _ = get(t, url+"/123/unauth.json")
+	assert.Equal(t, 401, status)
+	status, _, _ = get(t, url+"/123/timeout.json")
+	assert.Equal(t, 408, status)
+	faults := rec.Faults()
+	require.Len(t, faults, 4)
+	assert.Contains(t, faults[0], "Link target")
+	assert.Contains(t, faults[1], "503")
+	assert.Contains(t, faults[2], "401")
+	data, _ := json.Marshal(rec.Cassette("x", ""))
+	assert.NotContains(t, string(data), "SECRET")
+}
+
+func TestRepeatedWritesAreDistinctStatesAndTheTokenIsScrubbed(t *testing.T) {
+	comments := 0
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			comments++
+			w.WriteHeader(201)
+			_, _ = io.WriteString(w, `{"echo":"`+strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")+`"}`)
+			return
+		}
+		_, _ = io.WriteString(w, fmt.Sprintf(`{"comments":%d}`, comments))
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "super-secret-token")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"123"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+	for i := 0; i < 2; i++ {
+		do(t, "POST", url+"/123/recordings/1/comments.json", `{}`)
+		get(t, url+"/123/recordings/1.json")
+	}
+	c := rec.Cassette("x", "")
+	data, _ := json.Marshal(c)
+	assert.NotContains(t, string(data), "super-secret-token")
+
+	p := NewPlayer(c)
+	purl := p.Start()
+	defer p.Close()
+	do(t, "POST", purl+"/123/recordings/1/comments.json", `{}`)
+	_, b1, _ := get(t, purl+"/123/recordings/1.json")
+	do(t, "POST", purl+"/123/recordings/1/comments.json", `{}`)
+	_, b2, _ := get(t, purl+"/123/recordings/1.json")
+	assert.JSONEq(t, `{"comments":1}`, b1)
+	assert.JSONEq(t, `{"comments":2}`, b2, "the second occurrence of a write is a state of its own")
+}
+
+func TestACorrectedRetryIsAnsweredByItsOwnBody(t *testing.T) {
+	c := &Cassette{Name: "r", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/1/todos.json", Body: json.RawMessage(`{"due_on":"Friday"}`)}, Response: Response{Status: 422, Body: json.RawMessage(`{"error":"bad date"}`)}},
+		{Request: Request{Method: "POST", Path: "/1/todos.json", Body: json.RawMessage(`{"due_on":"2026-10-02"}`)}, Response: Response{Status: 201, Body: json.RawMessage(`{"id":7}`)}},
+	}}
+	// Through a save and load, as a real recording goes: the saved file
+	// indents the stored bodies.
+	path := filepath.Join(t.TempDir(), "r.json")
+	require.NoError(t, c.Save(path))
+	c, err := Load(path)
+	require.NoError(t, err)
+	p := NewPlayer(c)
+	url := p.Start()
+	defer p.Close()
+	assert.Equal(t, 422, do(t, "POST", url+"/1/todos.json", `{"due_on":"Friday"}`))
+	assert.Equal(t, 201, do(t, "POST", url+"/1/todos.json", `{"due_on": "2026-10-02"}`))
+	c3 := &Cassette{Name: "k", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/1/k.json", Body: json.RawMessage(`{"a":0,"b":2}`)}, Response: Response{Status: 422}},
+		{Request: Request{Method: "POST", Path: "/1/k.json", Body: json.RawMessage(`{"a":1,"b":2}`)}, Response: Response{Status: 201}},
+	}}
+	p3 := NewPlayer(c3)
+	url3 := p3.Start()
+	defer p3.Close()
+	assert.Equal(t, 201, do(t, "POST", url3+"/1/k.json", `{"b":2,"a":1}`), "key order does not matter")
+
+	// A bodyless retry picks its own bodyless answer, too.
+	c2 := &Cassette{Name: "e", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/1/x.json", Body: json.RawMessage(`{"bad":1}`)}, Response: Response{Status: 422}},
+		{Request: Request{Method: "POST", Path: "/1/x.json"}, Response: Response{Status: 204}},
+	}}
+	p2 := NewPlayer(c2)
+	url2 := p2.Start()
+	defer p2.Close()
+	assert.Equal(t, 204, do(t, "POST", url2+"/1/x.json", ""))
+}
+
+func TestRecorderRefusesARedactionThatBreaksJSON(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"id":123}`)
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN", Redact: map[string]string{"123}": "fixture"}})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+	status, _, _ := get(t, url+"/1/thing.json")
+	assert.Equal(t, http.StatusBadGateway, status)
+	assert.Equal(t, http.StatusBadGateway, do(t, "POST", url+"/1/other.json", `{"id":123}`), "request side too")
+	assert.Empty(t, rec.Cassette("x", "").Interactions)
+	assert.Len(t, rec.Faults(), 2)
+}
+
+func TestOnPlayerTargetsAndLayers(t *testing.T) {
+	ok := &Cassette{Name: "ok", Interactions: []Interaction{
+		{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200, Headers: map[string]string{"Link": `<{{base}}/a?page=2>; rel="next", </a?page=3>; rel="last"`}}},
+		{Request: Request{Method: "GET", Path: "/b"}, Response: Response{Status: 200}, After: []string{"POST /x"}},
+	}}
+	require.NoError(t, ok.Validate())
+	assert.ErrorContains(t, ValidateLayers(ok), "can never land")
+	failing := &Cassette{Name: "w", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x.json"}, Response: Response{Status: 422}}}}
+	assert.Error(t, ValidateLayers(ok, failing), "a write answered only with a failure never lands")
+	landing := &Cassette{Name: "w", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x.json"}, Response: Response{Status: 201}}}}
+	assert.NoError(t, ValidateLayers(ok, landing))
+
+	selfWait := &Cassette{Name: "s", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x"}, Response: Response{Status: 201}, After: []string{"POST /x"}}}}
+	assert.Error(t, ValidateLayers(ok, selfWait), "a write that waits on itself never lands")
+	cycle := &Cassette{Name: "c", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/x"}, Response: Response{Status: 201}, After: []string{"PUT /y"}},
+		{Request: Request{Method: "PUT", Path: "/y"}, Response: Response{Status: 200}, After: []string{"POST /x"}},
+	}}
+	assert.Error(t, ValidateLayers(ok, cycle), "nor do two that wait on each other")
+}
+
+func TestPlayerComparesBodiesWithItsOriginAsBase(t *testing.T) {
+	c := &Cassette{Name: "b", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/1/links.json", Body: json.RawMessage(`{"url":"https://elsewhere/x"}`)}, Response: Response{Status: 422}},
+		{Request: Request{Method: "POST", Path: "/1/links.json", Body: json.RawMessage(`{"url":"{{base}}/1/todos/5.json"}`)}, Response: Response{Status: 201}},
+	}}
+	p := NewPlayer(c)
+	url := p.Start()
+	defer p.Close()
+	assert.Equal(t, 201, do(t, "POST", url+"/1/links.json", `{"url":"`+url+`/1/todos/5.json"}`))
+}
+
+func TestEscapedOriginsAndNonJSONBodies(t *testing.T) {
+	c := &Cassette{Name: "b", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/1/links.json", Body: json.RawMessage(`{"url":"x"}`)}, Response: Response{Status: 422}},
+		{Request: Request{Method: "POST", Path: "/1/links.json", Body: json.RawMessage(`{"url":"{{base}}/1/a"}`)}, Response: Response{Status: 201}},
+	}}
+	p := NewPlayer(c)
+	url := p.Start()
+	defer p.Close()
+	escaped := strings.ReplaceAll(url, "/", `\/`) // http:\/\/127.0.0.1:…
+	assert.Equal(t, 201, do(t, "POST", url+"/1/links.json", `{"url":"`+escaped+`/1/a"}`))
+
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	rurl := rec.Start()
+	defer rec.Close()
+	assert.Equal(t, http.StatusUnsupportedMediaType, do(t, "POST", rurl+"/1/form", "a=1&b=2"))
+	assert.Len(t, rec.Faults(), 1)
+}
+
+func TestOnlyA2xxWriteLands(t *testing.T) {
+	c := &Cassette{Name: "r", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/x"}, Response: Response{Status: 307, Headers: map[string]string{"Location": "/elsewhere"}}},
+		{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200, Body: json.RawMessage(`"after"`)}, After: []string{"POST /x"}},
+	}}
+	assert.Error(t, ValidateLayers(c), "a redirect is not a landed write")
+	p := NewPlayer(c)
+	url := p.Start()
+	defer p.Close()
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := noFollow.Post(url+"/x", "application/json", nil)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	status, _, _ := get(t, url+"/y")
+	assert.Equal(t, 404, status)
+}
+
+func TestPlayerRefusesNonJSONWriteBodies(t *testing.T) {
+	p := NewPlayer(&Cassette{Name: "f", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/f"}, Response: Response{Status: 204}}}})
+	url := p.Start()
+	defer p.Close()
+	assert.Equal(t, http.StatusUnsupportedMediaType, do(t, "POST", url+"/f", "a=1"))
+	assert.False(t, p.Log()[0].Matched)
+}
+
+func TestLaterLayersShadowWritesInValidation(t *testing.T) {
+	wait := &Cassette{Name: "w", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200}, After: []string{"POST /x"}}}}
+	base := &Cassette{Name: "b", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x"}, Response: Response{Status: 201}}}}
+	over := &Cassette{Name: "o", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x"}, Response: Response{Status: 422}}}}
+	assert.NoError(t, ValidateLayers(base, wait))
+	assert.Error(t, ValidateLayers(base, over, wait), "the later 422 shadows the earlier 201")
+}
+
+func TestRecorderRefusesRepeatedQueryKeys(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, `[]`) }))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+	status, _, _ := get(t, url+"/1/x.json?id=1&id=2")
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Len(t, rec.Faults(), 1)
+}
+
+func TestOriginUserinfoIsRefused(t *testing.T) {
+	c := &Cassette{Name: "u", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200, Body: json.RawMessage(`{"url":"{{base}}@evil.example/x"}`)}}}}
+	assert.Error(t, c.Validate())
+	c.Interactions[0].Response.Body = json.RawMessage(`{"url":"{{base}}\u0040evil.example/x"}`)
+	assert.Error(t, c.Validate(), "escaped @ too")
+	c.Interactions[0].Response.Body = nil
+	c.Interactions[0].Response.BodyText = `{"url":"{{base}}\u0040evil.example/x"}`
+	assert.Error(t, c.Validate(), "and in body_text")
+	assert.Empty(t, foreignAccounts([]byte(`{"accounts":[{"id":9007199254740992}]}`), []string{"9007199254740992"}))
+	assert.Equal(t, []string{"9007199254740993"}, foreignAccounts([]byte(`{"accounts":[{"id":9007199254740993}]}`), []string{"9007199254740992"}), "no float rounding")
+}
+
+func TestRecorderFaultsOnEncodedOriginsAndUserinfoRedirects(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		switch r.URL.Path {
+		case "/1/escaped.json":
+			_, _ = io.WriteString(w, `{"url":"https:\u002f\u002f`+host+`/1/x"}`)
+		case "/1/userinfo":
+			w.Header().Set("Location", "https://user@"+host+"/1/x")
+			w.WriteHeader(302)
+		}
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+	status, _, _ := get(t, url+"/1/escaped.json")
+	assert.Equal(t, http.StatusBadGateway, status)
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := noFollow.Get(url + "/1/userinfo")
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
+	assert.Len(t, rec.Faults(), 2)
+	assert.Empty(t, rec.Cassette("x", "").Interactions)
+
+	named, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://3.basecampapi.com", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	assert.True(t, named.leaksOrigin([]byte(`{"url":"https://3.BASECAMPAPI.COM/1/x"}`)), "a host is case-insensitive")
+	assert.True(t, named.leaksOrigin([]byte(`see https://3.BasecampAPI.com/1/x`)), "in plain text too")
+}
+
+func TestPlayerRefusesRepeatedQueryKeysAndLayersShadowAcrossBodies(t *testing.T) {
+	p := NewPlayer(&Cassette{Name: "q", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x", Query: map[string]string{"id": "1"}}, Response: Response{Status: 204}}}})
+	url := p.Start()
+	defer p.Close()
+	assert.Equal(t, 400, do(t, "POST", url+"/x?id=1&id=2", ""))
+
+	wait := &Cassette{Name: "w", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200}, After: []string{"POST /x"}}}}
+	lower := &Cassette{Name: "l", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x", Body: json.RawMessage(`{"a":1}`)}, Response: Response{Status: 201}}}}
+	upper := &Cassette{Name: "u", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x", Body: json.RawMessage(`{"b":2}`)}, Response: Response{Status: 422}}}}
+	assert.Error(t, ValidateLayers(lower, upper, wait), "the later layer answers every body")
+}
+
+func TestPlayerComparesQueriesWithItsOriginAsBase(t *testing.T) {
+	p := NewPlayer(&Cassette{Name: "q", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/1/by_url", Query: map[string]string{"url": "{{base}}/1/todos/5.json"}}, Response: Response{Status: 200, Body: json.RawMessage(`{"id":5}`)}}}})
+	url := p.Start()
+	defer p.Close()
+	status, _, _ := get(t, url+"/1/by_url?url="+url+"/1/todos/5.json")
+	assert.Equal(t, 200, status)
+	assert.Contains(t, p.Log()[0].Query, "%7B%7Bbase%7D%7D", "logged with the origin as {{base}}, as the recorder logs it")
+}
+
+func TestDecodedPersonalDataIsCaught(t *testing.T) {
+	assert.True(t, leaksPersonal([]byte(`{"email":"alice\u0040corp.example"}`)), "an escaped @ decodes to a real address")
+	assert.False(t, leaksPersonal([]byte(`{"email":"person-1@example.com"}`)))
+	out := scrubAvatarFields([]byte(`{"avatar\u005furl":"https://cdn/x?sig=S","avatars_sample":["https://cdn/a","https://cdn/b"],"name":"n"}`))
+	assert.NotContains(t, string(out), "cdn")
+	assert.False(t, leaksPersonal(out))
+}
+
+func TestIncomparableQueryPatternsMiss(t *testing.T) {
+	p := NewPlayer(&Cassette{Name: "s", Interactions: []Interaction{
+		{Request: Request{Method: "GET", Path: "/search", Query: map[string]string{"status": "open"}}, Response: Response{Status: 200, Body: json.RawMessage(`"open"`)}},
+		{Request: Request{Method: "GET", Path: "/search", Query: map[string]string{"assignee": "me"}}, Response: Response{Status: 200, Body: json.RawMessage(`"mine"`)}},
+	}})
+	url := p.Start()
+	defer p.Close()
+	status, _, _ := get(t, url+"/search?status=open&assignee=me")
+	assert.Equal(t, 404, status, "neither pattern recorded this request")
+	_, body, _ := get(t, url+"/search?status=open")
+	assert.Equal(t, `"open"`, body)
+	assert.False(t, Exchange{Method: "OPTIONS"}.IsWrite(), "safe methods are not writes")
+	assert.Equal(t, []byte(`{"avatar_url":"x"}trailer`), scrubAvatarFields([]byte(`{"avatar_url":"x"}trailer`)))
+}
+
+func TestPlaceholderBoundariesNestedAvatarsAndLayeredQueries(t *testing.T) {
+	c := &Cassette{Name: "b", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200, Body: json.RawMessage(`{"u":"{{base}}.evil@attacker.invalid/x"}`)}}}}
+	assert.Error(t, c.Validate())
+	ok := &Cassette{Name: "b", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200, Body: json.RawMessage(`{"u":"{{base}}/x","v":"{{base}}"}`)}}}}
+	assert.NoError(t, ok.Validate())
+
+	out := scrubAvatarFields([]byte(`{"avatar":{"url":"https://cdn.example/signed"}}`))
+	assert.NotContains(t, string(out), "cdn.example")
+	assert.True(t, leaksPersonal([]byte(`{"avatar":{"url":"https://cdn.example/signed"}}`)))
+
+	lower := &Cassette{Name: "l", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/s", Query: map[string]string{"status": "open"}}, Response: Response{Status: 200, Body: json.RawMessage(`"lower"`)}}}}
+	upper := &Cassette{Name: "u", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/s", Query: map[string]string{"assignee": "me"}}, Response: Response{Status: 200, Body: json.RawMessage(`"upper"`)}}}}
+	p := NewPlayer(lower, upper)
+	url := p.Start()
+	defer p.Close()
+	_, body, _ := get(t, url+"/s?status=open&assignee=me")
+	assert.Equal(t, `"upper"`, body, "layer precedence resolves it")
+}
+
+func TestDecodedAuthorityRunOnAndLiteralPlaceholders(t *testing.T) {
+	c := &Cassette{Name: "d", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/a"}, Response: Response{Status: 200, Body: json.RawMessage(`{"u":"{{base}}\u002eevil\u0040169.254.169.254/x"}`)}}}}
+	assert.Error(t, c.Validate(), "decoded, {{base}} runs on into a longer authority")
+
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"doc":"use {{base}} in templates"}`)
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+	status, _, _ := get(t, url+"/1/doc.json")
+	assert.Equal(t, http.StatusBadGateway, status, "a literal placeholder in upstream content")
+}
+
+func TestScrubberRewritesTheOriginCaseInsensitively(t *testing.T) {
+	out := NewScrubber("https://api.example", nil, "k").String(`{"next":"https://API.EXAMPLE/p","esc":"https:\/\/Api.Example\/q"}`)
+	assert.NotContains(t, strings.ToLower(out), "api.example")
+	assert.Contains(t, out, "{{base}}/p")
+}
+
+func TestEncodedRedactionsDefaultPortsAndBodyTieBreaks(t *testing.T) {
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	r, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://api.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN", Redact: map[string]string{"Alice & Bob": "Fixture Pair"}})
+	require.NoError(t, err)
+	assert.True(t, r.leaksRedacted([]byte(`{"name":"Alice \u0026 Bob"}`)), "an escaped redaction literal")
+	h := http.Header{}
+	h.Set("Location", "https://api.example:443/next")
+	assert.Empty(t, r.offOrigin(h), "the default port names the same origin")
+	assert.Contains(t, NewScrubber("https://api.example", nil, "k").String(`"https://api.example:443/x"`), `"{{base}}/x"`)
+
+	p := NewPlayer(&Cassette{Name: "q", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/x", Query: map[string]string{"status": "open"}, Body: json.RawMessage(`{"a":1}`)}, Response: Response{Status: 201}},
+		{Request: Request{Method: "POST", Path: "/x", Query: map[string]string{"assignee": "me"}, Body: json.RawMessage(`{"b":2}`)}, Response: Response{Status: 202}},
+	}})
+	url := p.Start()
+	defer p.Close()
+	assert.Equal(t, 202, do(t, "POST", url+"/x?status=open&assignee=me", `{"b":2}`), "the body resolves what the query could not")
+	assert.Equal(t, http.StatusUnsupportedMediaType, do(t, "POST", url+"/x?status=open", "  "), "whitespace-only is not JSON")
+}
+
+func TestDecodedTokenAndEmailKeysAreCaught(t *testing.T) {
+	t.Setenv("EVAL_REC_TOKEN", "token")
+	r, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://api.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	assert.True(t, r.leaksRedacted([]byte(`{"echo":"tok\u0065n"}`)), "an escaped token")
+	assert.True(t, leaksPersonal([]byte(`{"alice\u0040corp.example":{"x":1}}`)), "an address as a key")
+}
+
+func TestCrossStateShadowingAndNetworkPathRedirects(t *testing.T) {
+	wait := &Cassette{Name: "w", Interactions: []Interaction{{Request: Request{Method: "GET", Path: "/y"}, Response: Response{Status: 200}, After: []string{"POST /x"}}}}
+	lower := &Cassette{Name: "l", Interactions: []Interaction{
+		{Request: Request{Method: "POST", Path: "/a"}, Response: Response{Status: 201}},
+		{Request: Request{Method: "POST", Path: "/x"}, Response: Response{Status: 201}, After: []string{"POST /a"}},
+	}}
+	upper := &Cassette{Name: "u", Interactions: []Interaction{{Request: Request{Method: "POST", Path: "/x"}, Response: Response{Status: 422}}}}
+	assert.Error(t, ValidateLayers(lower, upper, wait), "the upper 422 shadows the lower 201 in every state")
+
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	r, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://api.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN", Redact: map[string]string{"Alice & Bob": "Pair"}})
+	require.NoError(t, err)
+	h := http.Header{}
+	h.Set("Location", "//api.example/next")
+	assert.Empty(t, r.offOrigin(h), "a same-origin network-path reference")
+	assert.Equal(t, "</1/x>; rel=next, <{{base}}/next>", NewScrubber("https://api.example", nil, "k").String("</1/x>; rel=next, <//api.example/next>"), "and it is rewritten to {{base}}")
+	assert.True(t, r.leaksRedacted([]byte(`{"n":"Alice \u0026 Bob"}`)))
+}
+
+func TestRepeatedLocationIsOffOrigin(t *testing.T) {
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	r, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://api.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	h := http.Header{}
+	h.Add("Location", "https://api.example/next")
+	h.Add("Location", "https://evil.example/next")
+	assert.NotEmpty(t, r.offOrigin(h), "a second Location is checked too")
+	h = http.Header{}
+	h.Add("Location", "https://api.example/a")
+	h.Add("Location", "https://api.example/b")
+	assert.NotEmpty(t, r.offOrigin(h), "repeated Location fields are malformed")
+}
+
+func TestRecorderRefusesTheLiteralPlaceholderInRequests(t *testing.T) {
+	hits := 0
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(201)
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+	assert.Equal(t, http.StatusBadRequest, do(t, "POST", url+"/1/x.json", `{"u":"{{base}}/1/y"}`), "a literal placeholder in a body")
+	assert.Equal(t, http.StatusBadRequest, do(t, "POST", url+"/1/x.json", `{"u":"{{base}}/1/y"}`), "an escaped one")
+	assert.Equal(t, http.StatusBadRequest, do(t, "GET", url+"/1/x.json?u=%7B%7Bbase%7D%7D", ""), "one in a query value")
+	assert.Equal(t, 0, hits, "refused before reaching the live account")
+	assert.Equal(t, 201, do(t, "POST", url+"/1/x.json", `{"u":"base"}`), "an ordinary body still records")
+}
+
+func TestEmailAliasesSurviveATokenRotation(t *testing.T) {
+	alias := func(token string) string {
+		t.Setenv("EVAL_REC_TOKEN", token)
+		r, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://api.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN", AliasKeyEnv: "EVAL_ALIAS_KEY"})
+		require.NoError(t, err)
+		return r.scrubber.String("alice@corp.example")
+	}
+	t.Setenv("EVAL_ALIAS_KEY", "stable")
+	assert.Equal(t, alias("before"), alias("after"))
+	assert.NotContains(t, alias("x"), "alice")
+
+	t.Setenv("EVAL_ALIAS_KEY", "")
+	_, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://api.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN", AliasKeyEnv: "EVAL_ALIAS_KEY"})
+	assert.ErrorContains(t, err, "EVAL_ALIAS_KEY")
+}

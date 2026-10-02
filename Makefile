@@ -46,3 +46,14 @@ eval-smoke:
 		--scenarios eval/testdata/scenarios/fake.json \
 		--out /tmp/eval-smoke.jsonl --require-pass \
 		--baseline eval/testdata/results/fake-oracle.jsonl
+
+# The multi-turn mode's hermetic smoke: the in-process fake product server
+# replayed from committed cassettes, every guidance arm, each task's gold
+# script as the agent — no model, no network. It proves the loop turns end to
+# end (connect, arm realization, calls, replay, trace grading, report) and
+# gates against a committed baseline. Real runs use --backend api or cli.
+.PHONY: eval-multiturn-smoke
+eval-multiturn-smoke:
+	$(GO) run ./eval/cmd/multiturn --server fake --backend script --quiet \
+		--out /tmp/eval-multiturn-smoke.jsonl --require-pass \
+		--baseline eval/testdata/multiturn/fake/baseline-script.jsonl

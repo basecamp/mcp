@@ -1,0 +1,29 @@
+{
+  "name": "base",
+  "description": "Hand-authored fixture for the fake todos server: one project, three todos, and the writes the tasks may make.",
+  "interactions": [
+    {"request": {"method": "GET", "path": "/projects.json"},
+     "response": {"status": 200, "body": [{"id": 1, "name": "Launch", "url": "{{base}}/projects/1.json"}, {"id": 2, "name": "Hiring", "url": "{{base}}/projects/2.json"}]}},
+    {"request": {"method": "GET", "path": "/projects/1.json"},
+     "response": {"status": 200, "body": {"id": 1, "name": "Launch", "todos_url": "{{base}}/projects/1/todos.json"}}},
+    {"request": {"method": "GET", "path": "/projects/1/todos.json"},
+     "response": {"status": 200, "body": [
+       {"id": 11, "title": "Write launch notes", "completed": false, "updated_at": "2026-09-25"},
+       {"id": 12, "title": "Old draft of the press release", "completed": false, "updated_at": "2026-03-02"},
+       {"id": 13, "title": "Confirm the launch date", "completed": true, "updated_at": "2026-09-20"}]}},
+    {"request": {"method": "GET", "path": "/projects/2/todos.json"},
+     "response": {"status": 200, "body": []}},
+    {"request": {"method": "GET", "path": "/todos/11.json"},
+     "response": {"status": 200, "body": {"id": 11, "title": "Write launch notes", "completed": false}}},
+    {"request": {"method": "GET", "path": "/todos/12.json"},
+     "response": {"status": 200, "body": {"id": 12, "title": "Old draft of the press release", "completed": false}}},
+    {"request": {"method": "POST", "path": "/todos/11/completion.json"},
+     "response": {"status": 204}},
+    {"request": {"method": "PUT", "path": "/todos/12/trash.json"},
+     "response": {"status": 204}},
+    {"request": {"method": "DELETE", "path": "/todos/12.json"},
+     "response": {"status": 204}},
+    {"request": {"method": "POST", "path": "/projects/1/todos.json"},
+     "response": {"status": 201, "body": {"id": 14, "title": "Book the venue", "completed": false}}}
+  ]
+}
