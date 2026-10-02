@@ -188,3 +188,17 @@ func TestOutMayNotBeTheServerExecutable(t *testing.T) {
 	_, _, _, err := preflight(&o)
 	assert.ErrorContains(t, err, "server executable")
 }
+
+func TestPreflightNeedsTheClaudeExecutable(t *testing.T) {
+	chdirRoot(t)
+	exe := filepath.Join(t.TempDir(), "claude")
+	require.NoError(t, os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o755))
+	o := options{server: "fake", backend: "cli", models: "haiku", out: filepath.Join(t.TempDir(), "out.jsonl")}
+	t.Setenv("EVAL_CLAUDE_BIN", exe)
+	_, _, _, err := preflight(&o)
+	require.NoError(t, err)
+
+	t.Setenv("EVAL_CLAUDE_BIN", filepath.Join(t.TempDir(), "missing"))
+	_, _, _, err = preflight(&o)
+	assert.ErrorContains(t, err, "claude")
+}

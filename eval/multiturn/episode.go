@@ -1,9 +1,11 @@
 package multiturn
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -159,6 +161,20 @@ func (e *Episode) Call(ctx context.Context, name string, args map[string]any) (s
 	step.Result = truncate(text, resultLimit)
 	e.Steps = append(e.Steps, step)
 	return text, step.IsError
+}
+
+// decodeArgs decodes tool arguments with numbers kept exact: an id beyond
+// 2^53 reaches the server as the model sent it, not as its float64 neighbor.
+func decodeArgs(raw []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return fmt.Errorf("unexpected data after the arguments")
+	}
+	return nil
 }
 
 // Finish records the agent's final reply.

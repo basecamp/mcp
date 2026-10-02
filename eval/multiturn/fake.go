@@ -135,7 +135,7 @@ func NewFakeServer(baseURL string, o FakeOptions) *mcp.Server {
 				Action string         `json:"action"`
 				Params map[string]any `json:"params"`
 			}
-			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+			if err := decodeArgs(req.Params.Arguments, &args); err != nil {
 				return fakeError("invalid arguments: %v", err), nil
 			}
 			r, ok := routes[args.Action]

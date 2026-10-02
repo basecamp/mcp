@@ -161,7 +161,7 @@ func (a *APIAgent) Run(ctx context.Context, ep *Episode) error {
 				text.WriteString(b.Text)
 			case "tool_use":
 				var args map[string]any
-				if err := json.Unmarshal(b.Input, &args); err != nil || args == nil {
+				if err := decodeArgs(b.Input, &args); err != nil || args == nil {
 					args = map[string]any{}
 				}
 				out, isErr := ep.Call(ctx, b.Name, args)

@@ -40,6 +40,11 @@ type Profile struct {
 	// bearer token. The recorder injects it upstream itself; the server under
 	// test holds only a dummy, and the token is never written anywhere.
 	TokenEnv string `json:"token_env"`
+	// AliasKeyEnv optionally names an environment variable holding a stable
+	// secret that keys the email aliases. Without it the token keys them, so
+	// cassettes recorded before and after a token rotation disagree on who
+	// person-… is; set it when recordings span more than one token.
+	AliasKeyEnv string `json:"alias_key_env,omitempty"`
 	// Redact maps literal strings in recorded bodies to their replacements —
 	// real names of the test account's people, a company name — applied
 	// after the built-in email and avatar scrubbing.
@@ -155,6 +160,12 @@ func NewRecorder(p *Profile) (*Recorder, error) {
 	if err != nil {
 		return nil, err
 	}
+	aliasKey := token
+	if p.AliasKeyEnv != "" {
+		if aliasKey = os.Getenv(p.AliasKeyEnv); aliasKey == "" {
+			return nil, fmt.Errorf("profile %q: %s is not set", p.Name, p.AliasKeyEnv)
+		}
+	}
 	return &Recorder{
 		profile: p,
 		token:   token,
@@ -167,11 +178,11 @@ func NewRecorder(p *Profile) (*Recorder, error) {
 			// ServeHTTP and is checked like any other request.
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
-		// Email aliases are keyed by the token, so they are stable across
-		// every episode and run recorded under one profile (merged cassettes
-		// agree on who person-… is) without being reversible by anyone who
-		// lacks the token.
-		scrubber: NewScrubber(p.Upstream, withToken(p.Redact, token), token),
+		// Email aliases are keyed by a secret (alias_key_env, else the
+		// token), so they are stable across every episode and run recorded
+		// under that key (merged cassettes agree on who person-… is) without
+		// being reversible by anyone who lacks it.
+		scrubber: NewScrubber(p.Upstream, withToken(p.Redact, token), aliasKey),
 	}, nil
 }
 
@@ -388,6 +399,12 @@ func (r *Recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		refuse(http.StatusBadGateway, "a profile redaction broke this request's JSON; redact text, not structure")
 		return
 	}
+	if bytes.Contains(body, []byte(BasePlaceholder)) || decodedMatches(body, placeholderLiteral) || queryHasPlaceholder(req.URL.Query()) {
+		// The literal is the cassette's own placeholder: stored, it would be
+		// indistinguishable from the recorder URL it stands for.
+		refuse(http.StatusBadRequest, "the request carries the literal "+BasePlaceholder)
+		return
+	}
 	if leaksPersonal(r.scrubber.Bytes(body)) || r.leaksOrigin(r.scrubber.Bytes(body)) || r.leaksRedacted(r.scrubber.Bytes(body)) {
 		refuse(http.StatusBadRequest, "the request body carries personal data or the live origin in an encoded form")
 		return
@@ -555,7 +572,9 @@ func (r *Recorder) offOrigin(h http.Header) string {
 		}
 		return u.Scheme != "https" || "https://"+host != origin
 	}
-	if loc := h.Get("Location"); loc != "" && bad(loc) {
+	// One Location only: the cassette joins every value it keeps, and a
+	// second field would ride past a check of the first.
+	if locs := h.Values("Location"); len(locs) > 1 || len(locs) == 1 && bad(locs[0]) {
 		return "a redirect"
 	}
 	for _, v := range h.Values("Link") {
@@ -699,6 +718,20 @@ func leaksPersonal(body []byte) bool {
 func defaultPort(p string) bool {
 	n, err := strconv.Atoi(p)
 	return err == nil && n == 443
+}
+
+// placeholderLiteral matches the placeholder itself, in a decoded string.
+var placeholderLiteral = regexp.MustCompile(regexp.QuoteMeta(BasePlaceholder))
+
+func queryHasPlaceholder(q url.Values) bool {
+	for k, vs := range q {
+		for _, v := range append(vs, k) {
+			if strings.Contains(v, BasePlaceholder) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // placeholderAuthority matches {{base}} running on into more authority

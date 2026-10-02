@@ -74,7 +74,10 @@ func fakeClaude() error {
 	}
 	defer session.Close()
 
-	var calls []ScriptCall
+	var calls []struct {
+		Tool      string          `json:"tool"`
+		Arguments json.RawMessage `json:"arguments"`
+	}
 	if err := json.Unmarshal([]byte(os.Getenv("EVAL_FAKE_CALLS")), &calls); err != nil {
 		return err
 	}
@@ -149,4 +152,38 @@ func TestCLIAgentThatCannotStartKeepsTurnsNonnegative(t *testing.T) {
 	r := runOne(t, "complete-todo", "bare", NewCLIAgent("haiku", ModelID("haiku"), []string{"/bin/true"}))
 	assert.NotEmpty(t, r.Error)
 	assert.Equal(t, 0, r.Turns)
+}
+
+func TestCLIAgentKeepsIntegersBeyondFloatPrecision(t *testing.T) {
+	self, err := os.Executable()
+	require.NoError(t, err)
+	t.Setenv("EVAL_CLAUDE_BIN", self)
+	t.Setenv("EVAL_FAKE_ROLE", "claude")
+	t.Setenv("EVAL_FAKE_CALLS", `[{"tool":"fake_todos","arguments":{"action":"complete_todo","params":{"todo_id":9007199254740993}}}]`)
+	r := runOne(t, "complete-todo", "bare", NewCLIAgent("haiku", ModelID("haiku"), []string{self}))
+	require.Len(t, r.Trace, 1)
+	require.Len(t, r.Trace[0].Requests, 1)
+	assert.Contains(t, r.Trace[0].Requests[0].Path, "/9007199254740993")
+}
+
+func TestCLIAgentStopsAfterATransportFailure(t *testing.T) {
+	self, err := os.Executable()
+	require.NoError(t, err)
+	t.Setenv("EVAL_CLAUDE_BIN", self)
+	t.Setenv("EVAL_FAKE_ROLE", "claude")
+	call := `{"tool":"fake_projects","arguments":{"action":"list_projects"}}`
+	t.Setenv("EVAL_FAKE_CALLS", "["+call+","+call+","+call+"]")
+	c, a := loadFake(t)
+	require.NoError(t, c.Filter([]string{"open-todos"}))
+	require.NoError(t, a.Select([]string{"bare"}))
+	s, cleanup, err := ConnectFake(context.Background(), a.Arms[0], "http://127.0.0.1:1")
+	require.NoError(t, err)
+	defer cleanup()
+	surf, err := a.Realize(context.Background(), s, a.Arms[0])
+	require.NoError(t, err)
+	ep := NewEpisode(c.Tasks[0], surf, "sys", 8, s, logBackend{})
+	_ = s.Close()
+	err = NewCLIAgent("haiku", ModelID("haiku"), []string{self}).Run(context.Background(), ep)
+	assert.ErrorContains(t, err, "mcp transport")
+	assert.Len(t, ep.Steps, 1, "no call after the server is gone")
 }
