@@ -18,6 +18,22 @@ func WriteJSONL(w io.Writer, records []Record) error {
 	return nil
 }
 
+// RequireMeasured fails a run in which every episode errored (a bad key, an
+// outage, a server that dies after preflight): its results file holds no
+// measurement at all. A run with any measured episode reports its errors
+// apart instead.
+func RequireMeasured(records []Record) error {
+	for _, r := range records {
+		if r.Error == "" {
+			return nil
+		}
+	}
+	if len(records) == 0 {
+		return fmt.Errorf("the run produced no records")
+	}
+	return fmt.Errorf("no episode was measured: all %d errored (first: %s/%s/%s: %s)", len(records), records[0].Model, records[0].Arm, records[0].TaskID, records[0].Error)
+}
+
 // RequirePass errors unless there are records and every one passed — the gate
 // for the deterministic script smoke, where a failure is a broken corpus,
 // cassette, or harness, never a model.

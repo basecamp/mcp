@@ -12,7 +12,9 @@
       "expect": {
         "write_groups": [[
           "^POST /9999999/recordings/4001/comments(\\.json)? .*sgid=\\\\\"[^\\\\\"]*--evalperson1002\\\\\"",
-          "^POST /9999999/recordings/4001/comments(\\.json)? .*(?i)friday"
+          "^POST /9999999/recordings/4001/comments(\\.json)? .*(?i)friday",
+          "^POST /9999999/recordings/4001/comments(\\.json)? .*(?i)\\bcy\\b",
+          "^POST /9999999/recordings/4001/comments(\\.json)? .*(?i)\\bqa\\b"
         ]]
       },
       "reject": {
@@ -113,7 +115,7 @@
       "tags": ["read", "search"],
       "read_only": true,
       "cassettes": ["world"],
-      "expect": {"answer": ["(?i)freeze", "(?i)QA", "(?i)pricing"]},
+      "expect": {"answer": ["(?i)freeze", "(?i)QA", "(?i)release notes", "(?i)pricing"]},
       "script": [
         {"tool": "basecamp", "arguments": {"action": "search", "query": "Launch checklist"}},
         {"tool": "basecamp_files", "arguments": {"action": "get_document", "params": {"document_id": 7001}}}
@@ -189,7 +191,7 @@
       "prompt": "Leave a comment on the Apollo card about the login redirect loop: reproduced on staging with Safari 19.",
       "tags": ["write", "resolve-name"],
       "cassettes": ["world", "writes"],
-      "expect": {"writes": ["^POST /9999999/recordings/6101/comments(\\.json)? .*(?i)safari 19"]},
+      "expect": {"write_groups": [["^POST /9999999/recordings/6101/comments(\\.json)? .*(?i)safari 19", "^POST /9999999/recordings/6101/comments(\\.json)? .*(?i)staging"]]},
       "reject": {"writes": ["^POST /9999999/recordings/(?:6102|6103|4001)/comments"]},
       "script": [
         {"tool": "basecamp_projects", "arguments": {"action": "get_project", "params": {"project_id": 2001}}},
@@ -222,7 +224,7 @@
       "prompt": "Tell the Apollo chat that the release build is green.",
       "tags": ["write"],
       "cassettes": ["world", "writes"],
-      "expect": {"writes": ["^POST /9999999/chats/3006/lines(\\.json)? .*(?i)green"]},
+      "expect": {"write_groups": [["^POST /9999999/chats/3006/lines(\\.json)? .*(?i)green", "^POST /9999999/chats/3006/lines(\\.json)? .*(?i)release build"]]},
       "script": [
         {"tool": "basecamp_projects", "arguments": {"action": "get_project", "params": {"project_id": 2001}}},
         {"tool": "basecamp_campfires_write", "arguments": {"action": "create_campfire_line", "params": {"campfire_id": 3006, "content": "The release build is green."}}}
@@ -235,7 +237,7 @@
       "tags": ["read"],
       "read_only": true,
       "cassettes": ["world"],
-      "expect": {"answer": ["(?i)annie", "(?i)\\bbo\\b", "(?i)\\bcy\\b"]},
+      "expect": {"answer": ["(?i)annie", "(?i)\\bbo\\b", "(?i)\\bcy\\b", "(?i)\\beve\\b"]},
       "script": [
         {"tool": "basecamp_projects", "arguments": {"action": "list_projects"}},
         {"tool": "basecamp_projects", "arguments": {"action": "list_project_people", "params": {"project_id": 2001}}}
