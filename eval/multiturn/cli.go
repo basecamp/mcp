@@ -89,6 +89,10 @@ func (a *CLIAgent) Run(ctx context.Context, ep *Episode) error {
 	defer ln.Close()
 	serveCtx, stop := context.WithCancel(ctx)
 	defer stop()
+	// A transport failure ends the host at once: its further paid turns
+	// could not be measured.
+	runCtx, cancel := context.WithTimeout(ctx, a.timeout)
+	defer cancel()
 	go func() {
 		for {
 			conn, err := ln.Accept()
@@ -96,7 +100,7 @@ func (a *CLIAgent) Run(ctx context.Context, ep *Episode) error {
 				return
 			}
 			go func() {
-				ss, err := ServeSurface(ep).Connect(serveCtx, &mcp.IOTransport{Reader: conn, Writer: conn}, nil)
+				ss, err := ServeSurface(ep, cancel).Connect(serveCtx, &mcp.IOTransport{Reader: conn, Writer: conn}, nil)
 				if err != nil {
 					_ = conn.Close()
 					return
@@ -126,8 +130,6 @@ func (a *CLIAgent) Run(ctx context.Context, ep *Episode) error {
 		}
 	}()
 
-	runCtx, cancel := context.WithTimeout(ctx, a.timeout)
-	defer cancel()
 	cmd := exec.CommandContext(runCtx, a.bin,
 		"-p",
 		"--model", a.modelID,
@@ -145,6 +147,9 @@ func (a *CLIAgent) Run(ctx context.Context, ep *Episode) error {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	runErr := cmd.Run()
+	if ep.transportErr != nil {
+		return fmt.Errorf("mcp transport: %w", ep.transportErr)
+	}
 
 	var out struct {
 		Result     string `json:"result"`
@@ -191,7 +196,8 @@ func (a *CLIAgent) Run(ctx context.Context, ep *Episode) error {
 // ServeSurface builds an MCP server that presents an episode's surface — the
 // arm's instructions and tools — and answers each call through Episode.Call,
 // one at a time so backend exchanges attribute to the call that made them.
-func ServeSurface(ep *Episode) *mcp.Server {
+// After a transport failure it answers nothing more and calls abort.
+func ServeSurface(ep *Episode, abort func()) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: ep.Surface.ServerName, Version: "eval"},
 		&mcp.ServerOptions{Instructions: ep.Surface.Instructions})
 	var mu sync.Mutex
@@ -200,7 +206,7 @@ func ServeSurface(ep *Episode) *mcp.Server {
 		srv.AddTool(t, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			var args map[string]any
 			if len(req.Params.Arguments) > 0 {
-				if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+				if err := decodeArgs(req.Params.Arguments, &args); err != nil {
 					return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "invalid arguments: " + err.Error()}}}, nil
 				}
 			}
@@ -209,7 +215,14 @@ func ServeSurface(ep *Episode) *mcp.Server {
 			}
 			mu.Lock()
 			defer mu.Unlock()
+			if ep.transportErr != nil {
+				abort()
+				return nil, fmt.Errorf("mcp transport: %w", ep.transportErr)
+			}
 			text, isErr := ep.Call(ctx, name, args)
+			if ep.transportErr != nil {
+				abort()
+			}
 			return &mcp.CallToolResult{IsError: isErr, Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil
 		})
 	}

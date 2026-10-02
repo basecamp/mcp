@@ -346,10 +346,12 @@ func ValidateLayers(cassettes ...*Cassette) error {
 // DecodeStrict decodes exactly one JSON document into v: unknown fields are
 // an error (a typo'd key must not silently drop a setting), and so is
 // anything after the document (an append-edited or concatenated file must not
-// run on its stale first half).
+// run on its stale first half). Numbers in untyped fields stay exact
+// (json.Number): a script argument beyond 2^53 survives as written.
 func DecodeStrict(data []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
+	dec.UseNumber()
 	if err := dec.Decode(v); err != nil {
 		return err
 	}

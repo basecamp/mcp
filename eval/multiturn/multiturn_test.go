@@ -758,3 +758,28 @@ func TestAPIAgentStopsAfterATransportFailure(t *testing.T) {
 	assert.ErrorContains(t, err, "mcp transport")
 	assert.Len(t, fa.requests, 1, "no paid turn after the server is gone")
 }
+
+func TestAPIAgentKeepsIntegersBeyondFloatPrecision(t *testing.T) {
+	fa := &fakeAnthropic{responses: []string{
+		`{"content":[{"type":"tool_use","id":"tu","name":"fake_todos","input":{"action":"complete_todo","params":{"todo_id":9007199254740993}}}],"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}}`,
+		`{"content":[{"type":"text","text":"Done."}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`,
+	}}
+	srv := httptest.NewServer(fa)
+	defer srv.Close()
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	t.Setenv("ANTHROPIC_BASE_URL", srv.URL)
+	agent, err := NewAPIAgent("haiku", ModelID("haiku"))
+	require.NoError(t, err)
+	r := runOne(t, "complete-todo", "bare", agent)
+	require.Len(t, r.Trace, 1)
+	require.Len(t, r.Trace[0].Requests, 1)
+	assert.Contains(t, r.Trace[0].Requests[0].Path, "/9007199254740993", "the id the model sent, not its float64 neighbor")
+}
+
+func TestScriptArgumentsKeepIntegersBeyondFloatPrecision(t *testing.T) {
+	var sc ScriptCall
+	require.NoError(t, cassette.DecodeStrict([]byte(`{"tool":"x","arguments":{"id":9007199254740993}}`), &sc))
+	out, err := json.Marshal(sc.Arguments)
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "9007199254740993")
+}

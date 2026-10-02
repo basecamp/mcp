@@ -96,7 +96,8 @@
       "expect": {
         "write_groups": [[
           "^POST /9999999/message_boards/3001/messages(\\.json)? .*\"subject\":\"Week 39 status\"",
-          "^POST /9999999/message_boards/3001/messages(\\.json)? .*(?i)oct(ober)? 6"
+          "^POST /9999999/message_boards/3001/messages(\\.json)? .*(?i)oct(ober)? 6",
+          "^POST /9999999/message_boards/3001/messages(\\.json)? .*(?i)pricing page"
         ]]
       },
       "reject": {"writes": ["^POST /9999999/message_boards/3101/"]},

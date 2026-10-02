@@ -254,9 +254,13 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 		if bin == "" {
 			bin = "claude"
 		}
-		if p, err := exec.LookPath(bin); err == nil {
-			cliBin = p
+		p, err := exec.LookPath(bin)
+		if err != nil {
+			// Every episode would fail to start, after the server and gold
+			// preflights have run.
+			return fail(fmt.Errorf("--backend cli: the claude executable: %w", err))
 		}
+		cliBin = p
 	}
 	skillPath := ""
 	if arms.SkillFile != "" {

@@ -883,3 +883,54 @@ func TestCrossStateShadowingAndNetworkPathRedirects(t *testing.T) {
 	assert.Equal(t, "</1/x>; rel=next, <{{base}}/next>", NewScrubber("https://api.example", nil, "k").String("</1/x>; rel=next, <//api.example/next>"), "and it is rewritten to {{base}}")
 	assert.True(t, r.leaksRedacted([]byte(`{"n":"Alice \u0026 Bob"}`)))
 }
+
+func TestRepeatedLocationIsOffOrigin(t *testing.T) {
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	r, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://api.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	h := http.Header{}
+	h.Add("Location", "https://api.example/next")
+	h.Add("Location", "https://evil.example/next")
+	assert.NotEmpty(t, r.offOrigin(h), "a second Location is checked too")
+	h = http.Header{}
+	h.Add("Location", "https://api.example/a")
+	h.Add("Location", "https://api.example/b")
+	assert.NotEmpty(t, r.offOrigin(h), "repeated Location fields are malformed")
+}
+
+func TestRecorderRefusesTheLiteralPlaceholderInRequests(t *testing.T) {
+	hits := 0
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(201)
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer upstream.Close()
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	rec, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: upstream.URL, AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	rec.client.Transport = upstream.Client().Transport
+	url := rec.Start()
+	defer rec.Close()
+	assert.Equal(t, http.StatusBadRequest, do(t, "POST", url+"/1/x.json", `{"u":"{{base}}/1/y"}`), "a literal placeholder in a body")
+	assert.Equal(t, http.StatusBadRequest, do(t, "POST", url+"/1/x.json", `{"u":"{{base}}/1/y"}`), "an escaped one")
+	assert.Equal(t, http.StatusBadRequest, do(t, "GET", url+"/1/x.json?u=%7B%7Bbase%7D%7D", ""), "one in a query value")
+	assert.Equal(t, 0, hits, "refused before reaching the live account")
+	assert.Equal(t, 201, do(t, "POST", url+"/1/x.json", `{"u":"base"}`), "an ordinary body still records")
+}
+
+func TestEmailAliasesSurviveATokenRotation(t *testing.T) {
+	alias := func(token string) string {
+		t.Setenv("EVAL_REC_TOKEN", token)
+		r, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://api.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN", AliasKeyEnv: "EVAL_ALIAS_KEY"})
+		require.NoError(t, err)
+		return r.scrubber.String("alice@corp.example")
+	}
+	t.Setenv("EVAL_ALIAS_KEY", "stable")
+	assert.Equal(t, alias("before"), alias("after"))
+	assert.NotContains(t, alias("x"), "alice")
+
+	t.Setenv("EVAL_ALIAS_KEY", "")
+	_, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://api.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN", AliasKeyEnv: "EVAL_ALIAS_KEY"})
+	assert.ErrorContains(t, err, "EVAL_ALIAS_KEY")
+}

@@ -384,6 +384,7 @@ production**. Write a profile:
   "upstream": "https://3.basecampapi.com",
   "account_ids": ["<test account id>"],
   "token_env": "BC_EVAL_TOKEN",
+  "alias_key_env": "BC_EVAL_ALIAS_KEY",
   "redact": {"<real name in the seed>": "<fixture name>"}
 }
 ```
@@ -397,7 +398,7 @@ locally, never forwarded — any account the profile does not list, refuses a
 token whose identity document lists any other account, records 404s as misses
 (replayed, still a wrong id — and able to override a stale lower layer), and stores
 only scrubbed data: no request headers, an allowlist of response headers, the
-upstream origin as `{{base}}`, emails as keyed aliases (`person-<hmac>@example.com`, stable per profile token), avatar URLs
+upstream origin as `{{base}}`, emails as keyed aliases (`person-<hmac>@example.com`, keyed by the secret in `alias_key_env` so they survive a token rotation; without it, by the token, stable only while the token is), avatar URLs
 replaced, and the profile's `redact` literals applied.
 
 The scrubber is a safety net, not the guarantee. It rewrites text — origins,
