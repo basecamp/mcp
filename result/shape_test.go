@@ -91,9 +91,29 @@ func TestObject(t *testing.T) {
 			assert.Contains(t, string(data), `"content":[]`, name)
 		}
 	})
+	t.Run("a marshaler runs once, so text and structured agree", func(t *testing.T) {
+		// The text restates what the marshaler's next call answers: [2].
+		m := &countingMarshaler{calls: 1}
+		out := Object(&mcp.CallToolResult{
+			Content:           []mcp.Content{&mcp.TextContent{Text: `[2]`}},
+			StructuredContent: m,
+		})
+		assertStructured(t, out, `{"items": [2]}`)
+		assert.JSONEq(t, `{"items": [2]}`, out.Content[0].(*mcp.TextContent).Text)
+		assert.Equal(t, 2, m.calls, "Object marshals the value once")
+	})
 	t.Run("nil result", func(t *testing.T) {
 		assert.Nil(t, Object(nil))
 	})
+}
+
+// countingMarshaler answers a different list on every call, as a stateful
+// marshaler might.
+type countingMarshaler struct{ calls int }
+
+func (m *countingMarshaler) MarshalJSON() ([]byte, error) {
+	m.calls++
+	return json.Marshal([]int{m.calls})
 }
 
 // typedPayload stands in for a product's typed error payload: an object a

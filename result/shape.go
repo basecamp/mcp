@@ -115,7 +115,14 @@ func Object(result *mcp.CallToolResult) *mcp.CallToolResult {
 	if err != nil || isJSONObject(data) {
 		return withContentArray(result)
 	}
-	wrapped, err := Marshal(sc, false)
+	// Both wrapped forms are built from this one marshal, so a handler's
+	// json.Marshaler runs once and can't hand the text and the structured
+	// form different values.
+	payload := data
+	if isNilSlice(sc) {
+		payload = []byte("[]")
+	}
+	wrapped, err := json.Marshal(map[string]json.RawMessage{wrapKey(payload): payload})
 	if err != nil {
 		return withContentArray(result)
 	}
@@ -125,7 +132,9 @@ func Object(result *mcp.CallToolResult) *mcp.CallToolResult {
 	// handler's, and a structured-only result keeps its content array.
 	out.Content = make([]mcp.Content, len(result.Content))
 	copy(out.Content, result.Content)
-	text, textErr := Marshal(sc, true)
+	var indented bytes.Buffer
+	textErr := json.Indent(&indented, wrapped, "", "  ")
+	text := indented.Bytes()
 	for i, c := range out.Content {
 		// Every block that restates the value is rewritten, not just the
 		// first text block: prose may come first.
