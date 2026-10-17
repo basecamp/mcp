@@ -1305,14 +1305,33 @@ func TestNonceRetrySharesTheTimeout(t *testing.T) {
 	}
 }
 
-// TestPrivateKeyJWTRefusesAnUninitializedKey: a typed-nil or zero key is a
-// startup error, not a panic.
+// TestPrivateKeyJWTRefusesAnUninitializedKey: a typed-nil, zero, partly
+// initialized or inconsistent key is a startup error, not a panic on the
+// first exchange.
 func TestPrivateKeyJWTRefusesAnUninitializedKey(t *testing.T) {
 	var typedNil *ecdsa.PrivateKey
-	for name, key := range map[string]*ecdsa.PrivateKey{"typed nil": typedNil, "zero": {}} {
+	good, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mismatched := &ecdsa.PrivateKey{PublicKey: other.PublicKey, D: good.D}
+	for name, key := range map[string]*ecdsa.PrivateKey{
+		"typed nil":        typedNil,
+		"zero":             {},
+		"curve only":       {PublicKey: ecdsa.PublicKey{Curve: elliptic.P256()}},
+		"no scalar":        {PublicKey: good.PublicKey},
+		"mismatched point": mismatched,
+	} {
 		if _, err := PrivateKeyJWT("id", key, "https://fizzy.example/oauth/token"); err == nil {
 			t.Errorf("%s: want an error", name)
 		}
+	}
+	if _, err := PrivateKeyJWT("id", good, "https://fizzy.example/oauth/token"); err != nil {
+		t.Errorf("a valid key: %v", err)
 	}
 }
 

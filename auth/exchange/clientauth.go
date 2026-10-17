@@ -60,11 +60,18 @@ func PrivateKeyJWT(clientID string, key crypto.Signer, tokenURL string) (ClientA
 	if !ok {
 		return nil, fmt.Errorf("private_key_jwt requires an *ecdsa.PrivateKey, got %T", key)
 	}
-	if ec == nil || ec.Curve == nil {
+	if ec == nil || ec.Curve == nil || ec.X == nil || ec.Y == nil || ec.D == nil {
 		return nil, errors.New("private_key_jwt requires an initialized P-256 key")
 	}
 	if ec.Curve != elliptic.P256() {
 		return nil, fmt.Errorf("private_key_jwt requires a P-256 key, got %s", ec.Curve.Params().Name)
+	}
+	// The key whole, here rather than on the first exchange: a scalar in
+	// range, a public point on the curve, and the one derived from the other.
+	priv, privErr := ec.ECDH()
+	pub, pubErr := ec.PublicKey.ECDH()
+	if privErr != nil || pubErr != nil || !priv.PublicKey().Equal(pub) {
+		return nil, errors.New("private_key_jwt requires a valid P-256 key: its scalar and public point don't form a key pair")
 	}
 
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: ec}, nil)
