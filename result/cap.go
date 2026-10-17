@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sort"
 	"unicode/utf8"
 
@@ -310,10 +311,7 @@ func shortenLargestList(value any, originalBytes, maxBytes, limit int) []byte {
 		}
 		items = arr
 		build = func(kept []any, t truncation) map[string]any {
-			out := make(map[string]any, len(v)+2)
-			for k, val := range v {
-				out[k] = val
-			}
+			out := maps.Clone(v)
 			out[field] = kept
 			out["truncated"] = true
 			out["truncation"] = t
