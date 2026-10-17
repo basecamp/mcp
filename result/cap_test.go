@@ -102,6 +102,27 @@ func TestCap_ErrorsUntouched(t *testing.T) {
 // The boundary is the serialized size plus the frame reserve: a result
 // exactly at the limit passes whole, one byte over it is cut, and the cut
 // fits.
+// A result asking for input is the protocol's, not a payload: cutting it
+// would turn an input request into a complete result with a notice.
+func TestCap_InputRequestsUntouched(t *testing.T) {
+	var in mcp.CallToolResult
+	require.NoError(t, json.Unmarshal([]byte(`{"resultType":"input_required","requestState":"`+strings.Repeat("s", 50_000)+`"}`), &in))
+	require.True(t, in.NeedsInput())
+	assert.Same(t, &in, Cap(&in, MinBytes))
+}
+
+// The coarse cut keeps the result's protocol envelope: the resultType the
+// SDK set before the middleware ran still reaches the client.
+func TestCap_CoarseKeepsTheResultType(t *testing.T) {
+	var in mcp.CallToolResult
+	require.NoError(t, json.Unmarshal([]byte(`{"resultType":"complete","content":[{"type":"text","text":"`+strings.Repeat("a", 50_000)+`"}]}`), &in))
+	out := Cap(&in, MinBytes)
+	data, err := json.Marshal(out)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"resultType":"complete"`)
+	assert.Contains(t, resultText(t, out), "withheld")
+}
+
 func TestCap_BoundaryIsTheSerializedSize(t *testing.T) {
 	r := JSON(map[string]any{"items": bigItems(40)})
 	n := wireLen(t, r)
@@ -512,6 +533,7 @@ func TestCapCoarse_AlwaysFitsTheLimit(t *testing.T) {
 		"structured":           {StructuredContent: map[string]any{"a": 1}},
 		"structured with meta": {StructuredContent: map[string]any{"a": 1}, Meta: mcp.Meta{"blob": strings.Repeat("m", 3_500)}},
 		"huge meta":            {Meta: mcp.Meta{"blob": strings.Repeat("m", math.MaxUint16)}},
+		"stray request state":  {Content: []mcp.Content{&mcp.TextContent{Text: "x"}}, RequestState: strings.Repeat("s", 10_000)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			for _, limit := range []int{MinBytes, MinBytes + 1, 10_000, 100_000} {
