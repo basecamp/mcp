@@ -3,6 +3,7 @@ package result
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -74,6 +75,32 @@ func TestMiddleware_Caps(t *testing.T) {
 	got := decode(t, resultText(t, res))
 	assert.Equal(t, true, got["truncated"])
 	assert.NotEmpty(t, asList(t, got["items"]))
+}
+
+// What the client receives fits the cap, including what the SDK adds after
+// the middleware (resultType, the serverInfo _meta): a prefix cut packs the
+// result to the limit, so an unreserved cap would land over it.
+func TestMiddleware_CapHoldsForWhatTheClientReceives(t *testing.T) {
+	for name, payload := range map[string]any{
+		"quotes":    map[string]any{"body": strings.Repeat(`"`, 24_000)},
+		"list":      bigItems(100),
+		"plain big": nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			session := serve(t, 8_000, func() *mcp.CallToolResult {
+				if payload == nil {
+					return Text(strings.Repeat("a", 50_000))
+				}
+				return JSON(payload)
+			})
+			res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "annotated"})
+			require.NoError(t, err)
+			wire, err := json.Marshal(res)
+			require.NoError(t, err)
+			assert.LessOrEqual(t, len(wire), 8_000)
+			assert.Contains(t, string(wire), "truncated")
+		})
+	}
 }
 
 // Mirroring copies a changed tool rather than writing through to the

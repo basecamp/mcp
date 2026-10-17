@@ -74,7 +74,7 @@ func structured(t *testing.T, r *mcp.CallToolResult) map[string]any {
 // wire, flagged, its structured copy (when restated) the same JSON as its text.
 func assertExactCut(t *testing.T, out *mcp.CallToolResult, limit int) map[string]any {
 	t.Helper()
-	assert.LessOrEqual(t, wireLen(t, out), limit)
+	assert.LessOrEqual(t, wireLen(t, out), limit-frameReserve)
 	require.Len(t, out.Content, 1)
 	text := resultText(t, out)
 	got := decode(t, text)
@@ -99,15 +99,16 @@ func TestCap_ErrorsUntouched(t *testing.T) {
 	assert.Same(t, r, Cap(r, MinBytes))
 }
 
-// The boundary is the serialized size: a result exactly at the limit passes
-// whole, one byte under it is cut, and the cut fits.
+// The boundary is the serialized size plus the frame reserve: a result
+// exactly at the limit passes whole, one byte over it is cut, and the cut
+// fits.
 func TestCap_BoundaryIsTheSerializedSize(t *testing.T) {
 	r := JSON(map[string]any{"items": bigItems(40)})
 	n := wireLen(t, r)
 	require.Greater(t, n, MinBytes)
 
-	assert.Same(t, r, Cap(r, n), "exactly at the limit: untouched")
-	out := Cap(r, n-1)
+	assert.Same(t, r, Cap(r, n+frameReserve), "exactly at the limit: untouched")
+	out := Cap(r, n+frameReserve-1)
 	assert.NotSame(t, r, out)
 	assert.LessOrEqual(t, wireLen(t, out), n-1)
 	got := decode(t, resultText(t, out))
@@ -124,7 +125,7 @@ func TestCap_EscapingCountsAgainstTheLimit(t *testing.T) {
 	for i := range items {
 		items[i] = map[string]any{"id": i, "title": strings.Repeat(`<&>"\`, 60)}
 	}
-	for _, limit := range []int{MinBytes, 10_000, 50_000} {
+	for _, limit := range []int{8_000, 10_000, 50_000} {
 		out := Cap(JSON(items), limit)
 		got := assertExactCut(t, out, limit)
 		assert.NotEmpty(t, asList(t, got["items"]), "limit %d", limit)
@@ -139,8 +140,8 @@ func TestCap_CompactFitsWithoutTruncation(t *testing.T) {
 		Content:           []mcp.Content{&mcp.TextContent{Text: mustJSON(t, map[string]any{"items": bigItems(20)})}},
 		StructuredContent: json.RawMessage(mustJSON(t, map[string]any{"items": bigItems(20)})),
 	}
-	limit := wireLen(t, compact)
-	require.Greater(t, wireLen(t, r), limit)
+	limit := wireLen(t, compact) + frameReserve
+	require.Greater(t, wireLen(t, r)+frameReserve, limit)
 
 	out := Cap(r, limit)
 	got := decode(t, resultText(t, out))
@@ -175,7 +176,7 @@ func TestCap_ShortensTopLevelArrayToTheMostThatFit(t *testing.T) {
 	assert.Greater(t, wireLen(t, &mcp.CallToolResult{
 		Content:           []mcp.Content{&mcp.TextContent{Text: more}},
 		StructuredContent: json.RawMessage(more),
-	}), 10_000)
+	}), 10_000-frameReserve)
 }
 
 // JSON text with no structured copy (the gateway's describe) is the standard
@@ -434,7 +435,7 @@ func TestDecodeJSONRefusesTrailingBytes(t *testing.T) {
 // explanation when the result had any.
 func assertCoarse(t *testing.T, out, in *mcp.CallToolResult, limit int) {
 	t.Helper()
-	assert.LessOrEqual(t, wireLen(t, out), limit)
+	assert.LessOrEqual(t, wireLen(t, out), limit-frameReserve)
 	require.Len(t, out.Content, 1)
 	text := resultText(t, out)
 	assert.Contains(t, text, "[truncated:")
@@ -515,7 +516,7 @@ func TestCapCoarse_AlwaysFitsTheLimit(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			for _, limit := range []int{MinBytes, MinBytes + 1, 10_000, 100_000} {
 				out := capCoarse(in, math.MaxInt, limit)
-				assert.LessOrEqual(t, wireLen(t, out), limit, "limit %d", limit)
+				assert.LessOrEqual(t, wireLen(t, out), limit-frameReserve, "limit %d", limit)
 			}
 		})
 	}

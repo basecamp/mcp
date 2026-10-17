@@ -17,12 +17,12 @@ import (
 // Every tool result passes through Cap on its way out of the server (a
 // product installs Middleware, or calls Cap where it serves results). The
 // cap measures what goes on the wire: the result as the SDK serializes it,
-// JSON string escaping, the content envelope and _meta included. A result
-// that fits is untouched. One that does not is cut to fit here, where the cut
-// can be explained, rather than by the host, which truncates or refuses an
+// JSON string escaping, the content envelope and _meta included, plus
+// frameReserve for what is added after it (see there). A result that fits is
+// untouched. One that does not is cut to fit here, where the cut can be
+// explained, rather than by the host, which truncates or refuses an
 // oversized result on its own terms and tells the model nothing about what
-// is missing. The JSON-RPC frame around the result adds a few dozen bytes
-// the cap does not count.
+// is missing.
 //
 // There are two cuts, by shape.
 //
@@ -68,7 +68,8 @@ import (
 // coarse cut: the result is replaced by one text notice saying it was
 // withheld, how large it was and what the limit is, with structuredContent
 // reduced to the same explanation when the result had any. Its size depends
-// only on two integers, so it fits under MinBytes whatever the result held.
+// only on two integers, so it fits under MinBytes, frameReserve included,
+// whatever the result held.
 // No current server returns such a result over the cap; one that needs a
 // finer cut for another shape brings that case here.
 //
@@ -100,6 +101,15 @@ const oversizedHint = "The next item exceeds the server's size limit on its own 
 // withheldHint explains the coarse cut.
 const withheldHint = "The result exceeded the server's size limit and could not be cut to fit, so it was withheld. Narrow the request with filters, or read a specific record directly."
 
+// frameReserve is the room the cap leaves for what is added to a result
+// after Cap sees it: the SDK's resultType and its serverInfo _meta entry
+// (both under protocol 2026-07-28, about 120 bytes for a server identified by
+// name and version), and the JSON-RPC frame around the result (about 40).
+// Holding the result to the limit less this keeps the message under the
+// limit. A server whose Implementation serializes to more than a few hundred
+// bytes (icons, say) overruns it by the difference.
+const frameReserve = 512
+
 // MinBytes is the smallest cap enforced: room for the truncation envelope and
 // a useful amount of payload, and always for the coarse cut. A smaller
 // positive setting is raised to it.
@@ -130,7 +140,8 @@ type truncation struct {
 	Hint          string            `json:"hint"`
 }
 
-// Cap holds a successful result to maxBytes of serialized result. It returns
+// Cap holds a successful result to maxBytes of serialized result, frameReserve
+// included. It returns
 // the result unchanged when maxBytes <= 0, the result is an error (an error
 // must reach the caller whole), or it already fits; a positive maxBytes below
 // MinBytes is raised to it. The result passed in is never modified.
@@ -143,7 +154,7 @@ func Cap(result *mcp.CallToolResult, maxBytes int) *mcp.CallToolResult {
 	}
 	limit := max(maxBytes, MinBytes)
 	size, err := wireBytes(result)
-	if err == nil && size <= limit {
+	if err == nil && size <= limit-frameReserve {
 		return result
 	}
 	if out := capExact(result, size, limit); out != nil {
@@ -201,7 +212,7 @@ func capExact(result *mcp.CallToolResult, originalBytes, limit int) *mcp.CallToo
 	}
 	fits := func(payload []byte) bool {
 		n, err := wireBytes(serve(payload))
-		return err == nil && n <= limit
+		return err == nil && n <= limit-frameReserve
 	}
 	payload := capJSON(value, originalBytes, limit, fits)
 	if payload == nil {
@@ -213,7 +224,8 @@ func capExact(result *mcp.CallToolResult, originalBytes, limit int) *mcp.CallToo
 // capCoarse replaces a result the exact cut can't serve with one notice,
 // and its structured content, if any, with the same explanation. The result's
 // _meta is kept when it fits beside the notice and dropped otherwise, so the
-// cut depends only on originalBytes and limit, and fits under MinBytes.
+// cut depends only on originalBytes and limit, and fits under MinBytes less
+// frameReserve.
 func capCoarse(result *mcp.CallToolResult, originalBytes, limit int) *mcp.CallToolResult {
 	t := truncation{LimitBytes: limit, OriginalBytes: originalBytes, Hint: withheldHint}
 	out := &mcp.CallToolResult{
@@ -225,7 +237,7 @@ func capCoarse(result *mcp.CallToolResult, originalBytes, limit int) *mcp.CallTo
 	if result.StructuredContent != nil {
 		out.StructuredContent = map[string]any{"truncated": true, "truncation": t}
 	}
-	if n, err := wireBytes(out); err != nil || n > limit {
+	if n, err := wireBytes(out); err != nil || n > limit-frameReserve {
 		out.Meta = nil
 	}
 	return out
@@ -362,7 +374,7 @@ func FitsWhole(v any, maxBytes int) bool {
 		Content:           []mcp.Content{&mcp.TextContent{Text: string(data)}},
 		StructuredContent: json.RawMessage(data),
 	})
-	return err == nil && n <= max(maxBytes, MinBytes)
+	return err == nil && n <= max(maxBytes, MinBytes)-frameReserve
 }
 
 // JSONBytes is what Cap measures for JSON(v): the serialized result, its
@@ -486,11 +498,11 @@ func shortenLargestList(value any, originalBytes, limit int, fits func([]byte) b
 		return render(k, false, false)
 	}
 	// The first item doesn't fit beside the envelope. It is oversized only if
-	// it can't be served even alone, as the one item of a bare list; if it
-	// could, what crowds it out is the rest of the payload, and stepping past
-	// it would skip an item that is not too large to read.
-	alone, err := json.Marshal(map[string]any{field: items[:1]})
-	if err != nil || fits(alone) {
+	// it can't be served even with nothing beside it but the envelope and the
+	// page and offset that place it; if it could, what crowds it out is the
+	// rest of the payload, and stepping past it would skip an item that is
+	// not too large to read.
+	if fitsRendered(minimal(render(1, false, false), field)) {
 		return nil
 	}
 	for _, withID := range []bool{true, false} {
@@ -502,6 +514,28 @@ func shortenLargestList(value any, originalBytes, limit int, fits func([]byte) b
 	// that makes progress, so the prefix fallback, which keeps no
 	// continuation that could return to it, takes over.
 	return nil
+}
+
+// minimal keeps, of a rendered page, only its list, the envelope and the
+// page and offset that place it: the least any page holding its items
+// carries.
+func minimal(page []byte, field string) []byte {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(page, &m) != nil {
+		return nil
+	}
+	for k := range m {
+		switch k {
+		case field, "truncated", "truncation", "page", "offset":
+		default:
+			delete(m, k)
+		}
+	}
+	data, err := json.Marshal(m)
+	if err != nil {
+		return nil
+	}
+	return data
 }
 
 // bareList reports whether m is a list served alone: {"items": [...]} with
