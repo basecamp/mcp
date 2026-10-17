@@ -782,6 +782,80 @@ func TestOversizedResponseBounded(t *testing.T) {
 	}
 }
 
+// TestResponsePastTheCapIsInfra: a body longer than MaxResponseBytes is an
+// infrastructure failure even when its first MaxResponseBytes bytes hold a
+// complete answer, padded out, followed by more: an invalid_grant there
+// would force re-authorization, and a token would be served from a
+// response that never ended where it claimed to.
+func TestResponsePastTheCapIsInfra(t *testing.T) {
+	for name, tc := range map[string]struct {
+		status int
+		answer string
+	}{
+		"invalid_grant": {http.StatusBadRequest, `{"error":"invalid_grant"}`},
+		"token":         {http.StatusOK, tokenJSON("Bearer", 300)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = fmt.Fprint(w, tc.answer+strings.Repeat(" ", MaxResponseBytes-len(tc.answer))+"trailing")
+			}))
+			defer ts.Close()
+			_, err := newExchanger(t, ts.URL, nil).Exchange(context.Background(), testSubjectToken)
+			if !IsInfra(err) {
+				t.Fatalf("want InfraError, got %v", err)
+			}
+		})
+	}
+	// A body exactly at the cap is still read and answered.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		answer := tokenJSON("Bearer", 300)
+		_, _ = fmt.Fprint(w, answer+strings.Repeat(" ", MaxResponseBytes-len(answer)))
+	}))
+	defer ts.Close()
+	if _, err := newExchanger(t, ts.URL, nil).Exchange(context.Background(), testSubjectToken); err != nil {
+		t.Fatalf("a body at the cap: %v", err)
+	}
+}
+
+// TestNonceRetrySharesTheTimeoutUnderALaterDeadline: a caller deadline later
+// than the client's timeout doesn't lift the whole-exchange bound.
+func TestNonceRetrySharesTheTimeoutUnderALaterDeadline(t *testing.T) {
+	const timeout = 400 * time.Millisecond
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(timeout * 3 / 4)
+		if strings.Contains(r.Header.Get("DPoP"), "nonce=") {
+			_, _ = fmt.Fprint(w, tokenJSON("DPoP", 300))
+			return
+		}
+		w.Header().Set("DPoP-Nonce", "nonce-1")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprint(w, `{"error":"use_dpop_nonce"}`)
+	}))
+	defer ts.Close()
+	ex, err := New(Config{
+		TokenURL:   ts.URL,
+		Auth:       ClientSecretPost("id", "secret"),
+		HTTPClient: &http.Client{Timeout: timeout},
+		Signer:     &stubSigner{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*timeout)
+	defer cancel()
+	start := time.Now()
+	_, err = ex.Exchange(ctx, testSubjectToken)
+	if elapsed := time.Since(start); elapsed > timeout+timeout/2 {
+		t.Fatalf("exchange took %v, past one %v timeout", elapsed, timeout)
+	}
+	if !IsInfra(err) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want an InfraError reaching DeadlineExceeded, got %v", err)
+	}
+}
+
 func TestNewFailsClosed(t *testing.T) {
 	valid := Config{ // #nosec G101 -- test fixture, not a credential
 		TokenURL: "https://as.example.com/token",
@@ -1139,6 +1213,7 @@ func TestTokenURLRequiresTLSOffLoopback(t *testing.T) {
 		"https://tok-secret@fizzy.example/t":        false,
 		"https://fizzy.example/oauth/token#x":       false,
 		"https://fizzy.example/oauth/token#":        false,
+		"http://fizzy.example/token?api_key=secret": false,
 		"http://user:pw-secret@fizzy.example/token": false,
 	} {
 		_, err := New(Config{TokenURL: raw, Auth: ClientSecretPost("id", "secret")})

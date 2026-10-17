@@ -38,7 +38,8 @@ const (
 
 	// MaxResponseBytes caps how much of a token endpoint response is read.
 	// The AS is trusted but a misrouted or broken endpoint must not induce
-	// an unbounded read; a truncated body simply fails to parse. Exported so
+	// an unbounded read; a longer body is an infrastructure failure, never
+	// parsed. Exported so
 	// a product's stdio login path bounds its own reads identically.
 	MaxResponseBytes = 64 << 10
 
@@ -166,9 +167,10 @@ func (e *Exchanger) Exchange(ctx context.Context, subjectToken string) (*Token, 
 // require mode) - never speculatively.
 func (e *Exchanger) ExchangeWithBinding(ctx context.Context, subjectToken, subjectJKT string) (*Token, error) {
 	// The client's Timeout bounds each request; a nonce retry is a second
-	// one, so without a caller deadline the exchange as a whole gets the
-	// same bound, shared by both attempts, rather than twice it.
-	if _, ok := ctx.Deadline(); !ok && e.httpClient.Timeout > 0 {
+	// one, so the exchange as a whole gets the same bound, shared by both
+	// attempts, rather than twice it. A caller deadline that is earlier
+	// still wins: WithTimeout keeps the parent's when it comes first.
+	if e.httpClient.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, e.httpClient.Timeout)
 		defer cancel()
@@ -243,9 +245,16 @@ func (e *Exchanger) exchangeOnce(ctx context.Context, subjectToken, subjectJKT, 
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes))
+	// One byte past the cap tells a body that ends at it from one that runs
+	// on: a complete JSON prefix followed by padding and more bytes must not
+	// parse as an answer (an invalid_grant that forces re-authorization, or
+	// a token).
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes+1))
 	if err != nil {
 		return nil, newInfra(resp.StatusCode, "", "reading the token endpoint response failed", err)
+	}
+	if len(body) > MaxResponseBytes {
+		return nil, newInfra(resp.StatusCode, "", "token endpoint response exceeded the size limit", nil)
 	}
 
 	switch resp.StatusCode {

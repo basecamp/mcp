@@ -38,9 +38,13 @@ func ValidateEndpointURL(rawURL string) error {
 			"Go would send it as Basic authorization alongside the client credentials")
 	}
 	if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
+		// Scheme, host and path only: a query can carry a credential too,
+		// and Redacted() leaves it in place.
+		shown := url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path, RawPath: u.RawPath}
 		return fmt.Errorf("%q must use https: requests to it carry credentials "+
 			"(http is permitted only for exact localhost or a loopback IP literal - "+
-			"*.localhost names are excluded because HTTP_PROXY would receive their cleartext)", u.Redacted())
+			"*.localhost names are excluded because HTTP_PROXY would receive their cleartext; "+
+			"any query is withheld from this error)", shown.String())
 	}
 	// A fragment is never sent in an HTTP request, but private_key_jwt uses
 	// the configured URL VERBATIM as its client-assertion audience — so
