@@ -36,6 +36,7 @@ Arriving as the extraction sequence lands (see the program board):
 | `mcptest` | both servers' test suites | in-memory MCP client/server wire-test harness, snapshot testing with `-update` |
 | `gateway` | hey-mcp-server `internal/server`, basecamp-mcp-server `internal/tools` registry | gateway dispatch conventions, read-only and domain filtering over a small catalog interface |
 | `catalog` | hey-mcp-server `internal/catalog` | Domain/Operation types and the behavior-model + OpenAPI join, product-parameterized (tool prefix, domain specs, embedded model snapshot) |
+| `result` | basecamp-mcp-server `internal/tools` (`result_shape.go`, `result_cap.go`) | structuredContent always a JSON object (`Object`, `JSON`), the tool-result size cap with exact continuations where a listing declares its offset (`Cap`, `FitsWhole`, `FitLeading`), and receiving `Middleware` applying both to every call |
 
 Per-product forever: domain curation and blurbs, vendored SDK model snapshots,
 SDK clients and adapters, env var surfaces, product-specific tools and
