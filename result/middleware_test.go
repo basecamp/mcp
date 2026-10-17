@@ -75,3 +75,21 @@ func TestMiddleware_Caps(t *testing.T) {
 	assert.Equal(t, true, got["truncated"])
 	assert.NotEmpty(t, asList(t, got["items"]))
 }
+
+// Mirroring copies a changed tool rather than writing through to the
+// server's own definition, and serves a consistent tool as is.
+func TestMirrorTitlesCopiesRatherThanWritingThrough(t *testing.T) {
+	annotated := &mcp.Tool{Name: "a", Annotations: &mcp.ToolAnnotations{Title: "A"}}
+	titled := &mcp.Tool{Name: "b", Title: "B"}
+	both := &mcp.Tool{Name: "c", Title: "C", Annotations: &mcp.ToolAnnotations{Title: "C"}}
+	in := &mcp.ListToolsResult{Tools: []*mcp.Tool{annotated, titled, both}}
+
+	out := mirrorTitles(in)
+
+	assert.Equal(t, "A", out.Tools[0].Title)
+	assert.Equal(t, "B", out.Tools[1].Annotations.Title)
+	assert.Same(t, both, out.Tools[2], "a tool already consistent is served as is")
+	assert.Empty(t, annotated.Title, "the server's own definition is not mutated")
+	assert.Nil(t, titled.Annotations, "the server's own definition is not mutated")
+	assert.Same(t, annotated, in.Tools[0])
+}
