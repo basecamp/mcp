@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basecamp/mcp/auth/upstream"
+
 	jose "github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
@@ -377,9 +379,14 @@ func TestRateLimited(t *testing.T) {
 		{"delta-seconds", "60", 60 * time.Second},
 		{"absent", "", 0},
 		{"HTTP-date ignored", "Wed, 21 Oct 2026 07:28:00 GMT", 0},
-		{"largest in range", "9223372036", 9223372036 * time.Second},
-		{"past time.Duration's range is unknown", "9223372037", 0},
-		{"int64 max is unknown", "9223372036854775807", 0},
+		{"negative ignored", "-60", 0},
+		{"non-numeric ignored", "soon", 0},
+		// Multiplied out unbounded, these overflowed time.Duration into a
+		// negative backoff.
+		{"past the bound", "86401", upstream.MaxRetryAfter},
+		{"first overflowing value", "9223372037", upstream.MaxRetryAfter},
+		{"max int64", "9223372036854775807", upstream.MaxRetryAfter},
+		{"past int64", "99999999999999999999", upstream.MaxRetryAfter},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1071,9 +1078,6 @@ func TestErrorsCarryNoEndpointText(t *testing.T) {
 		"nonpositive expires_in": func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, `{"access_token":"x","token_type":"Bearer",%s,"expires_in":-%s}`, issued, secret[:18])
 		},
-		"expires_in past time.Duration": func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprintf(w, `{"access_token":"x","token_type":"Bearer",%s,"expires_in":%s}`, issued, secret[:18])
-		},
 	}
 	for name, handler := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -1117,21 +1121,112 @@ func TestRefusesAnUnprintableAccessToken(t *testing.T) {
 }
 
 // TestTokenURLRequiresTLSOffLoopback: the exchange sends credentials, so
-// only loopback may take plain http.
+// only exact localhost or a loopback IP may take plain http; userinfo and a
+// fragment are refused, and no error renders a credential in the URL.
 func TestTokenURLRequiresTLSOffLoopback(t *testing.T) {
 	for raw, ok := range map[string]bool{
-		"https://fizzy.example/oauth/token": true,
-		"http://127.0.0.1:3000/oauth/token": true,
-		"http://[::1]:3000/oauth/token":     true,
-		"http://localhost:3000/oauth/token": true,
-		"http://fizzy.example/oauth/token":  false,
-		"http://10.0.0.1/oauth/token":       false,
-		"ftp://fizzy.example/oauth/token":   false,
+		"https://fizzy.example/oauth/token":         true,
+		"http://127.0.0.1:3000/oauth/token":         true,
+		"http://[::1]:3000/oauth/token":             true,
+		"http://localhost:3000/oauth/token":         true,
+		"http://LOCALHOST:3000/oauth/token":         true,
+		"http://fizzy.example/oauth/token":          false,
+		"http://10.0.0.1/oauth/token":               false,
+		"http://as.localhost/oauth/token":           false,
+		"ftp://fizzy.example/oauth/token":           false,
+		"https://:443/oauth/token":                  false,
+		"https://user:pw-secret@fizzy.example/t":    false,
+		"https://tok-secret@fizzy.example/t":        false,
+		"https://fizzy.example/oauth/token#x":       false,
+		"https://fizzy.example/oauth/token#":        false,
+		"http://user:pw-secret@fizzy.example/token": false,
 	} {
 		_, err := New(Config{TokenURL: raw, Auth: ClientSecretPost("id", "secret")})
 		if (err == nil) != ok {
 			t.Errorf("New(%q): err = %v, want ok=%v", raw, err, ok)
 		}
+		if err != nil && strings.Contains(err.Error(), "secret") {
+			t.Errorf("New(%q): error renders the URL's credential: %v", raw, err)
+		}
+	}
+}
+
+// TestExpiresInBounds: expires_in is endpoint-controlled. A huge value would
+// overflow time.Duration into a token that is already expired; it takes
+// upstream.MaxLifetime instead. Values that are not a positive integer stay
+// infrastructure failures.
+func TestExpiresInBounds(t *testing.T) {
+	serve := func(expiresIn string) (*Token, error) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = fmt.Fprintf(w, `{"access_token":"exchanged-token","token_type":"Bearer",`+
+				`"issued_token_type":"urn:ietf:params:oauth:token-type:access_token","expires_in":%s}`, expiresIn)
+		}))
+		defer ts.Close()
+		return newExchanger(t, ts.URL, nil).Exchange(context.Background(), testSubjectToken)
+	}
+
+	for _, v := range []string{"9223372036", "9223372037", "9223372036854775807"} {
+		before := time.Now()
+		tok, err := serve(v)
+		if err != nil {
+			t.Fatalf("expires_in %s: %v", v, err)
+		}
+		if !tok.ExpiresAt.After(before) {
+			t.Errorf("expires_in %s: ExpiresAt %v is not in the future", v, tok.ExpiresAt)
+		}
+		if tok.ExpiresAt.After(time.Now().Add(upstream.MaxLifetime)) {
+			t.Errorf("expires_in %s: ExpiresAt %v is past the bound", v, tok.ExpiresAt)
+		}
+	}
+
+	for _, v := range []string{"0", "-1", "-9223372036854775808", "99999999999999999999", "300.5", `"300"`, "null"} {
+		tok, err := serve(v)
+		if v == "null" {
+			// null is an absent lifetime: unknown, cached under the TTL cap.
+			if err != nil || !tok.ExpiresAt.IsZero() {
+				t.Errorf("expires_in null: tok=%+v err=%v, want a token with zero ExpiresAt", tok, err)
+			}
+			continue
+		}
+		if !IsInfra(err) {
+			t.Errorf("expires_in %s: want InfraError, got tok=%+v err=%v", v, tok, err)
+		}
+	}
+}
+
+// TestNonceRetrySharesTheTimeout: with no caller deadline, the client's
+// timeout bounds the whole exchange, nonce retry included, not each attempt.
+func TestNonceRetrySharesTheTimeout(t *testing.T) {
+	const timeout = 400 * time.Millisecond
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(timeout * 3 / 4)
+		if strings.Contains(r.Header.Get("DPoP"), "nonce=") {
+			_, _ = fmt.Fprint(w, tokenJSON("DPoP", 300))
+			return
+		}
+		w.Header().Set("DPoP-Nonce", "nonce-1")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprint(w, `{"error":"use_dpop_nonce"}`)
+	}))
+	defer ts.Close()
+
+	ex, err := New(Config{
+		TokenURL:   ts.URL,
+		Auth:       ClientSecretPost("id", "secret"),
+		HTTPClient: &http.Client{Timeout: timeout},
+		Signer:     &stubSigner{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err = ex.Exchange(context.Background(), testSubjectToken)
+	if elapsed := time.Since(start); elapsed > timeout+timeout/2 {
+		t.Fatalf("exchange took %v, past one %v timeout", elapsed, timeout)
+	}
+	if !IsInfra(err) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want an InfraError reaching DeadlineExceeded, got %v", err)
 	}
 }
 

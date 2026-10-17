@@ -24,13 +24,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
-	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/basecamp/mcp/auth/upstream"
 )
 
 const (
@@ -115,12 +114,8 @@ func New(cfg Config) (*Exchanger, error) {
 	if cfg.TokenURL == "" {
 		return nil, errors.New("exchange: Config.TokenURL is required")
 	}
-	// The exchange POSTs the subject token and this client's credentials, so
-	// the endpoint must be TLS (RFC 6749 §3.2); plain http is accepted only
-	// on a loopback host, for local development and tests.
-	if u, err := url.Parse(cfg.TokenURL); err != nil || u.Host == "" ||
-		!(u.Scheme == "https" || (u.Scheme == "http" && isLoopbackHost(u.Hostname()))) {
-		return nil, fmt.Errorf("exchange: Config.TokenURL must be an https URL (http only on loopback), got %q", cfg.TokenURL)
+	if err := ValidateEndpointURL(cfg.TokenURL); err != nil {
+		return nil, fmt.Errorf("exchange: Config.TokenURL: %w", err)
 	}
 	if cfg.Auth == nil {
 		return nil, errors.New("exchange: Config.Auth is required")
@@ -170,6 +165,14 @@ func (e *Exchanger) Exchange(ctx context.Context, subjectToken string) (*Token, 
 // send one only when the deployment requires bound tokens (inbound DPoP
 // require mode) - never speculatively.
 func (e *Exchanger) ExchangeWithBinding(ctx context.Context, subjectToken, subjectJKT string) (*Token, error) {
+	// The client's Timeout bounds each request; a nonce retry is a second
+	// one, so without a caller deadline the exchange as a whole gets the
+	// same bound, shared by both attempts, rather than twice it.
+	if _, ok := ctx.Deadline(); !ok && e.httpClient.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, e.httpClient.Timeout)
+		defer cancel()
+	}
 	tok, err := e.exchangeOnce(ctx, subjectToken, subjectJKT, "")
 
 	// RFC 9449 §8 nonce dance: ONE deterministic retry with the
@@ -182,7 +185,7 @@ func (e *Exchanger) ExchangeWithBinding(ctx context.Context, subjectToken, subje
 		if errors.As(err, &nr) {
 			// A second demand would loop forever; a nonce the AS just
 			// issued being rejected is an endpoint malfunction.
-			return nil, &InfraError{Status: nr.status, Code: "use_dpop_nonce", Err: errors.New("token endpoint demanded a fresh DPoP nonce after a nonce-bearing retry")}
+			return nil, newInfra(nr.status, "use_dpop_nonce", "token endpoint demanded a fresh DPoP nonce after a nonce-bearing retry", nil)
 		}
 	}
 	return tok, err
@@ -205,12 +208,12 @@ func (e *Exchanger) exchangeOnce(ctx context.Context, subjectToken, subjectJKT, 
 		form.Set("resource", e.resource)
 	}
 	if err := e.auth.Authenticate(form); err != nil {
-		return nil, &InfraError{Err: fmt.Errorf("applying client authentication: %w", err)}
+		return nil, newInfra(0, "", "applying client authentication failed", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.tokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, &InfraError{Err: fmt.Errorf("building token request: %w", err)}
+		return nil, newInfra(0, "", "building the token request failed", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -219,33 +222,30 @@ func (e *Exchanger) exchangeOnce(ctx context.Context, subjectToken, subjectJKT, 
 		// access-token presentation (RFC 9449 §4.3).
 		proof, err := e.mintProof(nonce)
 		if err != nil {
-			return nil, &InfraError{Err: fmt.Errorf("minting DPoP proof: %w", err)}
+			return nil, newInfra(0, "", "minting the DPoP proof failed", err)
 		}
 		req.Header.Set("DPoP", proof)
 	}
 
+	// Every failure below keeps its cause for errors.Is (a timeout, a
+	// refused connection) but renders only fixed text: the transport's own
+	// errors quote endpoint-controlled bytes (a redirect Location, a
+	// malformed status line or chunked trailer), any of which can echo the
+	// subject token or client secret. See package upstream.
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
 		if resp != nil {
-			// A refused redirect: the *url.Error embeds the Location target
-			// (endpoint-controlled — it could echo the subject token), so a
-			// fixed message replaces the wrap here.
+			// A refused redirect (CheckRedirect above).
 			_ = resp.Body.Close()
-			return nil, &InfraError{Status: resp.StatusCode,
-				Err: errors.New("token endpoint responded with a redirect; refusing to follow")}
+			return nil, newInfra(resp.StatusCode, "", "token endpoint responded with a redirect; refusing to follow", err)
 		}
-		// The cause stays reachable (context.DeadlineExceeded, connection
-		// refused, ...) via errors.Is and errors.As, but its text does not
-		// reach Error(): a redirect whose Location fails to parse returns
-		// here with no response and the endpoint-controlled Location quoted
-		// in the error, and that Location could echo the subject token.
-		return nil, &InfraError{Err: redactTransportError(err)}
+		return nil, newInfra(0, "", "token endpoint request failed", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes))
 	if err != nil {
-		return nil, &InfraError{Status: resp.StatusCode, Err: fmt.Errorf("reading token endpoint response: %w", err)}
+		return nil, newInfra(resp.StatusCode, "", "reading the token endpoint response failed", err)
 	}
 
 	switch resp.StatusCode {
@@ -258,15 +258,13 @@ func (e *Exchanger) exchangeOnce(ctx context.Context, subjectToken, subjectJKT, 
 		// bc3 rate-limits the token endpoint (60/min per client_id+IP) and
 		// serves escalating abuse blocks the same way. Always infra: a
 		// throttled client must back off, never re-consent.
-		return nil, &InfraError{
-			Status:     resp.StatusCode,
-			RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After")),
-			Err:        errors.New("token endpoint rate limited the exchange"),
-		}
+		ie := newInfra(resp.StatusCode, "", "token endpoint rate limited the exchange", nil)
+		ie.RetryAfter = upstream.ParseRetryAfter(resp.Header.Get("Retry-After"))
+		return nil, ie
 	case http.StatusBadRequest, http.StatusUnauthorized:
 		return nil, e.classifyOAuthError(resp, body, form)
 	default:
-		return nil, &InfraError{Status: resp.StatusCode, Err: fmt.Errorf("token endpoint returned status %d", resp.StatusCode)}
+		return nil, newInfra(resp.StatusCode, "", "token endpoint returned an unexpected status", nil)
 	}
 }
 
@@ -289,48 +287,9 @@ func (e *Exchanger) mintProof(nonce string) (string, error) {
 	return e.signer.Proof(http.MethodPost, htu, "")
 }
 
-// knownOAuthCodes is the closed set of error codes this client passes
-// through: RFC 6749 §5.2, RFC 7591 §3.2.2 (dynamic client registration,
-// which the stdio login path routes through this same boundary), RFC 8693,
-// RFC 9449, and the bc3 delegation contract (docs/bc3-asks.md). Everything
-// else collapses to "unrecognized_error" before it can reach any error
-// string, log, or transcript.
-//
-// An ENUMERATED list, not a shape check — the shape check was tried and had
-// a hole exactly the size of a credential: bc_at_* tokens are lowercase,
-// digits, and underscores, so "looks like an OAuth code" admits precisely
-// the byte string this guard exists to keep out of logs. The cost of the
-// list is that a future bc3 code lands in the unrecognized bucket until the
-// contract doc (and this set) updates — which is the honest telemetry for
-// an unknown code anyway, and updating the tracker on contract deltas is
-// already this repo's workflow.
-var knownOAuthCodes = map[string]bool{
-	"invalid_request":         true,
-	"invalid_client":          true,
-	"invalid_grant":           true,
-	"unauthorized_client":     true,
-	"unsupported_grant_type":  true,
-	"invalid_scope":           true,
-	"invalid_target":          true,
-	"invalid_dpop_proof":      true,
-	"use_dpop_nonce":          true,
-	"server_error":            true,
-	"temporarily_unavailable": true,
-	"access_denied":           true,
-	// RFC 7591 §3.2.2 registration errors — a fixed vocabulary, like the rest.
-	"invalid_redirect_uri":          true,
-	"invalid_client_metadata":       true,
-	"invalid_software_statement":    true,
-	"unapproved_software_statement": true,
-}
-
-// sanitizeOAuthCode admits only enumerated codes; see knownOAuthCodes.
-func sanitizeOAuthCode(code string) string {
-	if knownOAuthCodes[code] {
-		return code
-	}
-	return "unrecognized_error"
-}
+// sanitizeOAuthCode admits only enumerated OAuth error codes; the list lives
+// with the error type that renders them (upstream.SanitizeOAuthCode).
+var sanitizeOAuthCode = upstream.SanitizeOAuthCode
 
 // nonceRequiredError is internal control flow for the nonce dance; it
 // never escapes Exchange.
@@ -341,18 +300,6 @@ type nonceRequiredError struct {
 
 func (e *nonceRequiredError) Error() string {
 	return "token endpoint requires a DPoP nonce"
-}
-
-// parseRetryAfter reads Retry-After in its delta-seconds form only; the
-// HTTP-date form is ignored (bc3 sends delta-seconds). Zero means unknown.
-func parseRetryAfter(v string) time.Duration {
-	secs, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
-	if err != nil || secs < 0 || secs > maxDurationSeconds {
-		// Out of time.Duration's range would overflow to a negative
-		// backoff; such a value is no usable instruction, so it is unknown.
-		return 0
-	}
-	return time.Duration(secs) * time.Second
 }
 
 // parseTokenResponse decodes a 200 body. A 200 that fails to yield a
@@ -367,19 +314,16 @@ func parseTokenResponse(body []byte) (*Token, error) {
 		SubjectTokenBound *bool  `json:"subject_token_bound"`
 	}
 	if err := json.Unmarshal(body, &tr); err != nil {
-		// Fixed text: a decode error quotes the offending value (a number
-		// overflowing expires_in is printed whole), and a broken endpoint
-		// could echo a credential there.
-		return nil, &InfraError{Status: http.StatusOK, Err: errors.New("malformed token response")}
+		return nil, newInfra(http.StatusOK, "", "token response is not the JSON this server expects", err)
 	}
 	if tr.AccessToken == "" {
-		return nil, &InfraError{Status: http.StatusOK, Err: errors.New("token response missing access_token")}
+		return nil, newInfra(http.StatusOK, "", "token response missing access_token", nil)
 	}
 	if !headerSafeToken(tr.AccessToken) {
 		// A token that can't go in an Authorization header would fail every
 		// API request it is cached for; refuse it here, where it is still an
 		// exchange failure.
-		return nil, &InfraError{Status: http.StatusOK, Err: errors.New("token response access_token is not a printable token")}
+		return nil, newInfra(http.StatusOK, "", "token response access_token is not a printable token", nil)
 	}
 	// RFC 8693 §2.2.1: issued_token_type is REQUIRED, and this server only
 	// knows how to wield an access token — anything else (a refresh token, a
@@ -393,12 +337,10 @@ func parseTokenResponse(body []byte) (*Token, error) {
 	// not reach logs or transcripts. The fixed messages lose nothing — the
 	// only diagnostic question is which field was wrong.
 	if tr.IssuedTokenType != subjectTokenTypeAccessToken {
-		return nil, &InfraError{Status: http.StatusOK,
-			Err: errors.New("token response issued_token_type is not the access-token URN")}
+		return nil, newInfra(http.StatusOK, "", "token response issued_token_type is not the access-token URN", nil)
 	}
 	if !strings.EqualFold(tr.TokenType, "Bearer") && !strings.EqualFold(tr.TokenType, "DPoP") {
-		return nil, &InfraError{Status: http.StatusOK,
-			Err: errors.New("token response token_type is not a presentation scheme this server implements")}
+		return nil, newInfra(http.StatusOK, "", "token response token_type is not a presentation scheme this server implements", nil)
 	}
 
 	tok := &Token{
@@ -410,15 +352,15 @@ func parseTokenResponse(body []byte) (*Token, error) {
 	// under the TTL cap). An EXPLICIT zero or negative value is different:
 	// the AS just said the token has no remaining life, and treating that
 	// as unknown would cache a dead credential for the full cap. Malformed
-	// success, infra class.
+	// success, infra class. A lifetime past upstream.MaxLifetime is taken
+	// at the bound: multiplied out unbounded it overflows into a token that
+	// is already expired, and a cache TTL caps it far below the bound
+	// anyway.
 	if tr.ExpiresIn != nil {
-		// Fixed text again: the value is endpoint-controlled. A lifetime
-		// past time.Duration's range would overflow into the past.
-		if *tr.ExpiresIn <= 0 || *tr.ExpiresIn > maxDurationSeconds {
-			return nil, &InfraError{Status: http.StatusOK,
-				Err: errors.New("token response expires_in is not a positive lifetime in range")}
+		if *tr.ExpiresIn <= 0 {
+			return nil, newInfra(http.StatusOK, "", "token response expires_in is not positive", nil)
 		}
-		tok.ExpiresAt = time.Now().Add(time.Duration(*tr.ExpiresIn) * time.Second)
+		tok.ExpiresAt = time.Now().Add(upstream.Lifetime(*tr.ExpiresIn))
 	}
 	return tok, nil
 }
@@ -439,7 +381,7 @@ func (e *Exchanger) classifyOAuthError(resp *http.Response, body []byte, form ur
 	// non-OAuth), which for a delegation exchange is an endpoint malfunction.
 	code, description := ParseOAuthError(body, form)
 	if code == "" {
-		return &InfraError{Status: status, Err: fmt.Errorf("unparseable OAuth error response (status %d)", status)}
+		return newInfra(status, "", "token endpoint returned an unparseable OAuth error response", nil)
 	}
 	switch {
 	case code == "invalid_grant":
@@ -451,24 +393,14 @@ func (e *Exchanger) classifyOAuthError(resp *http.Response, body []byte, form ur
 		// generic infra case.
 		nonce := resp.Header.Get("DPoP-Nonce")
 		if nonce == "" {
-			return &InfraError{Status: status, Code: code, Err: errors.New("use_dpop_nonce without a DPoP-Nonce response header")}
+			return newInfra(status, code, "use_dpop_nonce without a DPoP-Nonce response header", nil)
 		}
 		return &nonceRequiredError{nonce: nonce, status: status}
 	default:
-		return &InfraError{Status: status, Code: code, Err: fmt.Errorf("token endpoint rejected the exchange request: %s", code)}
+		ie := newInfra(status, code, "token endpoint rejected the exchange request", nil)
+		ie.Description = description
+		return ie
 	}
-}
-
-// maxDurationSeconds is the most seconds a time.Duration holds.
-const maxDurationSeconds = int64(math.MaxInt64 / int64(time.Second))
-
-// isLoopbackHost reports whether host is localhost or a loopback IP.
-func isLoopbackHost(host string) bool {
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 // headerSafeToken reports whether tok is visible ASCII with no spaces, the
@@ -481,38 +413,4 @@ func headerSafeToken(tok string) bool {
 		}
 	}
 	return true
-}
-
-// transportError carries a token endpoint transport failure with a message
-// built only from what this side knows: the cause's class, never its text.
-type transportError struct {
-	msg string
-	err error
-}
-
-func (e *transportError) Error() string { return e.msg }
-func (e *transportError) Unwrap() error { return e.err }
-
-// redactTransportError names a transport failure by its class. Timeouts,
-// cancellation and network errors (dial, DNS) name only this server's own
-// endpoint; anything else, including a malformed redirect Location, is
-// reported without its text.
-func redactTransportError(err error) error {
-	msg := "token endpoint request failed"
-	var netErr net.Error
-	var opErr *net.OpError
-	var dnsErr *net.DNSError
-	switch {
-	case errors.Is(err, context.DeadlineExceeded):
-		msg += ": deadline exceeded"
-	case errors.Is(err, context.Canceled):
-		msg += ": canceled"
-	case errors.As(err, &dnsErr):
-		msg += ": " + dnsErr.Error()
-	case errors.As(err, &opErr):
-		msg += ": " + opErr.Error()
-	case errors.As(err, &netErr) && netErr.Timeout():
-		msg += ": timeout"
-	}
-	return &transportError{msg: msg, err: err}
 }
