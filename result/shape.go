@@ -96,7 +96,7 @@ func isJSONObject(data []byte) bool {
 
 // Object is the last word on a result's shape: a structuredContent that is
 // not a JSON object — from a handler that set it without JSON — is wrapped as
-// Marshal would wrap it, and a text block restating it is rewritten to match,
+// Marshal would wrap it, and every text block restating it is rewritten to match,
 // so the two never disagree. Typed payloads that are already objects keep
 // their Go type, which a protocol layer may type-assert on. The result passed
 // in is never modified.
@@ -106,15 +106,15 @@ func Object(result *mcp.CallToolResult) *mcp.CallToolResult {
 	}
 	sc := result.StructuredContent
 	if raw, ok := sc.(json.RawMessage); ok && isJSONObject(raw) {
-		return result
+		return withContentArray(result)
 	}
 	data, err := json.Marshal(sc)
 	if err != nil || isJSONObject(data) {
-		return result
+		return withContentArray(result)
 	}
 	wrapped, err := Marshal(sc, false)
 	if err != nil {
-		return result
+		return withContentArray(result)
 	}
 	out := *result
 	out.StructuredContent = json.RawMessage(wrapped)
@@ -122,18 +122,25 @@ func Object(result *mcp.CallToolResult) *mcp.CallToolResult {
 	// a structured-only result must not lose it to the copy.
 	out.Content = make([]mcp.Content, len(result.Content))
 	copy(out.Content, result.Content)
+	text, textErr := Marshal(sc, true)
 	for i, c := range out.Content {
 		tc, ok := c.(*mcp.TextContent)
-		if !ok {
-			continue
+		if ok && textErr == nil && sameJSON([]byte(tc.Text), data) {
+			out.Content[i] = &mcp.TextContent{Text: string(text), Meta: tc.Meta, Annotations: tc.Annotations}
 		}
-		if sameJSON([]byte(tc.Text), data) {
-			if text, err := Marshal(sc, true); err == nil {
-				out.Content[i] = &mcp.TextContent{Text: string(text), Meta: tc.Meta, Annotations: tc.Annotations}
-			}
-		}
-		break
 	}
+	return &out
+}
+
+// withContentArray returns result with a non-nil content array: a copy when
+// the handler left it nil, so a structured-only result still carries the
+// content array older clients require.
+func withContentArray(result *mcp.CallToolResult) *mcp.CallToolResult {
+	if result.Content != nil {
+		return result
+	}
+	out := *result
+	out.Content = []mcp.Content{}
 	return &out
 }
 

@@ -47,10 +47,30 @@ func TestObject(t *testing.T) {
 		type payload struct {
 			ID int `json:"id"`
 		}
-		in := &mcp.CallToolResult{StructuredContent: payload{ID: 1}}
+		in := &mcp.CallToolResult{Content: []mcp.Content{}, StructuredContent: payload{ID: 1}}
 		out := Object(in)
 		assert.Same(t, in, out)
 		assert.IsType(t, payload{}, out.StructuredContent)
+	})
+	t.Run("object with nil content gets an empty content array", func(t *testing.T) {
+		type payload struct {
+			ID int `json:"id"`
+		}
+		in := &mcp.CallToolResult{StructuredContent: payload{ID: 1}}
+		out := Object(in)
+		assert.NotNil(t, out.Content)
+		assert.Nil(t, in.Content, "the handler's result is not modified")
+		assert.IsType(t, payload{}, out.StructuredContent)
+	})
+	t.Run("every restating text block is rewritten", func(t *testing.T) {
+		out := Object(&mcp.CallToolResult{
+			Content:           []mcp.Content{&mcp.TextContent{Text: "Two things."}, &mcp.TextContent{Text: "[1,2]"}},
+			StructuredContent: []int{1, 2},
+		})
+		assert.Equal(t, "Two things.", resultText(t, out))
+		second, ok := out.Content[1].(*mcp.TextContent)
+		require.True(t, ok)
+		assert.JSONEq(t, `{"items": [1, 2]}`, second.Text)
 	})
 	t.Run("raw object untouched", func(t *testing.T) {
 		in := JSON(map[string]int{"id": 1})
