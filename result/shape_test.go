@@ -9,12 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestObjectStructuredContent covers the last word on a result's
-// shape: whatever a handler set, structuredContent leaves as an object, and a
-// text block that restated it is rewritten to match.
-func TestObjectStructuredContent(t *testing.T) {
+// TestObject covers the last word on a result's shape: whatever a handler
+// set, structuredContent leaves as an object, a text block that restated it
+// is rewritten to match, and the content array is never null.
+func TestObject(t *testing.T) {
 	t.Run("typed array, restated in text", func(t *testing.T) {
-		out := ObjectStructuredContent(&mcp.CallToolResult{
+		out := Object(&mcp.CallToolResult{
 			Content:           []mcp.Content{&mcp.TextContent{Text: "[1, 2]"}},
 			StructuredContent: []int{1, 2},
 		})
@@ -22,7 +22,7 @@ func TestObjectStructuredContent(t *testing.T) {
 		assert.JSONEq(t, `{"items": [1, 2]}`, resultText(t, out))
 	})
 	t.Run("raw array beside prose", func(t *testing.T) {
-		out := ObjectStructuredContent(&mcp.CallToolResult{
+		out := Object(&mcp.CallToolResult{
 			Content:           []mcp.Content{&mcp.TextContent{Text: "Two things."}},
 			StructuredContent: json.RawMessage(`[1,2]`),
 		})
@@ -30,7 +30,7 @@ func TestObjectStructuredContent(t *testing.T) {
 		assert.Equal(t, "Two things.", resultText(t, out))
 	})
 	t.Run("restated after prose", func(t *testing.T) {
-		out := ObjectStructuredContent(&mcp.CallToolResult{
+		out := Object(&mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{Text: "Two things."},
 				&mcp.TextContent{Text: "[1,2]"},
@@ -43,7 +43,7 @@ func TestObjectStructuredContent(t *testing.T) {
 	})
 	t.Run("nil slice", func(t *testing.T) {
 		var none []string
-		out := ObjectStructuredContent(&mcp.CallToolResult{
+		out := Object(&mcp.CallToolResult{
 			Content:           []mcp.Content{&mcp.TextContent{Text: "null"}},
 			StructuredContent: none,
 		})
@@ -51,20 +51,40 @@ func TestObjectStructuredContent(t *testing.T) {
 		assert.JSONEq(t, `{"items": []}`, resultText(t, out))
 	})
 	t.Run("primitive", func(t *testing.T) {
-		out := ObjectStructuredContent(&mcp.CallToolResult{StructuredContent: "done"})
+		out := Object(&mcp.CallToolResult{StructuredContent: "done"})
 		assertStructured(t, out, `{"value": "done"}`)
 	})
 	t.Run("typed object keeps its type", func(t *testing.T) {
 		payload := typedPayload{Code: "not_found"}
-		in := &mcp.CallToolResult{StructuredContent: payload, IsError: true}
-		out := ObjectStructuredContent(in)
+		in := &mcp.CallToolResult{Content: []mcp.Content{}, StructuredContent: payload, IsError: true}
+		out := Object(in)
 		assert.Same(t, in, out)
 		_, ok := out.StructuredContent.(typedPayload)
 		assert.True(t, ok)
 	})
 	t.Run("raw object untouched", func(t *testing.T) {
 		in := JSON(map[string]int{"id": 1})
-		assert.Same(t, in, ObjectStructuredContent(in))
+		assert.Same(t, in, Object(in))
+	})
+	t.Run("raw null", func(t *testing.T) {
+		assertStructured(t, Object(&mcp.CallToolResult{StructuredContent: json.RawMessage(`null`)}), `{"value": null}`)
+	})
+	t.Run("nil content becomes an empty array", func(t *testing.T) {
+		for name, in := range map[string]*mcp.CallToolResult{
+			"structured object": {StructuredContent: typedPayload{Code: "x"}},
+			"structured array":  {StructuredContent: []int{1}},
+			"empty result":      {},
+		} {
+			out := Object(in)
+			assert.NotNil(t, out.Content, name)
+			assert.Nil(t, in.Content, "%s: the handler's result is not modified", name)
+			data, err := json.Marshal(out)
+			require.NoError(t, err)
+			assert.Contains(t, string(data), `"content":[]`, name)
+		}
+	})
+	t.Run("nil result", func(t *testing.T) {
+		assert.Nil(t, Object(nil))
 	})
 }
 
@@ -90,7 +110,7 @@ func TestCapResult_ShortensAServedList(t *testing.T) {
 	for i := range items {
 		items[i] = map[string]any{"id": i, "name": "an item with some text to take up room"}
 	}
-	out := Cap(JSON(items), MinResultBytes)
+	out := Cap(JSON(items), MinBytes)
 	var payload struct {
 		Items      []map[string]any `json:"items"`
 		Truncated  bool             `json:"truncated"`

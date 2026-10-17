@@ -49,7 +49,7 @@ func TestMiddleware_MirrorsTitles(t *testing.T) {
 
 // A handler's bare array reaches the client as {"items": [...]}, in the
 // structured content and the text alike.
-func TestMiddleware_ObjectStructuredContent(t *testing.T) {
+func TestMiddleware_Object(t *testing.T) {
 	session := serve(t, 0, func() *mcp.CallToolResult {
 		return &mcp.CallToolResult{
 			Content:           []mcp.Content{&mcp.TextContent{Text: `[{"id":1}]`}},
@@ -70,7 +70,7 @@ func TestMiddleware_Caps(t *testing.T) {
 	session := serve(t, 8_000, func() *mcp.CallToolResult { return JSON(bigItems(100)) })
 	res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "annotated"})
 	require.NoError(t, err)
-	assert.LessOrEqual(t, resultBytes(t, res), 8_000)
+	assert.LessOrEqual(t, wireLen(t, res), 8_000)
 	got := decode(t, resultText(t, res))
 	assert.Equal(t, true, got["truncated"])
 	assert.NotEmpty(t, asList(t, got["items"]))

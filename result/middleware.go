@@ -15,7 +15,7 @@ import (
 //     Clients that read the top-level title get the same name, and the
 //     Claude connector directory, which reads annotations.title, keeps it.
 //   - tools/call: structuredContent is always a JSON object
-//     (ObjectStructuredContent), and a successful result is held to maxBytes
+//     (Object), and a successful result is held to maxBytes
 //     (Cap; maxBytes <= 0 disables the cap).
 //
 // Both rewrite what a handler returned after the SDK checked it against the
@@ -40,7 +40,7 @@ func Middleware(maxBytes int) mcp.Middleware {
 			case *mcp.ListToolsResult:
 				return mirrorTitles(r), nil
 			case *mcp.CallToolResult:
-				return Cap(ObjectStructuredContent(r), maxBytes), nil
+				return Cap(Object(r), maxBytes), nil
 			}
 			return res, nil
 		}

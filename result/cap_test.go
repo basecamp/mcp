@@ -2,6 +2,7 @@ package result
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 
@@ -47,53 +48,99 @@ func asList(t *testing.T, v any) []any {
 	return l
 }
 
-// resultBytes is what the cap bounds: the text plus the structured content.
-func resultBytes(t *testing.T, r *mcp.CallToolResult) int {
+func mustJSON(t *testing.T, v any) string {
 	t.Helper()
-	n := len(resultText(t, r))
-	if r.StructuredContent != nil {
-		data, err := json.Marshal(r.StructuredContent)
-		require.NoError(t, err)
-		n += len(data)
+	data, err := json.Marshal(v)
+	require.NoError(t, err)
+	return string(data)
+}
+
+// wireLen is what the cap bounds: the result as the SDK serializes it.
+func wireLen(t *testing.T, r *mcp.CallToolResult) int {
+	t.Helper()
+	data, err := json.Marshal(r)
+	require.NoError(t, err)
+	return len(data)
+}
+
+// structured decodes a result's structured content as an object.
+func structured(t *testing.T, r *mcp.CallToolResult) map[string]any {
+	t.Helper()
+	require.NotNil(t, r.StructuredContent)
+	return decode(t, mustJSON(t, r.StructuredContent))
+}
+
+// assertExactCut checks a cut in the standard shape: within the limit on the
+// wire, flagged, its structured copy (when restated) the same JSON as its text.
+func assertExactCut(t *testing.T, out *mcp.CallToolResult, limit int) map[string]any {
+	t.Helper()
+	assert.LessOrEqual(t, wireLen(t, out), limit)
+	require.Len(t, out.Content, 1)
+	text := resultText(t, out)
+	got := decode(t, text)
+	assert.Equal(t, true, got["truncated"])
+	if out.StructuredContent != nil {
+		assert.JSONEq(t, text, mustJSON(t, out.StructuredContent), "the structured copy restates the text")
 	}
-	return n
+	return got
 }
 
 // A result under the cap is returned as is.
-func TestCapResult_UnderCapUntouched(t *testing.T) {
+func TestCap_UnderCapUntouched(t *testing.T) {
 	r := JSON(map[string]any{"a": 1})
 	assert.Same(t, r, Cap(r, 10_000))
 	assert.Same(t, r, Cap(r, 0), "0 disables the cap")
+	assert.Same(t, r, Cap(r, -1), "a negative cap disables it too")
 }
 
 // Errors reach the caller whole, whatever their size.
-func TestCapResult_ErrorsUntouched(t *testing.T) {
+func TestCap_ErrorsUntouched(t *testing.T) {
 	r := &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: strings.Repeat("e", 50_000)}}}
-	assert.Same(t, r, Cap(r, MinResultBytes))
+	assert.Same(t, r, Cap(r, MinBytes))
 }
 
-// The cap counts the structured copy JSON carries: text and structured
-// content together stay within it.
-func TestCapResult_CountsStructuredContent(t *testing.T) {
-	r := JSON(map[string]any{"items": bigItems(50)})
-	text := resultText(t, r)
-	require.Less(t, len(text), 20_000, "the text alone fits")
-	require.Greater(t, resultBytes(t, r), 20_000, "text and structured together do not")
+// The boundary is the serialized size: a result exactly at the limit passes
+// whole, one byte under it is cut, and the cut fits.
+func TestCap_BoundaryIsTheSerializedSize(t *testing.T) {
+	r := JSON(map[string]any{"items": bigItems(40)})
+	n := wireLen(t, r)
+	require.Greater(t, n, MinBytes)
 
-	out := Cap(r, 20_000)
-	assert.LessOrEqual(t, resultBytes(t, out), 20_000)
-	assert.Equal(t, json.RawMessage(resultText(t, out)), out.StructuredContent, "structured content matches the text")
+	assert.Same(t, r, Cap(r, n), "exactly at the limit: untouched")
+	out := Cap(r, n-1)
+	assert.NotSame(t, r, out)
+	assert.LessOrEqual(t, wireLen(t, out), n-1)
+	got := decode(t, resultText(t, out))
+	assert.NotContains(t, got, "truncated", "compact rendering fits: nothing lost, nothing flagged")
+	assert.Len(t, got["items"], 40)
+}
+
+// The cap counts the wire, not the text: escaping a string costs bytes the
+// text length doesn't show. HTML-significant characters serialize as six
+// bytes each, and quotes in the restated text as two, so a cut sized by
+// string length would overshoot.
+func TestCap_EscapingCountsAgainstTheLimit(t *testing.T) {
+	items := make([]map[string]any, 200)
+	for i := range items {
+		items[i] = map[string]any{"id": i, "title": strings.Repeat(`<&>"\`, 60)}
+	}
+	for _, limit := range []int{MinBytes, 10_000, 50_000} {
+		out := Cap(JSON(items), limit)
+		got := assertExactCut(t, out, limit)
+		assert.NotEmpty(t, asList(t, got["items"]), "limit %d", limit)
+	}
 }
 
 // Indentation alone over the cap: compact rendering fits, nothing is lost,
 // nothing is flagged.
-func TestCapResult_CompactFitsWithoutTruncation(t *testing.T) {
-	payload := map[string]any{"items": bigItems(20)}
-	r := JSON(payload)
-	compact, err := json.Marshal(payload)
-	require.NoError(t, err)
-	limit := 2 * len(compact)
-	require.Greater(t, resultBytes(t, r), limit)
+func TestCap_CompactFitsWithoutTruncation(t *testing.T) {
+	r := JSON(map[string]any{"items": bigItems(20)})
+	compact := &mcp.CallToolResult{
+		Content:           []mcp.Content{&mcp.TextContent{Text: mustJSON(t, map[string]any{"items": bigItems(20)})}},
+		StructuredContent: json.RawMessage(mustJSON(t, map[string]any{"items": bigItems(20)})),
+	}
+	limit := wireLen(t, compact)
+	require.Greater(t, wireLen(t, r), limit)
 
 	out := Cap(r, limit)
 	got := decode(t, resultText(t, out))
@@ -101,22 +148,59 @@ func TestCapResult_CompactFitsWithoutTruncation(t *testing.T) {
 	assert.Len(t, got["items"], 20)
 }
 
+// A top-level array keeps as many leading items as fit, and exactly as many:
+// one more would not.
+func TestCap_ShortensTopLevelArrayToTheMostThatFit(t *testing.T) {
+	out := Cap(JSON(bigItems(100)), 10_000)
+	got := assertExactCut(t, out, 10_000)
+	kept := asList(t, got["items"])
+	require.NotEmpty(t, kept)
+	assert.EqualValues(t, 0, asMap(t, kept[0])["id"], "the leading items are kept")
+
+	tr := asMap(t, got["truncation"])
+	assert.Equal(t, "items", tr["field"])
+	assert.EqualValues(t, len(kept), tr["returned"])
+	assert.EqualValues(t, 100, tr["total"])
+	assert.EqualValues(t, 10_000, tr["limit_bytes"])
+	assert.EqualValues(t, JSONBytes(bigItems(100)), tr["original_bytes"])
+	assert.NotEmpty(t, tr["hint"])
+
+	// One more item, with its envelope, would not fit.
+	value, _ := decodeJSON([]byte(mustJSON(t, bigItems(100))))
+	all := value.([]any)
+	k, total := len(kept)+1, 100
+	more := mustJSON(t, map[string]any{"items": all[:k], "truncated": true, "truncation": truncation{
+		LimitBytes: 10_000, OriginalBytes: JSONBytes(bigItems(100)), Field: "items", Returned: &k, Total: &total, Hint: truncationHint,
+	}})
+	assert.Greater(t, wireLen(t, &mcp.CallToolResult{
+		Content:           []mcp.Content{&mcp.TextContent{Text: more}},
+		StructuredContent: json.RawMessage(more),
+	}), 10_000)
+}
+
+// JSON text with no structured copy (the gateway's describe) is the standard
+// shape too: cut exactly, and given no structured content it didn't have.
+func TestCap_JSONTextAlone(t *testing.T) {
+	r := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: mustJSON(t, bigItems(100))}}}
+	out := Cap(r, 10_000)
+	got := assertExactCut(t, out, 10_000)
+	assert.Nil(t, out.StructuredContent)
+	assert.NotEmpty(t, asList(t, got["items"]))
+}
+
 // An object without the offset contract may carry a continuation this layer
 // cannot rewrite (a cursor, the event feed's position and next). Shortening
 // its list beside an untouched cursor would let a caller resume past the
 // cut, so it keeps a flagged prefix instead — and the prefix, which a model
 // reads, must not carry the continuation either, wherever its name sorts.
-func TestCapResult_CursorBearingObjectKeepsNoContinuation(t *testing.T) {
+func TestCap_CursorBearingObjectKeepsNoContinuation(t *testing.T) {
 	for name, payload := range map[string]map[string]any{
 		"next_cursor": {"projects": bigItems(100), "next_cursor": "CURSOR-VALUE", "total_count": 300},
 		"feed":        {"events": bigItems(100), "position": "POSITION-VALUE", "next": "https://x/events?position=NEXT-VALUE"},
 		"sorts first": {"zitems": bigItems(100), "a_next": "CURSOR-VALUE", "meta": map[string]any{"n": 1}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			out := Cap(JSON(payload), 10_000)
-			assert.LessOrEqual(t, resultBytes(t, out), 10_000)
-			got := decode(t, resultText(t, out))
-			assert.Equal(t, true, got["truncated"])
+			got := assertExactCut(t, Cap(JSON(payload), 10_000), 10_000)
 			partial, _ := got["partial_json"].(string)
 			assert.NotEmpty(t, partial)
 			for _, key := range []string{"next_cursor", "position", "next", "a_next"} {
@@ -153,92 +237,73 @@ func TestFitLeading(t *testing.T) {
 	}
 }
 
-// A top-level array keeps as many leading items as fit, wrapped so the flag
-// has somewhere to live; nothing beside it can point past the cut.
-func TestCapResult_ShortensTopLevelArray(t *testing.T) {
-	out := Cap(JSON(bigItems(100)), 10_000)
-	assert.LessOrEqual(t, resultBytes(t, out), 10_000)
-	text := resultText(t, out)
-	got := decode(t, text)
-	assert.Equal(t, true, got["truncated"])
-	kept := asList(t, got["items"])
-	require.NotEmpty(t, kept)
-	assert.EqualValues(t, 0, asMap(t, kept[0])["id"], "the leading items are kept")
-
-	tr := asMap(t, got["truncation"])
-	assert.Equal(t, "items", tr["field"])
-	assert.EqualValues(t, len(kept), tr["returned"])
-	assert.EqualValues(t, 100, tr["total"])
-	assert.EqualValues(t, 10_000, tr["limit_bytes"])
-	assert.NotEmpty(t, tr["hint"])
-
-	// As many as fit: one more item would not.
-	one, err := json.Marshal(kept[0])
-	require.NoError(t, err)
-	assert.Greater(t, len(text)+len(one)+1, 10_000/2)
-}
-
 // A cut page of a page-numbered listing names the page and offset that
 // continue it, counting from the offset it was served at.
-func TestCapResult_PageListingContinuation(t *testing.T) {
+func TestCap_PageListingContinuation(t *testing.T) {
 	r := JSON(map[string]any{"Bookmarks": bigItems(100), "page": 3, "offset": 10, "next_page": 4})
-	got := decode(t, resultText(t, Cap(r, 10_000)))
+	got := assertExactCut(t, Cap(r, 10_000), 10_000)
 	kept := asList(t, got["Bookmarks"])
 	tr := asMap(t, got["truncation"])
 	cont := asMap(t, tr["continue"])
 	assert.EqualValues(t, 3, cont["page"])
 	assert.EqualValues(t, 10+len(kept), cont["offset"])
-	assert.Contains(t, tr["hint"], "truncation.continue")
+	assert.Equal(t, continueHint, tr["hint"])
 	assert.EqualValues(t, 4, got["next_page"])
 }
 
-// No list to shorten: a flagged prefix of the compact JSON.
-func TestCapResult_PrefixWhenNoList(t *testing.T) {
-	out := Cap(JSON(map[string]any{"body": strings.Repeat("é", 10_000)}), 5_000)
-	assert.LessOrEqual(t, resultBytes(t, out), 5_000)
-	got := decode(t, resultText(t, out))
-	assert.Equal(t, true, got["truncated"])
+// An offset-only listing (no page) continues by offset alone, with a hint
+// that names no page and no next_page.
+func TestCap_OffsetOnlyContinuation(t *testing.T) {
+	got := assertExactCut(t, Cap(JSON(map[string]any{"items": bigItems(100), "offset": 0}), 10_000), 10_000)
+	tr := asMap(t, got["truncation"])
+	cont := asMap(t, tr["continue"])
+	assert.NotContains(t, cont, "page")
+	assert.EqualValues(t, len(asList(t, got["items"])), cont["offset"])
+	assert.Equal(t, offsetHint, tr["hint"])
+	assert.NotContains(t, tr["hint"], "next_page")
+}
+
+// An offset listing with two lists gets no synthesized continuation: the
+// offset could belong to either.
+func TestCap_AmbiguousOffsetListGetsNoContinuation(t *testing.T) {
+	out := Cap(JSON(map[string]any{"items": bigItems(2), "facets": bigItems(80), "offset": 0}), 8_000)
+	got := assertExactCut(t, out, 8_000)
+	assert.NotContains(t, resultText(t, out), `"continue"`)
 	assert.NotEmpty(t, got["partial_json"])
 }
 
-// A positive cap below the minimum is raised to it, so the truncation
-// envelope always fits within what is emitted.
-func TestCapResult_SmallCapRaisedToMinimum(t *testing.T) {
-	for _, r := range []*mcp.CallToolResult{
-		JSON(map[string]any{"items": bigItems(100)}),
-		Text(strings.Repeat("a", 50_000)),
-	} {
-		out := Cap(r, 10)
-		assert.LessOrEqual(t, resultBytes(t, out), MinResultBytes)
-		assert.Contains(t, resultText(t, out), "truncated")
-	}
+// No list to shorten: a flagged prefix of the compact JSON.
+func TestCap_PrefixWhenNoList(t *testing.T) {
+	got := assertExactCut(t, Cap(JSON(map[string]any{"body": strings.Repeat("é", 10_000)}), 5_000), 5_000)
+	assert.NotEmpty(t, got["partial_json"])
 }
 
-// Plain text keeps a prefix and a note; resource links and _meta survive.
-func TestCapResult_PlainTextAndOtherContent(t *testing.T) {
-	link := &mcp.ResourceLink{URI: "basecamp://x", Name: "x"}
-	r := &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: strings.Repeat("a", 50_000)}, link},
-		Meta:    mcp.Meta{"ui": map[string]any{"resourceUri": "ui://x"}},
+// Escaping that inflates a prefix past its own length (backslashes double,
+// and double again in the restated text) still finds the longest prefix that
+// fits rather than giving up.
+func TestCap_PrefixWithInflatingEscapes(t *testing.T) {
+	for name, r := range map[string]*mcp.CallToolResult{
+		"text and structured": JSON(map[string]any{"a": strings.Repeat(`\`, 10_000)}),
+		"structured restated, compact": {
+			Content:           []mcp.Content{&mcp.TextContent{Text: mustJSON(t, map[string]any{"a": strings.Repeat(`\`, 10_000)})}},
+			StructuredContent: map[string]any{"a": strings.Repeat(`\`, 10_000)},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := assertExactCut(t, Cap(r, MinBytes), MinBytes)
+			assert.NotEmpty(t, got["partial_json"])
+		})
 	}
-	out := Cap(r, 5_000)
-	text := resultText(t, out)
-	assert.LessOrEqual(t, len(text), 5_000)
-	assert.Contains(t, text, "[truncated:")
-	assert.Same(t, link, out.Content[1])
-	assert.Equal(t, r.Meta, out.Meta)
-	assert.Len(t, resultText(t, r), 50_000, "the handler's result is not mutated")
 }
 
 // An item too large to fit alone is named, and the continuation steps past
 // it: continuing always makes progress.
-func TestCapResult_OversizedItemAdvancesContinuation(t *testing.T) {
+func TestCap_OversizedItemAdvancesContinuation(t *testing.T) {
 	items := []map[string]any{
 		{"id": 7, "body": strings.Repeat("x", 20_000)},
 		{"id": 8, "body": "small"},
 	}
-	r := JSON(map[string]any{"Drafts": items, "page": 1, "offset": 4})
-	got := decode(t, resultText(t, Cap(r, 10_000)))
+	got := assertExactCut(t, Cap(JSON(map[string]any{"Drafts": items, "page": 1, "offset": 4}), 10_000), 10_000)
 	assert.Empty(t, asList(t, got["Drafts"]))
 	tr := asMap(t, got["truncation"])
 	assert.EqualValues(t, 7, asMap(t, tr["oversized_item"])["id"])
@@ -247,142 +312,88 @@ func TestCapResult_OversizedItemAdvancesContinuation(t *testing.T) {
 	assert.EqualValues(t, 5, cont["offset"], "the continuation steps past the oversized item")
 }
 
-// An offset-only listing (no page) continues by offset alone, and
-// original_bytes reports what the result carried in total.
-func TestCapResult_OffsetOnlyContinuationAndOriginalBytes(t *testing.T) {
-	r := JSON(map[string]any{"items": bigItems(100), "offset": 0})
-	before := resultBytes(t, r)
-	got := decode(t, resultText(t, Cap(r, 10_000)))
+// An item that would fit on its own, crowded out by the rest of the
+// payload, is not oversized: skipping it would lose an item a caller could
+// read. The cut carries no continuation past it.
+func TestCap_CrowdedItemIsNotSkipped(t *testing.T) {
+	items := []map[string]any{{"id": 7, "body": strings.Repeat("x", 3_000)}, {"id": 8, "body": "small"}}
+	payload := map[string]any{"Drafts": items, "page": 1, "offset": 4, "note": strings.Repeat("n", 3_000)}
+	got := assertExactCut(t, Cap(JSON(payload), 8_000), 8_000)
 	tr := asMap(t, got["truncation"])
-	cont := asMap(t, tr["continue"])
-	assert.NotContains(t, cont, "page")
-	assert.EqualValues(t, len(asList(t, got["items"])), cont["offset"])
-	assert.EqualValues(t, before, tr["original_bytes"], "text and structured content together")
+	assert.NotContains(t, tr, "oversized_item")
+	assert.NotContains(t, tr, "continue")
 }
 
 // Whatever the budget, a cut listing's continuation always moves forward
 // from the offset it was served at: never a zero-item page pointing back at
 // itself.
-func TestCapResult_ContinuationAlwaysAdvances(t *testing.T) {
-	for limit := MinResultBytes; limit < MinResultBytes+600; limit += 7 {
+func TestCap_ContinuationAlwaysAdvances(t *testing.T) {
+	for limit := MinBytes; limit < MinBytes+600; limit += 7 {
 		for _, offset := range []int{0, 9, 99, 999} {
 			items := make([]map[string]any, 30)
 			for i := range items {
 				items[i] = map[string]any{"id": i, "body": strings.Repeat("y", 1500+i)}
 			}
-			r := JSON(map[string]any{"Drafts": items, "page": 1, "offset": offset})
-			out := Cap(r, limit)
-			got := decode(t, resultText(t, out))
+			out := Cap(JSON(map[string]any{"Drafts": items, "page": 1, "offset": offset}), limit)
+			got := assertExactCut(t, out, limit)
 			tr := asMap(t, got["truncation"])
 			cont, ok := tr["continue"].(map[string]any)
 			require.True(t, ok, "limit %d offset %d: a cut page names its continuation", limit, offset)
 			assert.Greater(t, cont["offset"], float64(offset), "limit %d offset %d: continuation must advance", limit, offset)
-			assert.LessOrEqual(t, resultBytes(t, out), limit)
 		}
-	}
-}
-
-// allBytes is everything a result says: every text block plus the
-// structured content.
-func allBytes(t *testing.T, r *mcp.CallToolResult) int {
-	t.Helper()
-	n := 0
-	for _, c := range r.Content {
-		if tc, ok := c.(*mcp.TextContent); ok {
-			n += len(tc.Text)
-		}
-	}
-	if r.StructuredContent != nil {
-		data, err := json.Marshal(r.StructuredContent)
-		require.NoError(t, err)
-		n += len(data)
-	}
-	return n
-}
-
-// Every text block counts, not just the first, and structured content
-// standing alone is capped too.
-func TestCapResult_CountsEveryBlock(t *testing.T) {
-	two := &mcp.CallToolResult{Content: []mcp.Content{
-		&mcp.TextContent{Text: strings.Repeat("a", 3000)},
-		&mcp.TextContent{Text: strings.Repeat("b", 3000)},
-	}}
-	assert.LessOrEqual(t, allBytes(t, Cap(two, MinResultBytes)), MinResultBytes)
-
-	alone := &mcp.CallToolResult{StructuredContent: map[string]any{"items": bigItems(100)}}
-	out := Cap(alone, 10_000)
-	assert.LessOrEqual(t, allBytes(t, out), 10_000)
-	got := decode(t, string(out.StructuredContent.(json.RawMessage)))
-	assert.Equal(t, true, got["truncated"])
-	assert.NotEmpty(t, asList(t, got["items"]))
-}
-
-// Prose beside structured content it doesn't restate keeps the prose and
-// caps the records, rather than dropping them for the prose.
-func TestCapResult_ProseBesideStructured(t *testing.T) {
-	r := &mcp.CallToolResult{
-		Content:           []mcp.Content{&mcp.TextContent{Text: "Here are the cards."}},
-		StructuredContent: map[string]any{"items": bigItems(100)},
-	}
-	out := Cap(r, 10_000)
-	assert.Equal(t, "Here are the cards.", resultText(t, out))
-	require.NotNil(t, out.StructuredContent)
-	got := decode(t, string(out.StructuredContent.(json.RawMessage)))
-	assert.Equal(t, true, got["truncated"])
-	assert.NotEmpty(t, asList(t, got["items"]))
-	assert.LessOrEqual(t, allBytes(t, out), 10_000)
-
-	// Long prose gets half the cap at most, so the records still come back.
-	r.Content = []mcp.Content{&mcp.TextContent{Text: strings.Repeat("p", 20_000)}}
-	out = Cap(r, 10_000)
-	require.NotNil(t, out.StructuredContent, "the records aren't dropped for the prose")
-	got = decode(t, string(out.StructuredContent.(json.RawMessage)))
-	assert.NotEmpty(t, asList(t, got["items"]))
-	assert.LessOrEqual(t, allBytes(t, out), 10_000)
-}
-
-// A cut text block keeps its _meta and annotations.
-func TestCapResult_KeepsContentMetadata(t *testing.T) {
-	meta := mcp.Meta{"k": "v"}
-	ann := &mcp.Annotations{Audience: []mcp.Role{"user"}}
-	for _, text := range []string{strings.Repeat("x", 20_000), mustJSON(t, bigItems(100))} {
-		r := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text, Meta: meta, Annotations: ann}}}
-		tc := Cap(r, 10_000).Content[0].(*mcp.TextContent)
-		assert.Less(t, len(tc.Text), len(text))
-		assert.Equal(t, meta, tc.Meta)
-		assert.Equal(t, ann, tc.Annotations)
 	}
 }
 
 // An oversized item whose id is itself too large to name is still stepped
 // past, or the list isn't cut at all: never a zero-item page whose
 // continuation points back at the same offset.
-func TestCapResult_OversizedItemWithHugeID(t *testing.T) {
+func TestCap_OversizedItemWithHugeID(t *testing.T) {
 	items := []map[string]any{
 		{"id": strings.Repeat("i", 5000), "body": strings.Repeat("x", 20_000)},
 		{"id": 8, "body": "small"},
 	}
-	out := Cap(JSON(map[string]any{"Drafts": items, "page": 1, "offset": 4}), MinResultBytes)
-	assert.LessOrEqual(t, resultBytes(t, out), MinResultBytes)
-	got := decode(t, resultText(t, out))
-	tr := asMap(t, got["truncation"])
-	if cont, ok := tr["continue"].(map[string]any); ok {
+	out := Cap(JSON(map[string]any{"Drafts": items, "page": 1, "offset": 4}), MinBytes)
+	got := assertExactCut(t, out, MinBytes)
+	if cont, ok := asMap(t, got["truncation"])["continue"].(map[string]any); ok {
 		assert.Greater(t, cont["offset"], float64(4), "a continuation must advance")
 	}
 }
 
-// Escaping that inflates a prefix (backslashes double) still finds a prefix
-// that fits rather than giving up.
-func TestPrefixJSON_InflatingEscapes(t *testing.T) {
-	compact := `{"a":"` + strings.Repeat(`\\`, 6000) + `"}`
-	out := prefixJSON(compact, len(compact), 2048, MinResultBytes)
-	require.NotNil(t, out)
-	assert.LessOrEqual(t, len(out), 2048)
-	assert.NotEmpty(t, decode(t, string(out))["partial_json"])
+// A positive cap below the minimum is raised to it.
+func TestCap_SmallCapRaisedToMinimum(t *testing.T) {
+	out := Cap(JSON(map[string]any{"items": bigItems(100)}), 10)
+	got := assertExactCut(t, out, MinBytes)
+	assert.EqualValues(t, MinBytes, asMap(t, got["truncation"])["limit_bytes"])
+}
+
+// A cut text block keeps its _meta and annotations, and the result its _meta.
+func TestCap_KeepsMetadata(t *testing.T) {
+	meta := mcp.Meta{"k": "v"}
+	ann := &mcp.Annotations{Audience: []mcp.Role{"user"}}
+	text := mustJSON(t, bigItems(100))
+	r := &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: text, Meta: meta, Annotations: ann}},
+		Meta:    mcp.Meta{"ui": map[string]any{"resourceUri": "ui://x"}},
+	}
+	out := Cap(r, 10_000)
+	assertExactCut(t, out, 10_000)
+	tc := out.Content[0].(*mcp.TextContent)
+	assert.Equal(t, meta, tc.Meta)
+	assert.Equal(t, ann, tc.Annotations)
+	assert.Equal(t, r.Meta, out.Meta)
+	assert.Equal(t, text, resultText(t, r), "the handler's result is not mutated")
+}
+
+// Text that only starts like JSON (trailing bytes after a document) isn't the
+// standard shape: it is not mistaken for its leading document.
+func TestCap_TrailingBytesAreNotJSON(t *testing.T) {
+	r := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "{}]" + strings.Repeat("a", 10_000)}}}
+	out := Cap(r, MinBytes)
+	assertCoarse(t, out, r, MinBytes)
 }
 
 func TestDecodeJSONRefusesTrailingBytes(t *testing.T) {
-	for _, bad := range []string{`{}]`, `{"id":1}}`, `[]]`, `{} {}`, `{} x`} {
+	for _, bad := range []string{`{}]`, `{"id":1}}`, `[]]`, `{} {}`, `{} x`, ``, `x`} {
 		_, ok := decodeJSON([]byte(bad))
 		assert.False(t, ok, bad)
 	}
@@ -390,9 +401,94 @@ func TestDecodeJSONRefusesTrailingBytes(t *testing.T) {
 	assert.True(t, ok)
 }
 
-func mustJSON(t *testing.T, v any) string {
+// assertCoarse checks the coarse cut: within the limit on the wire, one text
+// notice naming the sizes, and structured content reduced to the same
+// explanation when the result had any.
+func assertCoarse(t *testing.T, out, in *mcp.CallToolResult, limit int) {
 	t.Helper()
-	data, err := json.Marshal(v)
-	require.NoError(t, err)
-	return string(data)
+	assert.LessOrEqual(t, wireLen(t, out), limit)
+	require.Len(t, out.Content, 1)
+	text := resultText(t, out)
+	assert.Contains(t, text, "[truncated:")
+	assert.Contains(t, text, "withheld")
+	assert.False(t, out.IsError, "a withheld result is still a success")
+	if in.StructuredContent == nil {
+		assert.Nil(t, out.StructuredContent)
+		return
+	}
+	got := structured(t, out)
+	assert.Equal(t, true, got["truncated"])
+	tr := asMap(t, got["truncation"])
+	assert.EqualValues(t, limit, tr["limit_bytes"])
+	assert.Equal(t, withheldHint, tr["hint"])
+}
+
+// Every shape other than one JSON text block gets the coarse cut, within
+// the limit.
+func TestCap_OtherShapesGetTheCoarseCut(t *testing.T) {
+	big := map[string]any{"items": bigItems(100)}
+	cases := map[string]*mcp.CallToolResult{
+		"plain text":                   {Content: []mcp.Content{&mcp.TextContent{Text: strings.Repeat("a", 50_000)}}},
+		"structured only":              {Content: []mcp.Content{}, StructuredContent: big},
+		"structured beside prose":      {Content: []mcp.Content{&mcp.TextContent{Text: "Here they are."}}, StructuredContent: big},
+		"structured beside a scalar":   {Content: []mcp.Content{&mcp.TextContent{Text: "42"}}, StructuredContent: big},
+		"prose, then restated JSON":    {Content: []mcp.Content{&mcp.TextContent{Text: "Here."}, &mcp.TextContent{Text: mustJSON(t, big)}}, StructuredContent: big},
+		"small text, then a large one": {Content: []mcp.Content{&mcp.TextContent{Text: "ok"}, &mcp.TextContent{Text: strings.Repeat("a", 50_000)}}},
+		"two large texts":              {Content: []mcp.Content{&mcp.TextContent{Text: strings.Repeat("a", 30_000)}, &mcp.TextContent{Text: strings.Repeat("b", 30_000)}}},
+		"an image":                     {Content: []mcp.Content{&mcp.ImageContent{Data: make([]byte, 50_000), MIMEType: "image/png"}}},
+		"JSON text beside an image":    {Content: []mcp.Content{&mcp.TextContent{Text: "{}"}, &mcp.ImageContent{Data: make([]byte, 50_000), MIMEType: "image/png"}}},
+		"an embedded resource": {Content: []mcp.Content{&mcp.EmbeddedResource{Resource: &mcp.ResourceContents{
+			URI: "x://y", Text: strings.Repeat("r", 50_000),
+		}}}},
+	}
+	for name, in := range cases {
+		t.Run(name, func(t *testing.T) {
+			before := wireLen(t, in)
+			out := Cap(in, 8_000)
+			assertCoarse(t, out, in, 8_000)
+			assert.Contains(t, resultText(t, out), mustJSON(t, before), "the notice names the original size")
+			assert.Equal(t, before, wireLen(t, in), "the handler's result is not mutated")
+		})
+	}
+}
+
+// A standard-shape result whose _meta alone overflows the cap has no exact
+// cut that fits; it gets the coarse cut, which drops the _meta.
+func TestCap_HugeMetaFallsBackToCoarse(t *testing.T) {
+	in := JSON(map[string]any{"a": 1})
+	in.Meta = mcp.Meta{"blob": strings.Repeat("m", 20_000)}
+	out := Cap(in, 8_000)
+	assertCoarse(t, out, in, 8_000)
+	assert.Nil(t, out.Meta)
+
+	// _meta that fits beside the notice is kept.
+	small := &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: strings.Repeat("a", 50_000)}},
+		Meta:    mcp.Meta{"ui": "x"},
+	}
+	assert.Equal(t, small.Meta, Cap(small, 8_000).Meta)
+}
+
+// The coarse cut depends only on two integers once _meta is dropped, so
+// its size has a ceiling: at the largest integers it can name, with
+// structured content, it sits well under MinBytes. _meta is kept only when
+// the cut still fits with it. So every coarse cut fits under every limit Cap
+// enforces.
+func TestCapCoarse_AlwaysFitsTheLimit(t *testing.T) {
+	ceiling := capCoarse(&mcp.CallToolResult{StructuredContent: map[string]any{"a": 1}}, math.MaxInt, math.MaxInt)
+	assert.Less(t, wireLen(t, ceiling), MinBytes/4, "the ceiling sits well under MinBytes")
+
+	for name, in := range map[string]*mcp.CallToolResult{
+		"text":                 {Content: []mcp.Content{&mcp.TextContent{Text: "x"}}},
+		"structured":           {StructuredContent: map[string]any{"a": 1}},
+		"structured with meta": {StructuredContent: map[string]any{"a": 1}, Meta: mcp.Meta{"blob": strings.Repeat("m", 3_500)}},
+		"huge meta":            {Meta: mcp.Meta{"blob": strings.Repeat("m", math.MaxUint16)}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, limit := range []int{MinBytes, MinBytes + 1, 10_000, 100_000} {
+				out := capCoarse(in, math.MaxInt, limit)
+				assert.LessOrEqual(t, wireLen(t, out), limit, "limit %d", limit)
+			}
+		})
+	}
 }

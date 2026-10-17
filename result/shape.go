@@ -91,45 +91,59 @@ func isJSONObject(data []byte) bool {
 	return len(t) > 0 && t[0] == '{'
 }
 
-// ObjectStructuredContent is the last word on a result's shape, applied to
-// every result a server serves (Middleware applies it): a structuredContent that is not a JSON
-// object — from a handler that set it without JSON — is wrapped as
-// Marshal would wrap it, and a text block restating it is rewritten to
+// Object is the last word on a result's shape, applied to every result a
+// server serves (Middleware applies it): a structuredContent that is not a
+// JSON object — from a handler that set it without JSON — is wrapped as
+// Marshal would wrap it, and every text block restating it is rewritten to
 // match, so the two never disagree. Typed payloads that are already objects
 // (a product's typed error payloads, say) keep their Go type, which a
-// protocol layer may type-assert on.
-func ObjectStructuredContent(result *mcp.CallToolResult) *mcp.CallToolResult {
-	if result == nil || result.StructuredContent == nil {
-		return result
+// protocol layer may type-assert on. A nil content array becomes an empty
+// one: the SDK would send it as null, and clients require the array. The
+// result passed in is never modified.
+func Object(result *mcp.CallToolResult) *mcp.CallToolResult {
+	if result == nil {
+		return nil
 	}
 	sc := result.StructuredContent
+	if sc == nil {
+		return withContentArray(result)
+	}
 	if raw, ok := sc.(json.RawMessage); ok && isJSONObject(raw) {
-		return result
+		return withContentArray(result)
 	}
 	data, err := json.Marshal(sc)
 	if err != nil || isJSONObject(data) {
-		return result
+		return withContentArray(result)
 	}
 	wrapped, err := Marshal(sc, false)
 	if err != nil {
-		return result
+		return withContentArray(result)
 	}
 	out := *result
 	out.StructuredContent = json.RawMessage(wrapped)
-	out.Content = append([]mcp.Content(nil), result.Content...)
+	// A fresh, never-nil slice: the copy must not write through to the
+	// handler's, and a structured-only result keeps its content array.
+	out.Content = make([]mcp.Content, len(result.Content))
+	copy(out.Content, result.Content)
+	text, textErr := Marshal(sc, true)
 	for i, c := range out.Content {
-		tc, ok := c.(*mcp.TextContent)
-		if !ok {
-			continue
-		}
 		// Every block that restates the value is rewritten, not just the
 		// first text block: prose may come first.
-		if sameJSON([]byte(tc.Text), data) {
-			if text, err := Marshal(sc, true); err == nil {
-				out.Content[i] = &mcp.TextContent{Text: string(text), Meta: tc.Meta, Annotations: tc.Annotations}
-			}
+		if tc, ok := c.(*mcp.TextContent); ok && textErr == nil && sameJSON([]byte(tc.Text), data) {
+			out.Content[i] = &mcp.TextContent{Text: string(text), Meta: tc.Meta, Annotations: tc.Annotations}
 		}
 	}
+	return &out
+}
+
+// withContentArray returns result with a non-nil content array: a copy when
+// the handler left it nil.
+func withContentArray(result *mcp.CallToolResult) *mcp.CallToolResult {
+	if result.Content != nil {
+		return result
+	}
+	out := *result
+	out.Content = []mcp.Content{}
 	return &out
 }
 

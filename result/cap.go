@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"sort"
 	"unicode/utf8"
 
@@ -14,25 +15,34 @@ import (
 // Tool-result size cap.
 //
 // Every tool result passes through Cap on its way out of the server (a
-// product installs Middleware, or calls Cap where it serves results).
-// A result whose text fits the cap is untouched. One that does not is cut to
-// fit here, where the cut can be explained, rather than by the host, which
-// truncates or refuses an oversized result on its own terms and tells the
-// model nothing about what is missing.
+// product installs Middleware, or calls Cap where it serves results). The
+// cap measures what goes on the wire: the result as the SDK serializes it,
+// JSON string escaping, the content envelope and _meta included. A result
+// that fits is untouched. One that does not is cut to fit here, where the cut
+// can be explained, rather than by the host, which truncates or refuses an
+// oversized result on its own terms and tells the model nothing about what
+// is missing. The JSON-RPC frame around the result adds a few dozen bytes
+// the cap does not count.
 //
-// A JSON result is first re-rendered compact (the indentation JSON adds
-// is a third of a typical payload); if that fits, nothing is lost and nothing
-// is flagged. Otherwise a list is shortened to as many leading items as fit —
-// but only where shortening cannot corrupt a continuation: a bare list (a
-// top-level array, or the {"items": [...]} object JSON serves one as;
-// nothing beside it can point past the cut), or an object that declares the
-// offset contract below. The payload gains "truncated": true and a
+// There are two cuts, by shape.
+//
+// The exact cut is for the shape every server serves: one text block holding
+// a JSON document, which structuredContent, when present, restates (what
+// JSON builds). Its JSON is first re-rendered compact (the indentation JSON
+// adds is a third of a typical payload); if that fits, nothing is lost and
+// nothing is flagged. Otherwise a list is shortened to as many leading items
+// as fit — but only where shortening cannot corrupt a continuation: a bare
+// list (a top-level array, or the {"items": [...]} object JSON serves one
+// as; nothing beside it can point past the cut), or an object that declares
+// the offset contract below. The payload gains "truncated": true and a
 // "truncation" object saying which list was cut, how many items it kept of
 // how many, and how to see the rest. Any other object — the event feed's
-// position and next, anything carrying a continuation this layer cannot
-// rewrite — keeps a flagged prefix of its text instead: a shortened list next
-// to an untouched cursor would let a caller resume past the items cut,
-// silently. Plain text keeps a prefix too.
+// position and next, a cursor page's next_page, anything carrying a
+// continuation this layer cannot rewrite — keeps a flagged prefix of its
+// compact text as "partial_json" instead: a shortened list next to an
+// untouched cursor would let a caller resume past the items cut, silently.
+// Every candidate cut is sized by serializing the whole result it would
+// produce, so escaping can't push a cut over the limit.
 //
 // A prefix is read by a model, so a continuation must not survive in it
 // either. The prefix renders the object's arrays and objects first, largest
@@ -42,23 +52,29 @@ import (
 // than the list it continues is not covered by that order; no payload here
 // has one.)
 //
+// A listing that takes an offset names the offset it was served at, and its
+// page when it has one, as top-level "offset" and "page" beside its one list
+// (the page/offset contract; see pageContinuationOf); cutting its list adds
+// truncation.continue, the page and offset of the first item cut, because
+// those listings have no page size to shrink — re-requesting would cut the
+// same way, and following next_page would skip the cut items. An item too
+// large to be served even alone is named in truncation.oversized_item (by
+// position, and id when it has one) and the continuation steps past it, so
+// continuing always makes progress.
+//
+// Every other shape — several content blocks, prose beside structured
+// content, structured content alone, plain text, non-text content — gets the
+// coarse cut: the result is replaced by one text notice saying it was
+// withheld, how large it was and what the limit is, with structuredContent
+// reduced to the same explanation when the result had any. Its size depends
+// only on two integers, so it fits under MinBytes whatever the result held.
+// No current server returns such a result over the cap; one that needs a
+// finer cut for another shape brings that case here.
+//
 // A listing whose continuation this layer cannot rewrite but its handler can
 // (basecamp-mcp-server's list_projects and its signed next_cursor) cuts
 // itself before it gets here, with FitsWhole and FitLeading: whole items, and
 // a continuation minted at the first item cut.
-//
-// The cap covers everything the result carries twice: JSON restates its
-// text as structuredContent, so when both are present each gets half.
-//
-// A listing that takes an offset names the offset it was served at, and its
-// page when it has one, as top-level "offset" and "page" beside its list (the
-// page/offset contract; see pageContinuationOf); cutting its list
-// adds truncation.continue, the page and offset of the first item cut,
-// because those listings have no page size to shrink — re-requesting would
-// cut the same way, and following next_page would skip the cut items. An
-// item too large to fit even alone is named in truncation.oversized_item
-// (by position, and id when it has one) and the continuation
-// steps past it, so continuing always makes progress.
 
 // truncationHint tells the caller how to get what was cut when the result
 // carries no exact continuation. It names no argument: whether a limit, page
@@ -73,13 +89,20 @@ const truncationHint = "The result exceeded the server's size limit and was cut,
 // page-numbered listing, which can be continued exactly.
 const continueHint = "The result exceeded the server's size limit and was cut to fit. Call again with the page and offset in truncation.continue to get the items that were cut, before following next_page."
 
+// offsetHint replaces truncationHint when the cut list belongs to a listing
+// that takes only an offset: there is no page and no next_page to follow.
+const offsetHint = "The result exceeded the server's size limit and was cut to fit. Call again with the offset in truncation.continue to get the items that were cut."
+
 // oversizedHint replaces the hint when the next item exceeds the limit alone.
 const oversizedHint = "The next item exceeds the server's size limit on its own and cannot be returned; truncation.oversized_item names it by position and id. truncation.continue, when present, resumes after it."
 
-// MinResultBytes is the smallest cap enforced: room for the truncation
-// envelope and a useful amount of payload. A smaller positive setting is
-// raised to it.
-const MinResultBytes = 4096
+// withheldHint explains the coarse cut.
+const withheldHint = "The result exceeded the server's size limit and could not be cut to fit, so it was withheld. Narrow the request with filters, or read a specific record directly."
+
+// MinBytes is the smallest cap enforced: room for the truncation envelope and
+// a useful amount of payload, and always for the coarse cut. A smaller
+// positive setting is raised to it.
+const MinBytes = 4096
 
 // pageContinuation is where a cut listing resumes. Page is absent for the
 // unpaginated listings that take only an offset.
@@ -106,125 +129,105 @@ type truncation struct {
 	Hint          string            `json:"hint"`
 }
 
-// Cap enforces maxBytes on a successful result's text and structured
-// content together. It returns the result unchanged when maxBytes <= 0, the
-// result is an error (an error must reach the caller whole), or it already
-// fits.
+// Cap holds a successful result to maxBytes of serialized result. It returns
+// the result unchanged when maxBytes <= 0, the result is an error (an error
+// must reach the caller whole), or it already fits; a positive maxBytes below
+// MinBytes is raised to it. The result passed in is never modified.
 //
-// Everything the result says counts toward the cap: every text block and
-// the structured content. Its payload is the structured content with the
-// text block that restates it, if any (JSON's shape: both copies get half
-// of what is left), or, without structured content, the first text block
-// that is a JSON document. Any other text block is prose beside it, kept
-// whole while it fits and cut with a note once it doesn't; when there is a
-// payload, prose gets at most half the cap, so a cut never spends it all on
-// prose and drops the records. Non-text content passes through uncounted.
-// A cut text block keeps its _meta and annotations.
+// The one-text-block JSON shape gets the exact cut; any other shape the
+// coarse one (see the package's size-cap notes).
 func Cap(result *mcp.CallToolResult, maxBytes int) *mcp.CallToolResult {
 	if result == nil || result.IsError || maxBytes <= 0 {
 		return result
 	}
-	limit := max(maxBytes, MinResultBytes)
-
-	var structured []byte
-	if result.StructuredContent != nil {
-		if data, err := json.Marshal(result.StructuredContent); err == nil {
-			structured = data
-		}
-	}
-	size := len(structured)
-	for _, c := range result.Content {
-		if tc, ok := c.(*mcp.TextContent); ok {
-			size += len(tc.Text)
-		}
-	}
-	if size <= limit {
+	limit := max(maxBytes, MinBytes)
+	size, err := wireBytes(result)
+	if err == nil && size <= limit {
 		return result
 	}
+	if out := capExact(result, size, limit); out != nil {
+		return out
+	}
+	return capCoarse(result, size, limit)
+}
 
-	// Find the payload: the parsed value it caps from, and the text block
-	// carrying it (-1 when structured content stands alone).
-	mirror := -1
-	var value any
-	parsed := false
-	if structured != nil {
-		value, parsed = decodeJSON(structured)
-	}
-	for i, c := range result.Content {
-		tc, ok := c.(*mcp.TextContent)
-		if !ok {
-			continue
-		}
-		if structured != nil {
-			if sameJSON([]byte(tc.Text), structured) {
-				mirror = i
-				break
-			}
-		} else if v, ok := decodeJSON([]byte(tc.Text)); ok {
-			mirror, value, parsed = i, v, true
-			break
-		}
-	}
-	copies := 0
-	if structured != nil {
-		copies++
-	}
-	if mirror >= 0 {
-		copies++
-	}
+// wireBytes is the size of result as the SDK serializes it.
+func wireBytes(result *mcp.CallToolResult) (int, error) {
+	data, err := json.Marshal(result)
+	return len(data), err
+}
 
-	// Prose first, within its share, so the payload gets what is left.
-	proseBudget := limit
-	if copies > 0 {
-		proseBudget = limit / 2
+// standard returns, for a result in the shape the exact cut handles — one
+// text block holding a JSON document, restated by structuredContent or
+// standing alone — the block, its parsed value and whether structured content
+// restates it.
+func standard(result *mcp.CallToolResult) (tc *mcp.TextContent, value any, restated, ok bool) {
+	if len(result.Content) != 1 {
+		return nil, nil, false, false
 	}
-	out := *result
-	out.Content = make([]mcp.Content, 0, len(result.Content))
-	prose := 0
-	for i, c := range result.Content {
-		tc, ok := c.(*mcp.TextContent)
-		if !ok || i == mirror {
-			out.Content = append(out.Content, c)
-			continue
-		}
-		switch room := proseBudget - prose; {
-		case len(tc.Text) <= room:
-			out.Content = append(out.Content, c)
-			prose += len(tc.Text)
-		case room > 0:
-			cut := capText(tc.Text, size, room)
-			out.Content = append(out.Content, withText(tc, cut))
-			prose += len(cut)
-		}
-		// No room left: the block is dropped; the cut one before it says so.
+	tc, isText := result.Content[0].(*mcp.TextContent)
+	if !isText {
+		return nil, nil, false, false
 	}
-	if copies == 0 {
-		return &out
+	value, isJSON := decodeJSON([]byte(tc.Text))
+	if !isJSON {
+		return nil, nil, false, false
 	}
+	if result.StructuredContent == nil {
+		return tc, value, false, true
+	}
+	structured, err := json.Marshal(result.StructuredContent)
+	if err != nil || !sameJSON([]byte(tc.Text), structured) {
+		return nil, nil, false, false
+	}
+	return tc, value, true, true
+}
 
-	perCopy := (limit - prose) / copies
-	var capped []byte
-	if parsed {
-		capped = capJSON(value, size, perCopy, limit)
+// capExact cuts a result in the standard shape, or returns nil when it is in
+// another shape or no cut of its JSON fits (its _meta alone too large, say).
+func capExact(result *mcp.CallToolResult, originalBytes, limit int) *mcp.CallToolResult {
+	tc, value, restated, ok := standard(result)
+	if !ok {
+		return nil
 	}
-	if capped == nil {
-		// Not JSON this layer can cut: keep a flagged prefix of the text,
-		// and drop the structured copy, which would defeat the cap whole.
-		out.StructuredContent = nil
-		if mirror >= 0 {
-			tc := result.Content[mirror].(*mcp.TextContent)
-			replaceContent(&out, result.Content[mirror], withText(tc, capText(tc.Text, size, limit-prose)))
+	serve := func(payload []byte) *mcp.CallToolResult {
+		out := *result
+		out.Content = []mcp.Content{withText(tc, string(payload))}
+		if restated {
+			out.StructuredContent = json.RawMessage(payload)
 		}
 		return &out
 	}
-	if mirror >= 0 {
-		tc := result.Content[mirror].(*mcp.TextContent)
-		replaceContent(&out, result.Content[mirror], withText(tc, string(capped)))
+	fits := func(payload []byte) bool {
+		n, err := wireBytes(serve(payload))
+		return err == nil && n <= limit
 	}
-	if structured != nil {
-		out.StructuredContent = json.RawMessage(capped)
+	payload := capJSON(value, originalBytes, limit, fits)
+	if payload == nil {
+		return nil
 	}
-	return &out
+	return serve(payload)
+}
+
+// capCoarse replaces a result the exact cut can't serve with one notice,
+// and its structured content, if any, with the same explanation. The result's
+// _meta is kept when it fits beside the notice and dropped otherwise, so the
+// cut depends only on originalBytes and limit, and fits under MinBytes.
+func capCoarse(result *mcp.CallToolResult, originalBytes, limit int) *mcp.CallToolResult {
+	t := truncation{LimitBytes: limit, OriginalBytes: originalBytes, Hint: withheldHint}
+	out := &mcp.CallToolResult{
+		Meta: result.Meta,
+		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf(
+			"[truncated: this %d-byte result exceeded the server's %d-byte limit and was withheld. %s]",
+			originalBytes, limit, withheldHint)}},
+	}
+	if result.StructuredContent != nil {
+		out.StructuredContent = map[string]any{"truncated": true, "truncation": t}
+	}
+	if n, err := wireBytes(out); err != nil || n > limit {
+		out.Meta = nil
+	}
+	return out
 }
 
 // decodeJSON parses data as exactly one JSON document, numbers kept
@@ -250,27 +253,18 @@ func withText(tc *mcp.TextContent, text string) *mcp.TextContent {
 	return &out
 }
 
-// replaceContent swaps the block old for repl in out.Content.
-func replaceContent(out *mcp.CallToolResult, old, repl mcp.Content) {
-	for i, c := range out.Content {
-		if c == old {
-			out.Content[i] = repl
-			return
-		}
-	}
-}
-
-// capJSON renders value within maxBytes: compact if that fits, else with its
-// largest list shortened, else as a flagged prefix of its compact text.
-func capJSON(value any, originalBytes, maxBytes, limit int) []byte {
+// capJSON renders value as the payload of a result that fits: compact if
+// that fits, else with its largest list shortened, else as a flagged prefix
+// of its compact text; nil when not even an empty prefix fits.
+func capJSON(value any, originalBytes, limit int, fits func([]byte) bool) []byte {
 	compact, err := json.Marshal(value)
 	if err != nil {
 		return nil
 	}
-	if len(compact) <= maxBytes {
+	if fits(compact) {
 		return compact
 	}
-	if out := shortenLargestList(value, originalBytes, maxBytes, limit); out != nil {
+	if out := shortenLargestList(value, originalBytes, limit, fits); out != nil {
 		return out
 	}
 	if m, ok := value.(map[string]any); ok {
@@ -278,7 +272,7 @@ func capJSON(value any, originalBytes, maxBytes, limit int) []byte {
 			compact = ordered
 		}
 	}
-	return prefixJSON(string(compact), originalBytes, maxBytes, limit)
+	return prefixJSON(string(compact), originalBytes, limit, fits)
 }
 
 // prefixOrder renders an object compactly for the prefix fallback: its
@@ -331,31 +325,34 @@ func prefixOrder(m map[string]any) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// FitsWhole reports whether v, served as JSON(v), passes Cap
-// without a cut: a result is cut only when its compact rendering is over the
-// share of the cap the text and its structured copy each get. maxBytes <= 0
-// means no cap. A handler that owns a continuation this layer cannot rewrite
-// sizes its own page with it (see FitLeading).
+// FitsWhole reports whether v, served as JSON(v), passes Cap without a cut:
+// whether its compact rendering, text and structured copy, fits on the wire.
+// maxBytes <= 0 means no cap. A handler that owns a continuation this layer
+// cannot rewrite sizes its own page with it (see FitLeading).
 func FitsWhole(v any, maxBytes int) bool {
 	if maxBytes <= 0 {
 		return true
 	}
 	data, err := Marshal(v, false)
-	return err == nil && len(data) <= max(maxBytes, MinResultBytes)/2
+	if err != nil {
+		return false
+	}
+	n, err := wireBytes(&mcp.CallToolResult{
+		Content:           []mcp.Content{&mcp.TextContent{Text: string(data)}},
+		StructuredContent: json.RawMessage(data),
+	})
+	return err == nil && n <= max(maxBytes, MinBytes)
 }
 
-// JSONBytes is what Cap measures for JSON(v): the indented
-// text and its compact structured copy together.
+// JSONBytes is what Cap measures for JSON(v): the serialized result, its
+// indented text and structured copy together. A handler that cuts its own
+// page reports it as the original size.
 func JSONBytes(v any) int {
-	indented, err := Marshal(v, true)
+	n, err := wireBytes(JSON(v))
 	if err != nil {
 		return 0
 	}
-	compact, err := Marshal(v, false)
-	if err != nil {
-		return len(indented)
-	}
-	return len(indented) + len(compact)
+	return n
 }
 
 // FitLeading returns the largest k in [0, n] for which fits(k) holds, given
@@ -367,7 +364,7 @@ func FitLeading(n int, fits func(k int) bool) int {
 	}
 	lo, hi := 0, n-1
 	for lo < hi {
-		mid := (lo + hi + 1) / 2
+		mid := lo + (hi-lo+1)/2
 		if fits(mid) {
 			lo = mid
 		} else {
@@ -378,9 +375,10 @@ func FitLeading(n int, fits func(k int) bool) int {
 }
 
 // shortenLargestList cuts the payload's largest list to the most leading
-// items that fit, or returns nil when there is no list or even an empty one
-// leaves the payload too large.
-func shortenLargestList(value any, originalBytes, maxBytes, limit int) []byte {
+// items that fit, or returns nil when it can't be cut safely: no list, a
+// continuation that could belong to another list, or no cut that fits and
+// makes progress.
+func shortenLargestList(value any, originalBytes, limit int, fits func([]byte) bool) []byte {
 	var (
 		items []any
 		field string
@@ -389,9 +387,9 @@ func shortenLargestList(value any, originalBytes, maxBytes, limit int) []byte {
 	)
 	switch v := value.(type) {
 	case []any:
-		items, field = v, "items"
+		items, field = v, ItemsKey
 		build = func(kept []any, t truncation) map[string]any {
-			return map[string]any{"items": kept, "truncated": true, "truncation": t}
+			return map[string]any{ItemsKey: kept, "truncated": true, "truncation": t}
 		}
 	case map[string]any:
 		field = largestArrayField(v)
@@ -400,6 +398,11 @@ func shortenLargestList(value any, originalBytes, maxBytes, limit int) []byte {
 			return nil
 		}
 		cont = pageContinuationOf(v)
+		if cont != nil && arrayFields(v) > 1 {
+			// The offset could belong to any of the lists; continuing the
+			// largest one could skip items of the list it really pages.
+			return nil
+		}
 		if cont == nil && !bareList(v) {
 			// No offset contract: this object may carry a continuation
 			// (a cursor, a position) that would point past a cut. Leave it
@@ -408,10 +411,7 @@ func shortenLargestList(value any, originalBytes, maxBytes, limit int) []byte {
 		}
 		items = arr
 		build = func(kept []any, t truncation) map[string]any {
-			out := make(map[string]any, len(v)) // grows by the two envelope keys
-			for k, val := range v {
-				out[k] = val
-			}
+			out := maps.Clone(v)
 			out[field] = kept
 			out["truncated"] = true
 			out["truncation"] = t
@@ -422,6 +422,9 @@ func shortenLargestList(value any, originalBytes, maxBytes, limit int) []byte {
 	}
 
 	total := len(items)
+	if total == 0 {
+		return nil
+	}
 	// render keeps the first k items; oversized marks item k as too large to
 	// fit alone, so the continuation steps past it.
 	render := func(k int, oversized, withID bool) []byte {
@@ -432,6 +435,9 @@ func shortenLargestList(value any, originalBytes, maxBytes, limit int) []byte {
 		next := k
 		if cont != nil {
 			t.Hint = continueHint
+			if cont(0).Page == nil {
+				t.Hint = offsetHint
+			}
 		}
 		if oversized {
 			t.OversizedItem = &oversizedItem{Index: k}
@@ -450,62 +456,31 @@ func shortenLargestList(value any, originalBytes, maxBytes, limit int) []byte {
 		}
 		return data
 	}
+	fitsRendered := func(data []byte) bool { return data != nil && fits(data) }
 
-	// Size each item once, then pick the largest prefix whose estimate fits;
-	// the estimate is exact up to the digits of the returned count, so step
-	// down from it until the real rendering fits.
-	empty := render(0, false, false)
-	if empty == nil || len(empty) > maxBytes {
+	// Never a zero-item page: its continuation would point back at the same
+	// offset forever. When not even one item fits, it is skipped as
+	// oversized, or the list isn't cut here.
+	if k := FitLeading(total, func(k int) bool { return fitsRendered(render(k, false, false)) }); k > 0 {
+		return render(k, false, false)
+	}
+	// The first item doesn't fit beside the envelope. It is oversized only if
+	// it can't be served even alone, as the one item of a bare list; if it
+	// could, what crowds it out is the rest of the payload, and stepping past
+	// it would skip an item that is not too large to read.
+	alone, err := json.Marshal(map[string]any{field: items[:1]})
+	if err != nil || fits(alone) {
 		return nil
 	}
-	// skipOversized steps past an item too large to fit alone, naming it by
-	// id when the id itself fits. When not even its position fits, there
-	// is no cut that makes progress, so the list isn't cut here (nil): the
-	// prefix fallback keeps no continuation that could return to it.
-	skipOversized := func() []byte {
-		for _, withID := range []bool{true, false} {
-			if out := render(0, true, withID); out != nil && len(out) <= maxBytes {
-				return out
-			}
-		}
-		return nil
-	}
-	budget := maxBytes - len(empty)
-	k := 0
-	for k < total {
-		size, err := json.Marshal(items[k])
-		if err != nil {
-			return nil
-		}
-		cost := len(size)
-		if k > 0 {
-			cost++ // separating comma
-		}
-		if cost > budget {
-			break
-		}
-		budget -= cost
-		k++
-	}
-	if k == 0 && total > 0 {
-		// The next item does not fit even alone: name it and step past it,
-		// rather than answer with a continuation that returns to it forever.
-		return skipOversized()
-	}
-	// The estimate cannot see digit growth in the rendered counts and
-	// continuation, so the real rendering may overshoot by a few bytes. Step
-	// down, but never to zero items: a zero-item page whose continuation
-	// points back at the same offset would repeat forever. If not even one
-	// item fits, it is treated as oversized, and the continuation steps past it.
-	for ; k >= 1; k-- {
-		if out := render(k, false, false); out != nil && len(out) <= maxBytes {
+	for _, withID := range []bool{true, false} {
+		if out := render(0, true, withID); fitsRendered(out) {
 			return out
 		}
 	}
-	if total > 0 {
-		return skipOversized()
-	}
-	return empty
+	// Not even the marker naming the oversized item fits: there is no cut
+	// that makes progress, so the prefix fallback, which keeps no
+	// continuation that could return to it, takes over.
+	return nil
 }
 
 // bareList reports whether m is a list served alone: {"items": [...]} with
@@ -515,6 +490,17 @@ func shortenLargestList(value any, originalBytes, maxBytes, limit int) []byte {
 func bareList(m map[string]any) bool {
 	_, isList := m[ItemsKey].([]any)
 	return isList && len(m) == 1
+}
+
+// arrayFields counts the top-level fields of m that are lists.
+func arrayFields(m map[string]any) int {
+	n := 0
+	for _, v := range m {
+		if _, ok := v.([]any); ok {
+			n++
+		}
+	}
+	return n
 }
 
 // itemID returns an item's "id", if it is an object that has one.
@@ -527,8 +513,7 @@ func itemID(item any) any {
 
 // pageContinuationOf returns, for the payload of a listing that takes an
 // offset (one carrying a numeric "offset", and "page" when paginated), the
-// continuation after `next` items;
-// nil for any other payload.
+// continuation after `next` items; nil for any other payload.
 func pageContinuationOf(m map[string]any) func(next int) *pageContinuation {
 	offset, ok := jsonInt(m["offset"])
 	if !ok {
@@ -553,9 +538,9 @@ func jsonInt(v any) (int64, bool) {
 	return i, err == nil
 }
 
-// largestArrayField names the array-valued top-level field with the largest
-// rendering, or "" when there is none. Ties go to the first name in order, so
-// the choice is deterministic.
+// largestArrayField names the non-empty array-valued top-level field with
+// the largest rendering, or "" when there is none. Ties go to the first name
+// in order, so the choice is deterministic.
 func largestArrayField(m map[string]any) string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -579,12 +564,13 @@ func largestArrayField(m map[string]any) string {
 	return best
 }
 
-// prefixJSON wraps a prefix of the compact text in a flagged envelope sized
-// to fit.
-func prefixJSON(compact string, originalBytes, maxBytes, limit int) []byte {
+// prefixJSON wraps the longest prefix of the compact text that fits in a
+// flagged envelope, or returns nil when not even an empty prefix fits. A
+// longer prefix never serializes smaller, so the longest is found by
+// bisection on the serialized result, escaping included.
+func prefixJSON(compact string, originalBytes, limit int, fits func([]byte) bool) []byte {
 	t := truncation{LimitBytes: limit, OriginalBytes: originalBytes, Hint: truncationHint}
-	keep := maxBytes
-	for {
+	render := func(keep int) []byte {
 		data, err := json.Marshal(map[string]any{
 			"truncated":    true,
 			"truncation":   t,
@@ -593,34 +579,17 @@ func prefixJSON(compact string, originalBytes, maxBytes, limit int) []byte {
 		if err != nil {
 			return nil
 		}
-		if len(data) <= maxBytes {
-			return data
-		}
-		if keep == 0 {
-			return nil
-		}
-		// Escaping can make the excess larger than the prefix itself (a
-		// run of backslashes doubles); halve rather than skip past every
-		// prefix that would fit.
-		next := keep - (len(data) - maxBytes)
-		if next < 0 {
-			next = keep / 2
-		}
-		keep = next
+		return data
 	}
-}
-
-// capText keeps a prefix of plain text and appends a note saying so.
-func capText(text string, originalBytes, limit int) string {
-	maxBytes := limit
-	note := fmt.Sprintf("\n\n[truncated: showing the first part of a %d-byte result, cut to the server's %d-byte limit. %s]",
-		originalBytes, limit, truncationHint)
-	// MinResultBytes leaves room for the note; the prefix bound holds even
-	// if it did not.
-	if len(note) > maxBytes {
-		return utf8Prefix(note, maxBytes)
+	fitsKeep := func(keep int) bool {
+		data := render(keep)
+		return data != nil && fits(data)
 	}
-	return utf8Prefix(text, maxBytes-len(note)) + note
+	keep := FitLeading(len(compact), fitsKeep)
+	if keep == 0 && !fitsKeep(0) {
+		return nil
+	}
+	return render(keep)
 }
 
 // utf8Prefix returns at most n bytes of s without splitting a rune.
