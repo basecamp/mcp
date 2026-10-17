@@ -408,7 +408,7 @@ func shortenLargestList(value any, originalBytes, maxBytes, limit int) []byte {
 		}
 		items = arr
 		build = func(kept []any, t truncation) map[string]any {
-			out := make(map[string]any, len(v)+2)
+			out := make(map[string]any, len(v)) // grows by the two envelope keys
 			for k, val := range v {
 				out[k] = val
 			}
