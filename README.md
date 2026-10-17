@@ -37,6 +37,7 @@ Arriving as the extraction sequence lands (see the program board):
 | `gateway` | hey-mcp-server `internal/server`, basecamp-mcp-server `internal/tools` registry | gateway dispatch conventions, read-only and domain filtering over a small catalog interface |
 | `catalog` | hey-mcp-server `internal/catalog` | Domain/Operation types and the behavior-model + OpenAPI join, product-parameterized (tool prefix, domain specs, embedded model snapshot) |
 | `result` | basecamp-mcp-server `internal/tools` (result_shape.go, result_cap.go), hey-mcp-server `internal/server/wire_shape.go`; first consumed by hey-mcp-server and fizzy-mcp-server | structuredContent always a JSON object, the serialized-size result cap with page/offset continuations, title mirroring; one receiving middleware applies all three |
+| `auth/exchange` | basecamp-mcp-server `internal/auth/exchange` | RFC 8693 delegation-exchange client for a hosted server: client_secret_post and private_key_jwt client auth, the terminal (re-authorize) vs infra (retry, never re-consent) error fork, allowlisted OAuth error codes with credential-redacted descriptions, optional DPoP proofs and the nonce retry |
 
 Per-product forever: domain curation and blurbs, vendored SDK model snapshots,
 SDK clients and adapters, env var surfaces, product-specific tools and
