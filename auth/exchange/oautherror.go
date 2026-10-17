@@ -87,21 +87,28 @@ var credentialFields = map[string]bool{
 // secret's suffix behind. The form-encoded spelling (what the wire carried)
 // is a candidate too. A candidate that is empty after control-stripping is
 // dropped, so an all-control value never turns into a match-everything "".
+// A credential field's value is then redacted piecewise too (see
+// redactFragments), so a partial echo of it is caught as well.
 func redactCredentials(desc string, form url.Values) string {
-	var redact []string
+	var redact, fragments []string
 	for field, vs := range form {
 		credentialField := credentialFields[field]
 		for _, v := range vs {
 			if v == "" || (!credentialField && len(v) < 8) {
 				continue
 			}
+			var spellings []string
 			if s := stripControls(v); s != "" {
-				redact = append(redact, s)
+				spellings = append(spellings, s)
 			}
 			if enc := url.QueryEscape(v); enc != v {
 				if s := stripControls(enc); s != "" {
-					redact = append(redact, s)
+					spellings = append(spellings, s)
 				}
+			}
+			redact = append(redact, spellings...)
+			if credentialField {
+				fragments = append(fragments, spellings...)
 			}
 		}
 	}
@@ -109,5 +116,48 @@ func redactCredentials(desc string, form url.Values) string {
 	for _, v := range redact {
 		desc = strings.ReplaceAll(desc, v, "[redacted]")
 	}
-	return desc
+	return redactFragments(desc, fragments)
+}
+
+// fragmentBytes is the shortest piece of a credential redactFragments
+// recognises. Any echoed piece at least this long is made only of such
+// pieces, so it is covered whole: a truncated, prefixed or partial echo is
+// redacted as surely as the full value.
+const fragmentBytes = 8
+
+// redactFragments replaces with [redacted] every run of desc made of
+// fragmentBytes-long pieces of any credential in creds. The full-value pass
+// can't see an endpoint that echoes only part of a credential (a prefix cut
+// at a length limit, say); this one does, whatever the cut.
+func redactFragments(desc string, creds []string) string {
+	pieces := map[string]bool{}
+	for _, c := range creds {
+		for i := 0; i+fragmentBytes <= len(c); i++ {
+			pieces[c[i:i+fragmentBytes]] = true
+		}
+	}
+	if len(pieces) == 0 || len(desc) < fragmentBytes {
+		return desc
+	}
+	covered := make([]bool, len(desc))
+	for i := 0; i+fragmentBytes <= len(desc); i++ {
+		if pieces[desc[i:i+fragmentBytes]] {
+			for j := i; j < i+fragmentBytes; j++ {
+				covered[j] = true
+			}
+		}
+	}
+	var b strings.Builder
+	for i := 0; i < len(desc); {
+		if !covered[i] {
+			b.WriteByte(desc[i])
+			i++
+			continue
+		}
+		for i < len(desc) && covered[i] {
+			i++
+		}
+		b.WriteString("[redacted]")
+	}
+	return b.String()
 }

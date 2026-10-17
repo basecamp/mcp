@@ -57,9 +57,10 @@ func ValidateEndpointURL(rawURL string) error {
 
 // isLoopbackHost reports whether a hostname is proxy-safe loopback: exact
 // "localhost" or a loopback IP literal, the two forms Go's proxy resolution
-// never routes through HTTP_PROXY. Deliberately not *.localhost.
+// never routes through HTTP_PROXY. Deliberately not *.localhost, and
+// deliberately case-sensitive: the proxy check compares the request's host
+// to "localhost" as written, so LOCALHOST would be sent through HTTP_PROXY.
 func isLoopbackHost(host string) bool {
-	host = strings.ToLower(host)
 	if host == "localhost" {
 		return true
 	}

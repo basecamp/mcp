@@ -6,8 +6,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/basecamp/mcp/auth/upstream/upstreamtest"
@@ -106,5 +109,48 @@ func TestInfraError_HasNoUnwrap(t *testing.T) {
 	}
 	if _, ok := e.(interface{ Cause() error }); ok {
 		t.Fatal("InfraError has Cause() error")
+	}
+}
+
+// TestPartialEchoIsRedacted: an endpoint that echoes only part of a
+// credential (a prefix cut at a length limit, a suffix, a middle) leaks it
+// as surely as one echoing all of it, and ScrubDescription's token-run
+// backstop lets a short piece through. No WindowBytes-long piece of the
+// subject token or the client secret reaches the error text or a log line,
+// and the rest of the description survives.
+func TestPartialEchoIsRedacted(t *testing.T) {
+	const subject = "bc_at_1234567890abcdef"                  // #nosec G101 -- test fixture
+	const secret = "cs_ConfiguredClientSecret_Q7w8e9r0t1y2u3" // #nosec G101 -- test fixture
+	cuts := map[string]string{
+		"subject prefix": subject[:16],
+		"subject suffix": subject[len(subject)-14:],
+		"secret prefix":  secret[:12],
+		"secret middle":  secret[10:24],
+		"secret suffix":  secret[len(secret)-13:],
+	}
+	for name, piece := range cuts {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = fmt.Fprintf(w, `{"error":"invalid_client","error_description":"bad token %s here"}`, piece)
+			}))
+			defer srv.Close()
+			ex, err := New(Config{TokenURL: srv.URL, Auth: ClientSecretPost("mcp", secret)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = ex.Exchange(context.Background(), subject)
+			if !IsInfra(err) {
+				t.Fatalf("want InfraError, got %v", err)
+			}
+			upstreamtest.AssertClean(t, "Error()", err.Error(), subject, secret)
+			var logs bytes.Buffer
+			slog.New(slog.NewJSONHandler(&logs, nil)).Error("authorization upstream unavailable", "error", err)
+			upstreamtest.AssertClean(t, "log line", logs.String(), subject, secret)
+			if !strings.Contains(err.Error(), "bad token [redacted] here") {
+				t.Errorf("the rest of the description should survive: %q", err.Error())
+			}
+		})
 	}
 }

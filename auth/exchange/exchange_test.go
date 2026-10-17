@@ -1129,7 +1129,7 @@ func TestTokenURLRequiresTLSOffLoopback(t *testing.T) {
 		"http://127.0.0.1:3000/oauth/token":         true,
 		"http://[::1]:3000/oauth/token":             true,
 		"http://localhost:3000/oauth/token":         true,
-		"http://LOCALHOST:3000/oauth/token":         true,
+		"http://LOCALHOST:3000/oauth/token":         false, // HTTP_PROXY would get it
 		"http://fizzy.example/oauth/token":          false,
 		"http://10.0.0.1/oauth/token":               false,
 		"http://as.localhost/oauth/token":           false,
