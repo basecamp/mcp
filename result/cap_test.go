@@ -226,6 +226,34 @@ func TestPrefixOrder(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, `{"obj":{"k":"v"},"big":[1,2,3],"small":[1],"count":3,"a_cursor":"abcdef"}`, string(got))
+
+	// Nested objects, list items included, are ordered the same way.
+	got, err = prefixOrder(map[string]any{
+		"next": "N",
+		"results": map[string]any{"box": map[string]any{
+			"changes_url": "C", "postings": []any{map[string]any{"z": []any{1}, "a": "s"}},
+		}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, `{"results":{"box":{"postings":[{"z":[1],"a":"s"}],"changes_url":"C"}},"next":"N"}`, string(got))
+}
+
+// A continuation nested beside the list it continues doesn't survive a
+// prefix that cuts the list, however deep it sits.
+func TestCap_NestedContinuationKeptOutOfThePrefix(t *testing.T) {
+	box := map[string]any{"name": "Imbox", "posting_changes_url": "https://x/changes?since=SINCE-VALUE", "postings": bigItems(100)}
+	for name, payload := range map[string]any{
+		"one level":  map[string]any{"next_page": "CURSOR-VALUE", "results": box},
+		"two levels": map[string]any{"next_page": "CURSOR-VALUE", "results": map[string]any{"box": box}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := assertExactCut(t, Cap(JSON(payload), 10_000), 10_000)
+			partial, _ := got["partial_json"].(string)
+			require.NotEmpty(t, partial)
+			assert.NotContains(t, partial, "SINCE-VALUE")
+			assert.NotContains(t, partial, "CURSOR-VALUE")
+		})
+	}
 }
 
 // FitLeading finds the most items that fit, and 0 when none does.

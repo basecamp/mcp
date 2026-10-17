@@ -45,12 +45,13 @@ import (
 // produce, so escaping can't push a cut over the limit.
 //
 // A prefix is read by a model, so a continuation must not survive in it
-// either. The prefix renders the object's arrays and objects first, largest
-// first, and its scalars after them: a cursor, a position or a next URL is a
-// scalar, so it shows only when every list before it is whole — when it
-// cannot point past anything cut. (A continuation nested in an object smaller
-// than the list it continues is not covered by that order; no payload here
-// has one.)
+// either. The prefix renders every object's arrays and objects first,
+// largest first, and its scalars after them, at every depth: a cursor, a
+// position or a next URL is a scalar, so it shows only when every list
+// before it in its object is whole — when it cannot point past anything cut.
+// (A continuation held in an object larger than the list it continues, and
+// so rendered before it, is not covered by that order; no payload here has
+// one.)
 //
 // A listing that takes an offset names the offset it was served at, and its
 // page when it has one, as top-level "offset" and "page" beside its one list
@@ -267,62 +268,82 @@ func capJSON(value any, originalBytes, limit int, fits func([]byte) bool) []byte
 	if out := shortenLargestList(value, originalBytes, limit, fits); out != nil {
 		return out
 	}
-	if m, ok := value.(map[string]any); ok {
-		if ordered, err := prefixOrder(m); err == nil {
-			compact = ordered
-		}
+	if ordered, err := prefixOrder(value); err == nil {
+		compact = ordered
 	}
 	return prefixJSON(string(compact), originalBytes, limit, fits)
 }
 
-// prefixOrder renders an object compactly for the prefix fallback: its
-// arrays and objects first, largest first, then its scalars, smallest first.
-// A prefix ends inside whatever it cuts, so a scalar in it — a cursor, a
-// position, a next URL — is there only if every array and object is there
-// whole, and a continuation beside whole lists skips nothing. Equal sizes
-// keep name order, so the rendering is deterministic.
-func prefixOrder(m map[string]any) ([]byte, error) {
-	type field struct {
-		key, value []byte
-		structured bool
+// prefixOrder renders a value compactly for the prefix fallback, every
+// object in it — nested ones and list items included — with its arrays and
+// objects first, largest first, then its scalars, smallest first. A prefix
+// ends inside whatever it cuts, so a scalar in it — a cursor, a position, a
+// next URL, at any depth — is there only if every array and object before it
+// in its own object is there whole, and a continuation beside whole lists
+// skips nothing. Equal sizes keep name order, so the rendering is
+// deterministic.
+func prefixOrder(v any) ([]byte, error) {
+	switch v := v.(type) {
+	case map[string]any:
+		type field struct {
+			key, value []byte
+			structured bool
+		}
+		fields := make([]field, 0, len(v))
+		for k, val := range v {
+			key, err := json.Marshal(k)
+			if err != nil {
+				return nil, err
+			}
+			value, err := prefixOrder(val)
+			if err != nil {
+				return nil, err
+			}
+			_, isList := val.([]any)
+			_, isObject := val.(map[string]any)
+			fields = append(fields, field{key, value, isList || isObject})
+		}
+		sort.Slice(fields, func(i, j int) bool {
+			a, b := fields[i], fields[j]
+			switch {
+			case a.structured != b.structured:
+				return a.structured
+			case len(a.value) != len(b.value):
+				return (len(a.value) > len(b.value)) == a.structured
+			default:
+				return bytes.Compare(a.key, b.key) < 0
+			}
+		})
+		var buf bytes.Buffer
+		buf.WriteByte('{')
+		for i, f := range fields {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			buf.Write(f.key)
+			buf.WriteByte(':')
+			buf.Write(f.value)
+		}
+		buf.WriteByte('}')
+		return buf.Bytes(), nil
+	case []any:
+		var buf bytes.Buffer
+		buf.WriteByte('[')
+		for i, item := range v {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			data, err := prefixOrder(item)
+			if err != nil {
+				return nil, err
+			}
+			buf.Write(data)
+		}
+		buf.WriteByte(']')
+		return buf.Bytes(), nil
+	default:
+		return json.Marshal(v)
 	}
-	fields := make([]field, 0, len(m))
-	for k, v := range m {
-		key, err := json.Marshal(k)
-		if err != nil {
-			return nil, err
-		}
-		value, err := json.Marshal(v)
-		if err != nil {
-			return nil, err
-		}
-		_, isList := v.([]any)
-		_, isObject := v.(map[string]any)
-		fields = append(fields, field{key, value, isList || isObject})
-	}
-	sort.Slice(fields, func(i, j int) bool {
-		a, b := fields[i], fields[j]
-		switch {
-		case a.structured != b.structured:
-			return a.structured
-		case len(a.value) != len(b.value):
-			return (len(a.value) > len(b.value)) == a.structured
-		default:
-			return bytes.Compare(a.key, b.key) < 0
-		}
-	})
-	var buf bytes.Buffer
-	buf.WriteByte('{')
-	for i, f := range fields {
-		if i > 0 {
-			buf.WriteByte(',')
-		}
-		buf.Write(f.key)
-		buf.WriteByte(':')
-		buf.Write(f.value)
-	}
-	buf.WriteByte('}')
-	return buf.Bytes(), nil
 }
 
 // FitsWhole reports whether v, served as JSON(v), passes Cap without a cut:
