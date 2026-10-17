@@ -66,3 +66,14 @@ func TestLifetime(t *testing.T) {
 		}
 	}
 }
+
+// TestSeconds_FractionalLimit: a limit that isn't a whole number of seconds
+// never raises a value below it.
+func TestSeconds_FractionalLimit(t *testing.T) {
+	if got := Seconds(1, 1500*time.Millisecond); got != time.Second {
+		t.Errorf("Seconds(1, 1.5s) = %v, want 1s", got)
+	}
+	if got := Seconds(2, 1500*time.Millisecond); got != 1500*time.Millisecond {
+		t.Errorf("Seconds(2, 1.5s) = %v, want 1.5s", got)
+	}
+}

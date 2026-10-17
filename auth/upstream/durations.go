@@ -49,7 +49,7 @@ func Seconds(secs int64, limit time.Duration) time.Duration {
 	switch {
 	case secs <= 0:
 		return 0
-	case secs >= int64(limit/time.Second):
+	case secs > int64(limit/time.Second):
 		return limit
 	default:
 		return time.Duration(secs) * time.Second

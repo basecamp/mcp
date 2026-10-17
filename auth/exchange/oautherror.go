@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // ParseOAuthError is the single boundary both the HTTP-mode token exchange
@@ -52,7 +53,10 @@ func ParseOAuthError(body []byte, form url.Values) (code, description string) {
 func stripControls(v string) string {
 	var b strings.Builder
 	for _, r := range v {
-		if r >= 0x20 && r != 0x7f {
+		// U+FFFD too, as upstream.ScrubDescription drops it when rendering:
+		// left in here, it would split a credential past redaction and
+		// rejoin it in the rendered text.
+		if r >= 0x20 && r != 0x7f && r != utf8.RuneError {
 			b.WriteRune(r)
 		}
 	}
