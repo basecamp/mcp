@@ -66,6 +66,14 @@ func TestObject(t *testing.T) {
 		in := JSON(map[string]int{"id": 1})
 		assert.Same(t, in, Object(in))
 	})
+	t.Run("restated with object keys in another order", func(t *testing.T) {
+		out := Object(&mcp.CallToolResult{
+			Content:           []mcp.Content{&mcp.TextContent{Text: `[ {"b":2,"a":1} ]`}},
+			StructuredContent: []map[string]int{{"a": 1, "b": 2}},
+		})
+		assertStructured(t, out, `{"items": [{"a": 1, "b": 2}]}`)
+		assert.JSONEq(t, `{"items": [{"a": 1, "b": 2}]}`, resultText(t, out))
+	})
 	t.Run("raw null", func(t *testing.T) {
 		assertStructured(t, Object(&mcp.CallToolResult{StructuredContent: json.RawMessage(`null`)}), `{"value": null}`)
 	})

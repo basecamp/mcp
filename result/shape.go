@@ -147,10 +147,12 @@ func withContentArray(result *mcp.CallToolResult) *mcp.CallToolResult {
 	return &out
 }
 
-// sameJSON reports whether a and b are the same JSON text up to whitespace.
+// sameJSON reports whether a and b are the same JSON value: whitespace and
+// object member order don't matter, and numbers compare by their text.
 func sameJSON(a, b []byte) bool {
-	var ca, cb bytes.Buffer
-	return json.Compact(&ca, a) == nil && json.Compact(&cb, b) == nil && bytes.Equal(ca.Bytes(), cb.Bytes())
+	va, okA := decodeJSON(a)
+	vb, okB := decodeJSON(b)
+	return okA && okB && reflect.DeepEqual(va, vb)
 }
 
 // isNilSlice reports whether v is a nil slice (other than []byte, which
