@@ -151,12 +151,10 @@ func Handler(kind Kind) http.Handler {
 			writeJSON(w, http.StatusBadRequest, fmt.Sprintf(
 				`{"error":"invalid_grant","error_description":"grant rejected; request was %s"}`, echo))
 		case ServerError:
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte(echo)) // #nosec G705 -- a deliberately reflecting fake endpoint
+			writeText(w, http.StatusInternalServerError, echo)
 		case RateLimited:
 			w.Header().Set("Retry-After", echo)
-			w.WriteHeader(http.StatusTooManyRequests)
-			_, _ = w.Write([]byte(echo)) // #nosec G705 -- a deliberately reflecting fake endpoint
+			writeText(w, http.StatusTooManyRequests, echo)
 		default:
 			panic("upstreamtest: unknown kind " + string(kind))
 		}
@@ -165,6 +163,15 @@ func Handler(kind Kind) http.Handler {
 
 func writeJSON(w http.ResponseWriter, status int, body string) {
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(body)) // #nosec G705 -- a deliberately reflecting fake endpoint
+}
+
+// writeText writes a plain-text body, typed so no client renders the echo
+// as HTML.
+func writeText(w http.ResponseWriter, status int, body string) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(body)) // #nosec G705 -- a deliberately reflecting fake endpoint
 }
