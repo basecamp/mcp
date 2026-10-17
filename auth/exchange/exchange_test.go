@@ -1335,6 +1335,44 @@ func TestPrivateKeyJWTRefusesAnUninitializedKey(t *testing.T) {
 	}
 }
 
+// TestPrivateKeyJWTCurveIsComparedNotCalled: a key whose Curve is some
+// other implementation, a typed nil included, is refused without a call
+// into it.
+func TestPrivateKeyJWTCurveIsComparedNotCalled(t *testing.T) {
+	good, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nilCurve *nilParamsCurve
+	key := &ecdsa.PrivateKey{PublicKey: ecdsa.PublicKey{Curve: nilCurve, X: good.X, Y: good.Y}, D: good.D}
+	if _, err := PrivateKeyJWT("id", key, "https://fizzy.example/oauth/token"); err == nil {
+		t.Fatal("want an error for a non-P-256 curve")
+	}
+}
+
+// nilParamsCurve panics on any call through a nil receiver.
+type nilParamsCurve struct{ elliptic.Curve }
+
+// TestNewRefusesAMismatchedAssertionAudience: a private_key_jwt
+// authenticator built for one URL and an exchanger posting to another would
+// fail every exchange, so New refuses the pair.
+func TestNewRefusesAMismatchedAssertionAudience(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth, err := PrivateKeyJWT("id", key, "https://as.example.com/token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(Config{TokenURL: "https://as.example.com/other", Auth: auth}); err == nil {
+		t.Error("want an error for a mismatched audience")
+	}
+	if _, err := New(Config{TokenURL: "https://as.example.com/token", Auth: auth}); err != nil {
+		t.Errorf("a matching URL: %v", err)
+	}
+}
+
 // TestDroppedRuneCannotRejoinASecret: a credential split by any rune the
 // rendered text drops (U+FFFD, NEL, a line separator, a zero-width space)
 // must be redacted, not rejoined when the description is rendered.

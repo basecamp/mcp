@@ -121,6 +121,12 @@ func New(cfg Config) (*Exchanger, error) {
 	if cfg.Auth == nil {
 		return nil, errors.New("exchange: Config.Auth is required")
 	}
+	// A private_key_jwt assertion's audience is the URL it was built for;
+	// built for another, every assertion this exchanger posts is refused.
+	if p, ok := cfg.Auth.(*privateKeyJWT); ok && p != nil && p.tokenURL != cfg.TokenURL {
+		return nil, errors.New("exchange: Config.Auth is a private_key_jwt authenticator built for a different token URL " +
+			"than Config.TokenURL (values withheld): its assertions' audience would never match")
+	}
 
 	httpClient := cfg.HTTPClient
 	if httpClient == nil {

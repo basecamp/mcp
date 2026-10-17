@@ -63,8 +63,10 @@ func PrivateKeyJWT(clientID string, key crypto.Signer, tokenURL string) (ClientA
 	if ec == nil || ec.Curve == nil || ec.X == nil || ec.Y == nil || ec.D == nil {
 		return nil, errors.New("private_key_jwt requires an initialized P-256 key")
 	}
+	// Compared, never called: a caller's Curve may be any implementation,
+	// typed-nil included, and only P-256 is trusted past this point.
 	if ec.Curve != elliptic.P256() {
-		return nil, fmt.Errorf("private_key_jwt requires a P-256 key, got %s", ec.Curve.Params().Name)
+		return nil, errors.New("private_key_jwt requires a P-256 key")
 	}
 	// The key whole, here rather than on the first exchange: a scalar in
 	// range, a public point on the curve, and the one derived from the other.
