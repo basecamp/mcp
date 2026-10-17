@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 	"unicode/utf8"
 
@@ -109,57 +110,154 @@ type truncation struct {
 // content together. It returns the result unchanged when maxBytes <= 0, the
 // result is an error (an error must reach the caller whole), or it already
 // fits.
+//
+// Everything the result says counts toward the cap: every text block and
+// the structured content. Its payload is the structured content with the
+// text block that restates it, if any (JSON's shape: both copies get half
+// of what is left), or, without structured content, the first text block
+// that is a JSON document. Any other text block is prose beside it, kept
+// whole while it fits and cut with a note once it doesn't; when there is a
+// payload, prose gets at most half the cap, so a cut never spends it all on
+// prose and drops the records. Non-text content passes through uncounted.
+// A cut text block keeps its _meta and annotations.
 func Cap(result *mcp.CallToolResult, maxBytes int) *mcp.CallToolResult {
 	if result == nil || result.IsError || maxBytes <= 0 {
 		return result
 	}
-	maxBytes = max(maxBytes, MinResultBytes)
-	idx, text := -1, ""
-	for i, c := range result.Content {
+	limit := max(maxBytes, MinResultBytes)
+
+	var structured []byte
+	if result.StructuredContent != nil {
+		if data, err := json.Marshal(result.StructuredContent); err == nil {
+			structured = data
+		}
+	}
+	size := len(structured)
+	for _, c := range result.Content {
 		if tc, ok := c.(*mcp.TextContent); ok {
-			idx, text = i, tc.Text
+			size += len(tc.Text)
+		}
+	}
+	if size <= limit {
+		return result
+	}
+
+	// Find the payload: the parsed value it caps from, and the text block
+	// carrying it (-1 when structured content stands alone).
+	mirror := -1
+	var value any
+	parsed := false
+	if structured != nil {
+		value, parsed = decodeJSON(structured)
+	}
+	for i, c := range result.Content {
+		tc, ok := c.(*mcp.TextContent)
+		if !ok {
+			continue
+		}
+		if structured != nil {
+			if sameJSON([]byte(tc.Text), structured) {
+				mirror = i
+				break
+			}
+		} else if v, ok := decodeJSON([]byte(tc.Text)); ok {
+			mirror, value, parsed = i, v, true
 			break
 		}
 	}
-	if idx < 0 {
-		return result
+	copies := 0
+	if structured != nil {
+		copies++
 	}
-	size, budget := len(text), maxBytes
-	if result.StructuredContent != nil {
-		structured, err := json.Marshal(result.StructuredContent)
-		if err == nil {
-			size += len(structured)
-		}
-		budget = maxBytes / 2
-	}
-	if size <= maxBytes {
-		return result
-	}
-	limit := maxBytes
-	maxBytes = budget
-
-	var capped []byte
-	var value any
-	dec := json.NewDecoder(bytes.NewReader([]byte(text)))
-	dec.UseNumber()
-	if err := dec.Decode(&value); err == nil && !dec.More() {
-		capped = capJSON(value, size, maxBytes, limit)
+	if mirror >= 0 {
+		copies++
 	}
 
+	// Prose first, within its share, so the payload gets what is left.
+	proseBudget := limit
+	if copies > 0 {
+		proseBudget = limit / 2
+	}
 	out := *result
-	out.Content = append([]mcp.Content(nil), result.Content...)
-	if capped == nil {
-		out.Content[idx] = &mcp.TextContent{Text: capText(text, size, limit)}
-		// Structured content restated the text; a cut text with a whole
-		// structured copy would defeat the cap.
-		out.StructuredContent = nil
+	out.Content = make([]mcp.Content, 0, len(result.Content))
+	prose := 0
+	for i, c := range result.Content {
+		tc, ok := c.(*mcp.TextContent)
+		if !ok || i == mirror {
+			out.Content = append(out.Content, c)
+			continue
+		}
+		switch room := proseBudget - prose; {
+		case len(tc.Text) <= room:
+			out.Content = append(out.Content, c)
+			prose += len(tc.Text)
+		case room > 0:
+			cut := capText(tc.Text, size, room)
+			out.Content = append(out.Content, withText(tc, cut))
+			prose += len(cut)
+		}
+		// No room left: the block is dropped; the cut one before it says so.
+	}
+	if copies == 0 {
 		return &out
 	}
-	out.Content[idx] = &mcp.TextContent{Text: string(capped)}
-	if result.StructuredContent != nil {
+
+	perCopy := (limit - prose) / copies
+	var capped []byte
+	if parsed {
+		capped = capJSON(value, size, perCopy, limit)
+	}
+	if capped == nil {
+		// Not JSON this layer can cut: keep a flagged prefix of the text,
+		// and drop the structured copy, which would defeat the cap whole.
+		out.StructuredContent = nil
+		if mirror >= 0 {
+			tc := result.Content[mirror].(*mcp.TextContent)
+			replaceContent(&out, result.Content[mirror], withText(tc, capText(tc.Text, size, limit-prose)))
+		}
+		return &out
+	}
+	if mirror >= 0 {
+		tc := result.Content[mirror].(*mcp.TextContent)
+		replaceContent(&out, result.Content[mirror], withText(tc, string(capped)))
+	}
+	if structured != nil {
 		out.StructuredContent = json.RawMessage(capped)
 	}
 	return &out
+}
+
+// decodeJSON parses data as exactly one JSON document, numbers kept
+// exact. Trailing bytes, even a stray closing bracket, make it not JSON.
+func decodeJSON(data []byte) (any, bool) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, false
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, false
+	}
+	return v, true
+}
+
+// withText copies a text block with new text, keeping its _meta and
+// annotations.
+func withText(tc *mcp.TextContent, text string) *mcp.TextContent {
+	out := *tc
+	out.Text = text
+	return &out
+}
+
+// replaceContent swaps the block old for repl in out.Content.
+func replaceContent(out *mcp.CallToolResult, old, repl mcp.Content) {
+	for i, c := range out.Content {
+		if c == old {
+			out.Content[i] = repl
+			return
+		}
+	}
 }
 
 // capJSON renders value within maxBytes: compact if that fits, else with its
@@ -326,7 +424,7 @@ func shortenLargestList(value any, originalBytes, maxBytes, limit int) []byte {
 	total := len(items)
 	// render keeps the first k items; oversized marks item k as too large to
 	// fit alone, so the continuation steps past it.
-	render := func(k int, oversized bool) []byte {
+	render := func(k int, oversized, withID bool) []byte {
 		t := truncation{
 			LimitBytes: limit, OriginalBytes: originalBytes, Field: field,
 			Returned: &k, Total: &total, Hint: truncationHint,
@@ -336,7 +434,10 @@ func shortenLargestList(value any, originalBytes, maxBytes, limit int) []byte {
 			t.Hint = continueHint
 		}
 		if oversized {
-			t.OversizedItem = &oversizedItem{Index: k, ID: itemID(items[k])}
+			t.OversizedItem = &oversizedItem{Index: k}
+			if withID {
+				t.OversizedItem.ID = itemID(items[k])
+			}
 			t.Hint = oversizedHint
 			next = k + 1
 		}
@@ -353,8 +454,20 @@ func shortenLargestList(value any, originalBytes, maxBytes, limit int) []byte {
 	// Size each item once, then pick the largest prefix whose estimate fits;
 	// the estimate is exact up to the digits of the returned count, so step
 	// down from it until the real rendering fits.
-	empty := render(0, false)
+	empty := render(0, false, false)
 	if empty == nil || len(empty) > maxBytes {
+		return nil
+	}
+	// skipOversized steps past an item too large to fit alone, naming it by
+	// id when the id itself fits. When not even its position fits, there
+	// is no cut that makes progress, so the list isn't cut here (nil): the
+	// prefix fallback keeps no continuation that could return to it.
+	skipOversized := func() []byte {
+		for _, withID := range []bool{true, false} {
+			if out := render(0, true, withID); out != nil && len(out) <= maxBytes {
+				return out
+			}
+		}
 		return nil
 	}
 	budget := maxBytes - len(empty)
@@ -377,10 +490,7 @@ func shortenLargestList(value any, originalBytes, maxBytes, limit int) []byte {
 	if k == 0 && total > 0 {
 		// The next item does not fit even alone: name it and step past it,
 		// rather than answer with a continuation that returns to it forever.
-		if out := render(0, true); out != nil && len(out) <= maxBytes {
-			return out
-		}
-		return empty
+		return skipOversized()
 	}
 	// The estimate cannot see digit growth in the rendered counts and
 	// continuation, so the real rendering may overshoot by a few bytes. Step
@@ -388,14 +498,12 @@ func shortenLargestList(value any, originalBytes, maxBytes, limit int) []byte {
 	// points back at the same offset would repeat forever. If not even one
 	// item fits, it is treated as oversized, and the continuation steps past it.
 	for ; k >= 1; k-- {
-		if out := render(k, false); out != nil && len(out) <= maxBytes {
+		if out := render(k, false, false); out != nil && len(out) <= maxBytes {
 			return out
 		}
 	}
 	if total > 0 {
-		if out := render(0, true); out != nil && len(out) <= maxBytes {
-			return out
-		}
+		return skipOversized()
 	}
 	return empty
 }
@@ -476,7 +584,7 @@ func largestArrayField(m map[string]any) string {
 func prefixJSON(compact string, originalBytes, maxBytes, limit int) []byte {
 	t := truncation{LimitBytes: limit, OriginalBytes: originalBytes, Hint: truncationHint}
 	keep := maxBytes
-	for keep > 0 {
+	for {
 		data, err := json.Marshal(map[string]any{
 			"truncated":    true,
 			"truncation":   t,
@@ -488,9 +596,18 @@ func prefixJSON(compact string, originalBytes, maxBytes, limit int) []byte {
 		if len(data) <= maxBytes {
 			return data
 		}
-		keep -= len(data) - maxBytes
+		if keep == 0 {
+			return nil
+		}
+		// Escaping can make the excess larger than the prefix itself (a
+		// run of backslashes doubles); halve rather than skip past every
+		// prefix that would fit.
+		next := keep - (len(data) - maxBytes)
+		if next < 0 {
+			next = keep / 2
+		}
+		keep = next
 	}
-	return nil
 }
 
 // capText keeps a prefix of plain text and appends a note saying so.

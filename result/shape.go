@@ -122,12 +122,13 @@ func ObjectStructuredContent(result *mcp.CallToolResult) *mcp.CallToolResult {
 		if !ok {
 			continue
 		}
+		// Every block that restates the value is rewritten, not just the
+		// first text block: prose may come first.
 		if sameJSON([]byte(tc.Text), data) {
 			if text, err := Marshal(sc, true); err == nil {
 				out.Content[i] = &mcp.TextContent{Text: string(text), Meta: tc.Meta, Annotations: tc.Annotations}
 			}
 		}
-		break
 	}
 	return &out
 }

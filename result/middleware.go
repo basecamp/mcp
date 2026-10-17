@@ -18,6 +18,13 @@ import (
 //     (ObjectStructuredContent), and a successful result is held to maxBytes
 //     (Cap; maxBytes <= 0 disables the cap).
 //
+// Both rewrite what a handler returned after the SDK checked it against the
+// tool's output schema, so a tool served behind this middleware declares no
+// output schema, or an object one that admits the wrapping keys (items,
+// value) and the cap's envelope (truncated, truncation, partial_json):
+// not additionalProperties false. A product holds that with a test over its
+// served tools, as hey-mcp-server does.
+//
 // Install it once: server.AddReceivingMiddleware(result.Middleware(n)).
 // Extracted from hey-mcp-server's wireShape, itself basecamp-mcp-server's
 // registry posture (#236, #237) applied where a toolkit-built server can see

@@ -281,3 +281,118 @@ func TestCapResult_ContinuationAlwaysAdvances(t *testing.T) {
 		}
 	}
 }
+
+// allBytes is everything a result says: every text block plus the
+// structured content.
+func allBytes(t *testing.T, r *mcp.CallToolResult) int {
+	t.Helper()
+	n := 0
+	for _, c := range r.Content {
+		if tc, ok := c.(*mcp.TextContent); ok {
+			n += len(tc.Text)
+		}
+	}
+	if r.StructuredContent != nil {
+		data, err := json.Marshal(r.StructuredContent)
+		require.NoError(t, err)
+		n += len(data)
+	}
+	return n
+}
+
+// Every text block counts, not just the first, and structured content
+// standing alone is capped too.
+func TestCapResult_CountsEveryBlock(t *testing.T) {
+	two := &mcp.CallToolResult{Content: []mcp.Content{
+		&mcp.TextContent{Text: strings.Repeat("a", 3000)},
+		&mcp.TextContent{Text: strings.Repeat("b", 3000)},
+	}}
+	assert.LessOrEqual(t, allBytes(t, Cap(two, MinResultBytes)), MinResultBytes)
+
+	alone := &mcp.CallToolResult{StructuredContent: map[string]any{"items": bigItems(100)}}
+	out := Cap(alone, 10_000)
+	assert.LessOrEqual(t, allBytes(t, out), 10_000)
+	got := decode(t, string(out.StructuredContent.(json.RawMessage)))
+	assert.Equal(t, true, got["truncated"])
+	assert.NotEmpty(t, asList(t, got["items"]))
+}
+
+// Prose beside structured content it doesn't restate keeps the prose and
+// caps the records, rather than dropping them for the prose.
+func TestCapResult_ProseBesideStructured(t *testing.T) {
+	r := &mcp.CallToolResult{
+		Content:           []mcp.Content{&mcp.TextContent{Text: "Here are the cards."}},
+		StructuredContent: map[string]any{"items": bigItems(100)},
+	}
+	out := Cap(r, 10_000)
+	assert.Equal(t, "Here are the cards.", resultText(t, out))
+	require.NotNil(t, out.StructuredContent)
+	got := decode(t, string(out.StructuredContent.(json.RawMessage)))
+	assert.Equal(t, true, got["truncated"])
+	assert.NotEmpty(t, asList(t, got["items"]))
+	assert.LessOrEqual(t, allBytes(t, out), 10_000)
+
+	// Long prose gets half the cap at most, so the records still come back.
+	r.Content = []mcp.Content{&mcp.TextContent{Text: strings.Repeat("p", 20_000)}}
+	out = Cap(r, 10_000)
+	require.NotNil(t, out.StructuredContent, "the records aren't dropped for the prose")
+	got = decode(t, string(out.StructuredContent.(json.RawMessage)))
+	assert.NotEmpty(t, asList(t, got["items"]))
+	assert.LessOrEqual(t, allBytes(t, out), 10_000)
+}
+
+// A cut text block keeps its _meta and annotations.
+func TestCapResult_KeepsContentMetadata(t *testing.T) {
+	meta := mcp.Meta{"k": "v"}
+	ann := &mcp.Annotations{Audience: []mcp.Role{"user"}}
+	for _, text := range []string{strings.Repeat("x", 20_000), mustJSON(t, bigItems(100))} {
+		r := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text, Meta: meta, Annotations: ann}}}
+		tc := Cap(r, 10_000).Content[0].(*mcp.TextContent)
+		assert.Less(t, len(tc.Text), len(text))
+		assert.Equal(t, meta, tc.Meta)
+		assert.Equal(t, ann, tc.Annotations)
+	}
+}
+
+// An oversized item whose id is itself too large to name is still stepped
+// past, or the list isn't cut at all: never a zero-item page whose
+// continuation points back at the same offset.
+func TestCapResult_OversizedItemWithHugeID(t *testing.T) {
+	items := []map[string]any{
+		{"id": strings.Repeat("i", 5000), "body": strings.Repeat("x", 20_000)},
+		{"id": 8, "body": "small"},
+	}
+	out := Cap(JSON(map[string]any{"Drafts": items, "page": 1, "offset": 4}), MinResultBytes)
+	assert.LessOrEqual(t, resultBytes(t, out), MinResultBytes)
+	got := decode(t, resultText(t, out))
+	tr := asMap(t, got["truncation"])
+	if cont, ok := tr["continue"].(map[string]any); ok {
+		assert.Greater(t, cont["offset"], float64(4), "a continuation must advance")
+	}
+}
+
+// Escaping that inflates a prefix (backslashes double) still finds a prefix
+// that fits rather than giving up.
+func TestPrefixJSON_InflatingEscapes(t *testing.T) {
+	compact := `{"a":"` + strings.Repeat(`\\`, 6000) + `"}`
+	out := prefixJSON(compact, len(compact), 2048, MinResultBytes)
+	require.NotNil(t, out)
+	assert.LessOrEqual(t, len(out), 2048)
+	assert.NotEmpty(t, decode(t, string(out))["partial_json"])
+}
+
+func TestDecodeJSONRefusesTrailingBytes(t *testing.T) {
+	for _, bad := range []string{`{}]`, `{"id":1}}`, `[]]`, `{} {}`, `{} x`} {
+		_, ok := decodeJSON([]byte(bad))
+		assert.False(t, ok, bad)
+	}
+	_, ok := decodeJSON([]byte(" {\"a\": 1}\n"))
+	assert.True(t, ok)
+}
+
+func mustJSON(t *testing.T, v any) string {
+	t.Helper()
+	data, err := json.Marshal(v)
+	require.NoError(t, err)
+	return string(data)
+}

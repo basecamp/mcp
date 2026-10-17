@@ -29,6 +29,18 @@ func TestObjectStructuredContent(t *testing.T) {
 		assertStructured(t, out, `{"items": [1, 2]}`)
 		assert.Equal(t, "Two things.", resultText(t, out))
 	})
+	t.Run("restated after prose", func(t *testing.T) {
+		out := ObjectStructuredContent(&mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: "Two things."},
+				&mcp.TextContent{Text: "[1,2]"},
+			},
+			StructuredContent: json.RawMessage(`[1,2]`),
+		})
+		assertStructured(t, out, `{"items": [1, 2]}`)
+		assert.Equal(t, "Two things.", resultText(t, out))
+		assert.JSONEq(t, `{"items": [1, 2]}`, out.Content[1].(*mcp.TextContent).Text)
+	})
 	t.Run("nil slice", func(t *testing.T) {
 		var none []string
 		out := ObjectStructuredContent(&mcp.CallToolResult{
