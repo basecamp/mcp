@@ -94,6 +94,9 @@ func TestScrubDescription(t *testing.T) {
 		{"19 bytes kept", "x 0123456789abcdefghi y", "x 0123456789abcdefghi y"},
 		{"20 bytes redacted", "x 0123456789abcdefghij y", "x [redacted] y"},
 		{"controls stripped before the run is measured", "x bc_at_0123\n456789abcdef y", "x [redacted] y"},
+		{"Unicode line controls stripped", "a\u0085b\u2028c\u2029d", "abcd"},
+		{"format characters stripped", "a\u202eb\u200bc", "abc"},
+		{"letters beyond ASCII kept", "café ünïcode", "café ünïcode"},
 		{"bounded", long, strings.TrimSpace(long)[:MaxDescriptionBytes] + "…"},
 		{"empty", "", ""},
 	}

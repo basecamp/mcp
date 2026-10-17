@@ -5,7 +5,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-	"unicode/utf8"
+
+	"github.com/basecamp/mcp/auth/upstream"
 )
 
 // ParseOAuthError is the single boundary both the HTTP-mode token exchange
@@ -46,17 +47,18 @@ func ParseOAuthError(body []byte, form url.Values) (code, description string) {
 	return code, description
 }
 
-// stripControls removes C0 control characters and DEL. Applied to both the
+// stripControls removes the runes upstream.LogSafeRune rejects (controls,
+// line and paragraph separators, format characters, U+FFFD). Applied to both the
 // endpoint text and each redaction candidate so a secret carrying a tab
 // arrives control-stripped in the echoed text and only an identically
 // normalized candidate can match it.
 func stripControls(v string) string {
 	var b strings.Builder
 	for _, r := range v {
-		// U+FFFD too, as upstream.ScrubDescription drops it when rendering:
-		// left in here, it would split a credential past redaction and
+		// The same runes upstream.ScrubDescription drops when rendering:
+		// one left in here would split a credential past redaction and
 		// rejoin it in the rendered text.
-		if r >= 0x20 && r != 0x7f && r != utf8.RuneError {
+		if upstream.LogSafeRune(r) {
 			b.WriteRune(r)
 		}
 	}

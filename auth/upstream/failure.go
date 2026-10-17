@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -106,8 +107,19 @@ func (f *Failure) As(target any) bool {
 	return f.cause != nil && errors.As(f.cause, target)
 }
 
-// ScrubDescription renders endpoint-supplied text for a log line: control
-// characters stripped, every run of at least minTokenRun token-alphabet
+// LogSafeRune reports whether r may stay in a log line rendered from
+// endpoint text. It drops every control character (C0, DEL and C1, which
+// includes NEL), the Unicode line and paragraph separators, format
+// characters (bidi overrides, zero-width joiners) and U+FFFD: anything a
+// sink might render as a line break or use to disguise text. ScrubDescription
+// and the exchange's redaction both strip with it, so a credential split by
+// a dropped rune is rejoined before redaction rather than after.
+func LogSafeRune(r rune) bool {
+	return r != utf8.RuneError && !unicode.IsControl(r) && !unicode.In(r, unicode.Zl, unicode.Zp, unicode.Cf)
+}
+
+// ScrubDescription renders endpoint-supplied text for a log line: runes
+// LogSafeRune rejects stripped, every run of at least minTokenRun token-alphabet
 // characters replaced with [redacted], and the result bounded to
 // MaxDescriptionBytes. Redaction runs over the whole text before the bound,
 // so the bound can never cut a token down to a prefix that escapes the run
@@ -115,7 +127,7 @@ func (f *Failure) As(target any) bool {
 func ScrubDescription(s string) string {
 	var stripped strings.Builder
 	for _, r := range s {
-		if r >= 0x20 && r != 0x7f && r != utf8.RuneError {
+		if LogSafeRune(r) {
 			stripped.WriteRune(r)
 		}
 	}

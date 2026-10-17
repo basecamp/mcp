@@ -1241,25 +1241,30 @@ func TestPrivateKeyJWTRefusesAnUninitializedKey(t *testing.T) {
 	}
 }
 
-// TestReplacementCharacterCannotRejoinASecret: a credential split by U+FFFD
+// TestDroppedRuneCannotRejoinASecret: a credential split by any rune the
+// rendered text drops (U+FFFD, NEL, a line separator, a zero-width space)
 // must be redacted, not rejoined when the description is rendered.
-func TestReplacementCharacterCannotRejoinASecret(t *testing.T) {
+func TestDroppedRuneCannotRejoinASecret(t *testing.T) {
 	const secret = "abcdef123456789" // #nosec G101 -- test fixture
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = fmt.Fprint(w, `{"error":"invalid_client","error_description":"was abcdef123\ufffd456789"}`)
-	}))
-	defer srv.Close()
-	ex, err := New(Config{TokenURL: srv.URL, Auth: ClientSecretPost("id", secret)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = ex.Exchange(context.Background(), "subject-tok")
-	if !IsInfra(err) {
-		t.Fatalf("want InfraError, got %v", err)
-	}
-	if strings.Contains(err.Error(), secret) {
-		t.Fatalf("secret rejoined in the error text: %q", err.Error())
+	for _, split := range []string{`\ufffd`, `\u0085`, `\u2028`, `\u200b`} {
+		t.Run(split, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = fmt.Fprintf(w, `{"error":"invalid_client","error_description":"was abcdef123%s456789"}`, split)
+			}))
+			defer srv.Close()
+			ex, err := New(Config{TokenURL: srv.URL, Auth: ClientSecretPost("id", secret)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = ex.Exchange(context.Background(), "subject-tok")
+			if !IsInfra(err) {
+				t.Fatalf("want InfraError, got %v", err)
+			}
+			if strings.Contains(err.Error(), secret) {
+				t.Fatalf("secret rejoined in the error text: %q", err.Error())
+			}
+		})
 	}
 }
