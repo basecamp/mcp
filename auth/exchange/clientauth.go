@@ -60,6 +60,9 @@ func PrivateKeyJWT(clientID string, key crypto.Signer, tokenURL string) (ClientA
 	if !ok {
 		return nil, fmt.Errorf("private_key_jwt requires an *ecdsa.PrivateKey, got %T", key)
 	}
+	if ec == nil || ec.Curve == nil {
+		return nil, errors.New("private_key_jwt requires an initialized P-256 key")
+	}
 	if ec.Curve != elliptic.P256() {
 		return nil, fmt.Errorf("private_key_jwt requires a P-256 key, got %s", ec.Curve.Params().Name)
 	}

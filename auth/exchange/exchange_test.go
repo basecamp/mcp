@@ -377,6 +377,9 @@ func TestRateLimited(t *testing.T) {
 		{"delta-seconds", "60", 60 * time.Second},
 		{"absent", "", 0},
 		{"HTTP-date ignored", "Wed, 21 Oct 2026 07:28:00 GMT", 0},
+		{"largest in range", "9223372036", 9223372036 * time.Second},
+		{"past time.Duration's range is unknown", "9223372037", 0},
+		{"int64 max is unknown", "9223372036854775807", 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1047,5 +1050,98 @@ func TestErrorDescriptionRedactsControlSplitCredentials(t *testing.T) {
 	}
 	if strings.Contains(te.Description, secret) {
 		t.Fatalf("control-split credential reassembled into the description: %q", te.Description)
+	}
+}
+
+// TestErrorsCarryNoEndpointText: what a token endpoint returns can echo a
+// credential, so no error string carries it — a redirect whose Location
+// fails to parse, a decode error quoting an overflowing number, an
+// out-of-range lifetime — and the transport cause stays reachable.
+func TestErrorsCarryNoEndpointText(t *testing.T) {
+	const secret = "123456789012345678901234567890"
+	issued := `"issued_token_type":"urn:ietf:params:oauth:token-type:access_token"`
+	cases := map[string]http.HandlerFunc{
+		"malformed redirect": func(w http.ResponseWriter, r *http.Request) {
+			w.Header()["Location"] = []string{"/" + secret + "%zz"}
+			w.WriteHeader(http.StatusTemporaryRedirect)
+		},
+		"overflowing expires_in": func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, `{"access_token":"x","token_type":"Bearer",%s,"expires_in":%s}`, issued, secret)
+		},
+		"nonpositive expires_in": func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, `{"access_token":"x","token_type":"Bearer",%s,"expires_in":-%s}`, issued, secret[:18])
+		},
+		"expires_in past time.Duration": func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, `{"access_token":"x","token_type":"Bearer",%s,"expires_in":%s}`, issued, secret[:18])
+		},
+	}
+	for name, handler := range cases {
+		t.Run(name, func(t *testing.T) {
+			ts := httptest.NewServer(handler)
+			defer ts.Close()
+			tok, err := newExchanger(t, ts.URL, nil).Exchange(context.Background(), testSubjectToken)
+			if !IsInfra(err) {
+				t.Fatalf("want InfraError, got %v (token %+v)", err, tok)
+			}
+			for _, leak := range []string{secret, secret[:18]} {
+				if strings.Contains(err.Error(), leak) {
+					t.Errorf("error text carries endpoint-controlled %q: %v", leak, err)
+				}
+			}
+		})
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer ts.Close()
+	_, err := newExchanger(t, ts.URL, nil).Exchange(ctx, testSubjectToken)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("the transport cause must stay reachable, got %v", err)
+	}
+}
+
+// TestRefusesAnUnprintableAccessToken: a token that can't go in an
+// Authorization header is an exchange failure, not a cached credential.
+func TestRefusesAnUnprintableAccessToken(t *testing.T) {
+	for _, tok := range []string{"a b", "a\r\nX-Injected: 1", "a\u0000b", "caf\u00e9"} {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, `{"access_token":"%s","token_type":"Bearer","issued_token_type":"urn:ietf:params:oauth:token-type:access_token"}`, tok)
+		}))
+		_, err := newExchanger(t, ts.URL, nil).Exchange(context.Background(), testSubjectToken)
+		ts.Close()
+		if !IsInfra(err) {
+			t.Errorf("%q: want InfraError, got %v", tok, err)
+		}
+	}
+}
+
+// TestTokenURLRequiresTLSOffLoopback: the exchange sends credentials, so
+// only loopback may take plain http.
+func TestTokenURLRequiresTLSOffLoopback(t *testing.T) {
+	for raw, ok := range map[string]bool{
+		"https://fizzy.example/oauth/token": true,
+		"http://127.0.0.1:3000/oauth/token": true,
+		"http://[::1]:3000/oauth/token":     true,
+		"http://localhost:3000/oauth/token": true,
+		"http://fizzy.example/oauth/token":  false,
+		"http://10.0.0.1/oauth/token":       false,
+		"ftp://fizzy.example/oauth/token":   false,
+	} {
+		_, err := New(Config{TokenURL: raw, Auth: ClientSecretPost("id", "secret")})
+		if (err == nil) != ok {
+			t.Errorf("New(%q): err = %v, want ok=%v", raw, err, ok)
+		}
+	}
+}
+
+// TestPrivateKeyJWTRefusesAnUninitializedKey: a typed-nil or zero key is a
+// startup error, not a panic.
+func TestPrivateKeyJWTRefusesAnUninitializedKey(t *testing.T) {
+	var typedNil *ecdsa.PrivateKey
+	for name, key := range map[string]*ecdsa.PrivateKey{"typed nil": typedNil, "zero": {}} {
+		if _, err := PrivateKeyJWT("id", key, "https://fizzy.example/oauth/token"); err == nil {
+			t.Errorf("%s: want an error", name)
+		}
 	}
 }

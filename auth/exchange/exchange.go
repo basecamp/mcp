@@ -24,6 +24,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -113,8 +115,12 @@ func New(cfg Config) (*Exchanger, error) {
 	if cfg.TokenURL == "" {
 		return nil, errors.New("exchange: Config.TokenURL is required")
 	}
-	if u, err := url.Parse(cfg.TokenURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return nil, fmt.Errorf("exchange: Config.TokenURL must be an http(s) URL, got %q", cfg.TokenURL)
+	// The exchange POSTs the subject token and this client's credentials, so
+	// the endpoint must be TLS (RFC 6749 §3.2); plain http is accepted only
+	// on a loopback host, for local development and tests.
+	if u, err := url.Parse(cfg.TokenURL); err != nil || u.Host == "" ||
+		!(u.Scheme == "https" || (u.Scheme == "http" && isLoopbackHost(u.Hostname()))) {
+		return nil, fmt.Errorf("exchange: Config.TokenURL must be an https URL (http only on loopback), got %q", cfg.TokenURL)
 	}
 	if cfg.Auth == nil {
 		return nil, errors.New("exchange: Config.Auth is required")
@@ -228,9 +234,12 @@ func (e *Exchanger) exchangeOnce(ctx context.Context, subjectToken, subjectJKT, 
 			return nil, &InfraError{Status: resp.StatusCode,
 				Err: errors.New("token endpoint responded with a redirect; refusing to follow")}
 		}
-		// Wraps the transport error so callers reach the cause
-		// (context.DeadlineExceeded, connection refused, ...) via errors.Is.
-		return nil, &InfraError{Err: fmt.Errorf("token endpoint request: %w", err)}
+		// The cause stays reachable (context.DeadlineExceeded, connection
+		// refused, ...) via errors.Is and errors.As, but its text does not
+		// reach Error(): a redirect whose Location fails to parse returns
+		// here with no response and the endpoint-controlled Location quoted
+		// in the error, and that Location could echo the subject token.
+		return nil, &InfraError{Err: redactTransportError(err)}
 	}
 	defer resp.Body.Close()
 
@@ -337,8 +346,10 @@ func (e *nonceRequiredError) Error() string {
 // parseRetryAfter reads Retry-After in its delta-seconds form only; the
 // HTTP-date form is ignored (bc3 sends delta-seconds). Zero means unknown.
 func parseRetryAfter(v string) time.Duration {
-	secs, err := strconv.Atoi(strings.TrimSpace(v))
-	if err != nil || secs < 0 {
+	secs, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+	if err != nil || secs < 0 || secs > maxDurationSeconds {
+		// Out of time.Duration's range would overflow to a negative
+		// backoff; such a value is no usable instruction, so it is unknown.
 		return 0
 	}
 	return time.Duration(secs) * time.Second
@@ -356,10 +367,19 @@ func parseTokenResponse(body []byte) (*Token, error) {
 		SubjectTokenBound *bool  `json:"subject_token_bound"`
 	}
 	if err := json.Unmarshal(body, &tr); err != nil {
-		return nil, &InfraError{Status: http.StatusOK, Err: fmt.Errorf("malformed token response: %w", err)}
+		// Fixed text: a decode error quotes the offending value (a number
+		// overflowing expires_in is printed whole), and a broken endpoint
+		// could echo a credential there.
+		return nil, &InfraError{Status: http.StatusOK, Err: errors.New("malformed token response")}
 	}
 	if tr.AccessToken == "" {
 		return nil, &InfraError{Status: http.StatusOK, Err: errors.New("token response missing access_token")}
+	}
+	if !headerSafeToken(tr.AccessToken) {
+		// A token that can't go in an Authorization header would fail every
+		// API request it is cached for; refuse it here, where it is still an
+		// exchange failure.
+		return nil, &InfraError{Status: http.StatusOK, Err: errors.New("token response access_token is not a printable token")}
 	}
 	// RFC 8693 §2.2.1: issued_token_type is REQUIRED, and this server only
 	// knows how to wield an access token — anything else (a refresh token, a
@@ -392,9 +412,11 @@ func parseTokenResponse(body []byte) (*Token, error) {
 	// as unknown would cache a dead credential for the full cap. Malformed
 	// success, infra class.
 	if tr.ExpiresIn != nil {
-		if *tr.ExpiresIn <= 0 {
+		// Fixed text again: the value is endpoint-controlled. A lifetime
+		// past time.Duration's range would overflow into the past.
+		if *tr.ExpiresIn <= 0 || *tr.ExpiresIn > maxDurationSeconds {
 			return nil, &InfraError{Status: http.StatusOK,
-				Err: fmt.Errorf("token response expires_in %d is not positive", *tr.ExpiresIn)}
+				Err: errors.New("token response expires_in is not a positive lifetime in range")}
 		}
 		tok.ExpiresAt = time.Now().Add(time.Duration(*tr.ExpiresIn) * time.Second)
 	}
@@ -435,4 +457,62 @@ func (e *Exchanger) classifyOAuthError(resp *http.Response, body []byte, form ur
 	default:
 		return &InfraError{Status: status, Code: code, Err: fmt.Errorf("token endpoint rejected the exchange request: %s", code)}
 	}
+}
+
+// maxDurationSeconds is the most seconds a time.Duration holds.
+const maxDurationSeconds = int64(math.MaxInt64 / int64(time.Second))
+
+// isLoopbackHost reports whether host is localhost or a loopback IP.
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// headerSafeToken reports whether tok is visible ASCII with no spaces, the
+// most an access token can be and still go in an Authorization header
+// (RFC 6750 §2.1's b64token is a subset).
+func headerSafeToken(tok string) bool {
+	for i := 0; i < len(tok); i++ {
+		if tok[i] < 0x21 || tok[i] > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
+// transportError carries a token endpoint transport failure with a message
+// built only from what this side knows: the cause's class, never its text.
+type transportError struct {
+	msg string
+	err error
+}
+
+func (e *transportError) Error() string { return e.msg }
+func (e *transportError) Unwrap() error { return e.err }
+
+// redactTransportError names a transport failure by its class. Timeouts,
+// cancellation and network errors (dial, DNS) name only this server's own
+// endpoint; anything else, including a malformed redirect Location, is
+// reported without its text.
+func redactTransportError(err error) error {
+	msg := "token endpoint request failed"
+	var netErr net.Error
+	var opErr *net.OpError
+	var dnsErr *net.DNSError
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		msg += ": deadline exceeded"
+	case errors.Is(err, context.Canceled):
+		msg += ": canceled"
+	case errors.As(err, &dnsErr):
+		msg += ": " + dnsErr.Error()
+	case errors.As(err, &opErr):
+		msg += ": " + opErr.Error()
+	case errors.As(err, &netErr) && netErr.Timeout():
+		msg += ": timeout"
+	}
+	return &transportError{msg: msg, err: err}
 }
