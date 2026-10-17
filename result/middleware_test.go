@@ -109,13 +109,18 @@ func TestMirrorTitlesCopiesRatherThanWritingThrough(t *testing.T) {
 	annotated := &mcp.Tool{Name: "a", Annotations: &mcp.ToolAnnotations{Title: "A"}}
 	titled := &mcp.Tool{Name: "b", Title: "B"}
 	both := &mcp.Tool{Name: "c", Title: "C", Annotations: &mcp.ToolAnnotations{Title: "C"}}
-	in := &mcp.ListToolsResult{Tools: []*mcp.Tool{annotated, titled, both}}
+	differ := &mcp.Tool{Name: "d", Title: "D", Annotations: &mcp.ToolAnnotations{Title: "Stale", ReadOnlyHint: true}}
+	in := &mcp.ListToolsResult{Tools: []*mcp.Tool{annotated, titled, both, differ}}
 
 	out := mirrorTitles(in)
 
 	assert.Equal(t, "A", out.Tools[0].Title)
 	assert.Equal(t, "B", out.Tools[1].Annotations.Title)
 	assert.Same(t, both, out.Tools[2], "a tool already consistent is served as is")
+	assert.Equal(t, "D", out.Tools[3].Title)
+	assert.Equal(t, "D", out.Tools[3].Annotations.Title, "the top-level title wins when both are set and differ")
+	assert.True(t, out.Tools[3].Annotations.ReadOnlyHint, "the other annotations are kept")
+	assert.Equal(t, "Stale", differ.Annotations.Title, "the server's own definition is not mutated")
 	assert.Empty(t, annotated.Title, "the server's own definition is not mutated")
 	assert.Nil(t, titled.Annotations, "the server's own definition is not mutated")
 	assert.Same(t, annotated, in.Tools[0])

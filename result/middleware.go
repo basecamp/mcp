@@ -11,7 +11,9 @@ import (
 // tools were built (a gateway, a flat catalog, hand-registered tools):
 //
 //   - tools/list: a tool's top-level title (MCP 2025-06+) and
-//     annotations.title match; whichever is empty is filled from the other.
+//     annotations.title match; whichever is empty is filled from the other,
+//     and when both are set and differ the top-level title, which the MCP
+//     spec ranks first for display, wins.
 //     Clients that read the top-level title get the same name, and the
 //     Claude connector directory, which reads annotations.title, keeps it.
 //   - tools/call: structuredContent is always a JSON object
@@ -48,7 +50,8 @@ func Middleware(maxBytes int) mcp.Middleware {
 }
 
 // mirrorTitles fills whichever of a tool's title and annotations.title is
-// empty from the other. The listed tools are the server's own definitions,
+// empty from the other; when both are set and differ, the top-level title
+// wins. The listed tools are the server's own definitions,
 // so each changed tool (and its annotations) is copied, never written
 // through.
 func mirrorTitles(result *mcp.ListToolsResult) *mcp.ListToolsResult {
@@ -76,7 +79,7 @@ func mirrorTitle(tool *mcp.Tool) *mcp.Tool {
 		t := *tool
 		t.Title = annotated
 		return &t
-	case tool.Title != "" && annotated == "":
+	case tool.Title != "" && annotated != tool.Title:
 		t := *tool
 		a := mcp.ToolAnnotations{}
 		if tool.Annotations != nil {
