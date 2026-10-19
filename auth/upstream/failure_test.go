@@ -2,10 +2,15 @@ package upstream
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/url"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -23,7 +28,8 @@ func TestFailure_TextNeverRendersTheCause(t *testing.T) {
 	if strings.Contains(f.Error(), secret) || strings.Contains(f.Error(), "Location") {
 		t.Fatalf("cause text reached Error(): %q", f.Error())
 	}
-	if got, want := f.Error(), "token exchange infrastructure failure: token endpoint request failed"; got != want {
+	// The cause's class, in fixed text, is all of it that renders.
+	if got, want := f.Error(), "token exchange infrastructure failure: token endpoint request failed: deadline exceeded"; got != want {
 		t.Fatalf("Error() = %q, want %q", got, want)
 	}
 }
@@ -96,7 +102,8 @@ func TestScrubDescription(t *testing.T) {
 		{"controls stripped before the run is measured", "x bc_at_0123\n456789abcdef y", "x [redacted] y"},
 		{"Unicode line controls stripped", "a\u0085b\u2028c\u2029d", "abcd"},
 		{"format characters stripped", "a\u202eb\u200bc", "abc"},
-		{"letters beyond ASCII kept", "café ünïcode", "café ünïcode"},
+		{"letters beyond ASCII dropped", "caf\u00e9 \u00fcn\u00efcode", "caf ncode"},
+		{"U+FFFD and invalid bytes dropped", "a\ufffdb\xffc", "abc"},
 		{"bounded", long, strings.TrimSpace(long)[:MaxDescriptionBytes] + "…"},
 		{"empty", "", ""},
 	}
@@ -123,9 +130,52 @@ func TestScrubDescription_BoundNeverExposesATokenPrefix(t *testing.T) {
 	}
 }
 
-func TestScrubDescription_BoundKeepsUTF8Valid(t *testing.T) {
-	got := ScrubDescription(strings.Repeat("é", MaxDescriptionBytes))
-	if !strings.HasSuffix(got, "…") || strings.ContainsRune(got, '�') {
-		t.Fatalf("bound cut a rune: %q", got)
+// TestScrubDescription_KeepsOnlyPrintableASCII: no invisible character of
+// any class (C1, format, combining mark) can split a token into short runs.
+func TestScrubDescription_KeepsOnlyPrintableASCII(t *testing.T) {
+	in := "caf\u00e9 bc_at_0123\u0085456\u200b789\ufe0fabc\u034fdef\u2060ghij y"
+	if got, want := ScrubDescription(in), "caf [redacted] y"; got != want {
+		t.Fatalf("ScrubDescription = %q, want %q", got, want)
+	}
+}
+
+func TestCauseClass(t *testing.T) {
+	var num int64
+	typeErr := json.Unmarshal([]byte(`{"expires_in":`+"99999999999999999999"+`}`), &struct {
+		ExpiresIn *int64 `json:"expires_in"`
+	}{&num})
+	syntaxErr := json.Unmarshal([]byte(`{"a":`+secret), &num)
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"none", nil, ""},
+		{"deadline", fmt.Errorf("wrapped: %w", context.DeadlineExceeded), "deadline exceeded"},
+		{"refused", &net.OpError{Op: "dial", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)}, "connection refused"},
+		{"other network", &net.OpError{Op: "read", Err: errors.New(secret)}, "network error during read"},
+		{"dns", &net.DNSError{Err: "no such host", Name: secret}, "DNS lookup failed"},
+		{"eof", fmt.Errorf("reading: %w", io.ErrUnexpectedEOF), "response ended early"},
+		{"json type", typeErr, "unexpected JSON value for expires_in"},
+		{"json syntax", syntaxErr, ""},
+		{"unknown", errors.New(secret), ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := causeClass(tt.err)
+			if tt.name == "json syntax" {
+				// An unterminated value is an unexpected EOF to the decoder.
+				if got != "response ended early" && got != "response is not valid JSON" {
+					t.Fatalf("causeClass = %q", got)
+				}
+				return
+			}
+			if got != tt.want {
+				t.Fatalf("causeClass = %q, want %q", got, tt.want)
+			}
+			if strings.Contains(got, secret) {
+				t.Fatalf("causeClass rendered cause text: %q", got)
+			}
+		})
 	}
 }
