@@ -152,7 +152,7 @@ type truncation struct {
 // The one-text-block JSON shape gets the exact cut; any other shape the
 // coarse one (see the package's size-cap notes).
 func Cap(result *mcp.CallToolResult, maxBytes int) *mcp.CallToolResult {
-	if result == nil || result.IsError || result.NeedsInput() || maxBytes <= 0 {
+	if result == nil || result.IsError || asksForInput(result) || maxBytes <= 0 {
 		return result
 	}
 	limit := max(maxBytes, MinBytes)
@@ -164,6 +164,17 @@ func Cap(result *mcp.CallToolResult, maxBytes int) *mcp.CallToolResult {
 		return out
 	}
 	return capCoarse(result, size, limit)
+}
+
+// asksForInput reports whether result is an input request rather than a
+// payload. NeedsInput reads the resultType the SDK sets only for a client on
+// 2026-07-28 or later, after the handler returns. A handler that calls Cap on
+// a result it built, or a result bound for an older client (which the SDK's
+// multi-round-trip middleware fulfills by calling back), carries its input
+// requests with no resultType. So any non-nil InputRequests counts, an empty
+// map included, as the SDK's own check does.
+func asksForInput(result *mcp.CallToolResult) bool {
+	return result.NeedsInput() || result.InputRequests != nil
 }
 
 // wireBytes is the size of result as the SDK serializes it.

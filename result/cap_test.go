@@ -111,6 +111,22 @@ func TestCap_InputRequestsUntouched(t *testing.T) {
 	assert.Same(t, &in, Cap(&in, MinBytes))
 }
 
+// A result a handler builds and caps itself has no resultType yet, and one
+// bound for a client before 2026-07-28 never gets one: its input requests
+// alone mark it, an empty map included.
+func TestCap_InputRequestsWithoutResultTypeUntouched(t *testing.T) {
+	for name, requests := range map[string]mcp.InputRequestMap{
+		"requests": {"confirm": &mcp.ElicitParams{Message: strings.Repeat("m", 50_000)}},
+		"empty":    {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			in := &mcp.CallToolResult{InputRequests: requests, RequestState: strings.Repeat("s", 50_000)}
+			require.False(t, in.NeedsInput(), "built directly: no resultType")
+			assert.Same(t, in, Cap(in, MinBytes))
+		})
+	}
+}
+
 // The coarse cut keeps the result's protocol envelope: the resultType the
 // SDK set before the middleware ran still reaches the client.
 func TestCap_CoarseKeepsTheResultType(t *testing.T) {
