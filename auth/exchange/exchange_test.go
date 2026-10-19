@@ -932,6 +932,49 @@ func TestSubjectTokenBoundExtension(t *testing.T) {
 
 func boolPtr(b bool) *bool { return &b }
 
+// TestScopeReported: the issued token's scope is passed through as the AS
+// wrote it, and an omitted one is empty, so a caller can tell "unknown" from
+// any scope the AS named. A scope that isn't a JSON string is a malformed
+// response, infrastructure like every other parse failure.
+func TestScopeReported(t *testing.T) {
+	const base = `"access_token":"x","token_type":"Bearer","issued_token_type":"urn:ietf:params:oauth:token-type:access_token"`
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+		err  bool
+	}{
+		{"absent means unknown", `{` + base + `}`, "", false},
+		{"one scope", `{` + base + `,"scope":"read"}`, "read", false},
+		{"space-delimited, untouched", `{` + base + `,"scope":"read write"}`, "read write", false},
+		{"not a string", `{` + base + `,"scope":["read"]}`, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprint(w, tc.body)
+			}))
+			defer srv.Close()
+
+			ex, err := New(Config{TokenURL: srv.URL, Auth: ClientSecretPost("id", "secret")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tok, err := ex.Exchange(context.Background(), "subject")
+			switch {
+			case tc.err:
+				if err == nil || IsTerminal(err) {
+					t.Fatalf("Exchange error = %v, want a non-terminal (infrastructure) error", err)
+				}
+			case err != nil:
+				t.Fatal(err)
+			case tok.Scope != tc.want:
+				t.Errorf("Scope = %q, want %q", tok.Scope, tc.want)
+			}
+		})
+	}
+}
+
 // TestRedirectRefused: a token endpoint answering 3xx must become an
 // InfraError, never a followed redirect — 307/308 would replay the subject
 // token and client credentials to whatever origin Location names.
