@@ -8,9 +8,10 @@ import (
 )
 
 // MaxRetryAfter is the longest backoff an endpoint's Retry-After is taken
-// at. bc3 escalates abuse blocks, so the bound is generous; past a day the
-// value is broken rather than a block, and an unbounded one overflows
-// time.Duration (2^63 ns is about 292 years) into a negative backoff.
+// at. An endpoint may ask for a long backoff, so the bound is generous; past
+// a day the value is broken rather than a block, and an unbounded one
+// overflows time.Duration (2^63 ns is about 292 years) into a negative
+// backoff.
 const MaxRetryAfter = 24 * time.Hour
 
 // MaxLifetime is the longest token lifetime an endpoint's expires_in is
