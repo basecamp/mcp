@@ -109,7 +109,8 @@ type Token struct {
 	// Scope is the scope of the issued token as the AS reported it, the
 	// space-delimited list RFC 6749 §3.3 defines, untouched. Empty when the
 	// response omitted it. RFC 8693 §2.2.1 lets an AS omit it when it is
-	// identical to the scope requested, and this exchanger requests none,
+	// identical to the scope requested (an explicit null reads the same),
+	// and this exchanger requests none,
 	// so an empty Scope is "unknown", never "nothing": a caller that filters
 	// what it serves by scope must treat it as the narrowest grant.
 	Scope string

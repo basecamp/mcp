@@ -934,8 +934,11 @@ func boolPtr(b bool) *bool { return &b }
 
 // TestScopeReported: the issued token's scope is passed through as the AS
 // wrote it, and an omitted one is empty, so a caller can tell "unknown" from
-// any scope the AS named. A scope that isn't a JSON string is a malformed
-// response, infrastructure like every other parse failure.
+// any scope the AS named. An explicit null reads as omitted: both say the AS
+// named no scope, and empty is the narrowest reading a caller can take, so
+// refusing the token over it would only turn a usable answer into an outage.
+// A scope of any other non-string type is a malformed response,
+// infrastructure like every other parse failure.
 func TestScopeReported(t *testing.T) {
 	const base = `"access_token":"x","token_type":"Bearer","issued_token_type":"urn:ietf:params:oauth:token-type:access_token"`
 	for _, tc := range []struct {
@@ -945,6 +948,7 @@ func TestScopeReported(t *testing.T) {
 		err  bool
 	}{
 		{"absent means unknown", `{` + base + `}`, "", false},
+		{"null means unknown", `{` + base + `,"scope":null}`, "", false},
 		{"one scope", `{` + base + `,"scope":"read"}`, "read", false},
 		{"space-delimited, untouched", `{` + base + `,"scope":"read write"}`, "read write", false},
 		{"not a string", `{` + base + `,"scope":["read"]}`, "", true},
