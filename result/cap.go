@@ -108,6 +108,8 @@ const withheldHint = "The result exceeded the server's size limit and could not 
 // Holding the result to the limit less this keeps the message under the
 // limit. A server whose Implementation serializes to more than a few hundred
 // bytes (icons, say) overruns it by the difference.
+// TestMiddleware_CapHoldsForTheResponseFrame measures the frame the server
+// writes against the limit.
 const frameReserve = 512
 
 // MinBytes is the smallest cap enforced: room for the truncation envelope and
@@ -143,13 +145,14 @@ type truncation struct {
 // Cap holds a successful result to maxBytes of serialized result, frameReserve
 // included. It returns
 // the result unchanged when maxBytes <= 0, the result is an error (an error
-// must reach the caller whole), or it already fits; a positive maxBytes below
+// must reach the caller whole) or asks for input (an input request is the
+// protocol's, not a payload to cut), or it already fits; a positive maxBytes below
 // MinBytes is raised to it. The result passed in is never modified.
 //
 // The one-text-block JSON shape gets the exact cut; any other shape the
 // coarse one (see the package's size-cap notes).
 func Cap(result *mcp.CallToolResult, maxBytes int) *mcp.CallToolResult {
-	if result == nil || result.IsError || maxBytes <= 0 {
+	if result == nil || result.IsError || asksForInput(result) || maxBytes <= 0 {
 		return result
 	}
 	limit := max(maxBytes, MinBytes)
@@ -161,6 +164,17 @@ func Cap(result *mcp.CallToolResult, maxBytes int) *mcp.CallToolResult {
 		return out
 	}
 	return capCoarse(result, size, limit)
+}
+
+// asksForInput reports whether result is an input request rather than a
+// payload. NeedsInput reads the resultType the SDK sets only for a client on
+// 2026-07-28 or later, after the handler returns. A handler that calls Cap on
+// a result it built, or a result bound for an older client (which the SDK's
+// multi-round-trip middleware fulfills by calling back), carries its input
+// requests with no resultType. So any non-nil InputRequests counts, an empty
+// map included, as the SDK's own check does.
+func asksForInput(result *mcp.CallToolResult) bool {
+	return result.NeedsInput() || result.InputRequests != nil
 }
 
 // wireBytes is the size of result as the SDK serializes it.
@@ -228,12 +242,18 @@ func capExact(result *mcp.CallToolResult, originalBytes, limit int) *mcp.CallToo
 // frameReserve.
 func capCoarse(result *mcp.CallToolResult, originalBytes, limit int) *mcp.CallToolResult {
 	t := truncation{LimitBytes: limit, OriginalBytes: originalBytes, Hint: withheldHint}
-	out := &mcp.CallToolResult{
-		Meta: result.Meta,
-		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf(
-			"[truncated: this %d-byte result exceeded the server's %d-byte limit and was withheld. %s]",
-			originalBytes, limit, withheldHint)}},
-	}
+	// A copy, so what the SDK set on the result before this middleware ran
+	// (its resultType) reaches the client, as the exact cut's copy does. A
+	// complete result carries no input requests or request state; clearing
+	// them keeps the notice's size fixed.
+	copied := *result
+	out := &copied
+	out.Content = []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf(
+		"[truncated: this %d-byte result exceeded the server's %d-byte limit and was withheld. %s]",
+		originalBytes, limit, withheldHint)}}
+	out.StructuredContent = nil
+	out.InputRequests = nil
+	out.RequestState = ""
 	if result.StructuredContent != nil {
 		out.StructuredContent = map[string]any{"truncated": true, "truncation": t}
 	}
