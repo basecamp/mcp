@@ -103,6 +103,14 @@ type Token struct {
 	// eagerly-sent subject_token_dpop_jkt can cause (see
 	// ExchangeWithBinding).
 	SubjectTokenBound *bool
+	// Scope is the scope of the issued token as the AS reported it, the
+	// space-delimited list RFC 6749 §3.3 defines, untouched. Empty when the
+	// response omitted it. RFC 8693 §2.2.1 lets an AS omit it when it is
+	// identical to the scope requested (an explicit null reads the same),
+	// and this exchanger requests none,
+	// so an empty Scope is "unknown", never "nothing": a caller that filters
+	// what it serves by scope must treat it as the narrowest grant.
+	Scope string
 }
 
 // New validates cfg and returns an Exchanger. Every required field fails
@@ -322,6 +330,7 @@ func parseTokenResponse(body []byte) (*Token, error) {
 		IssuedTokenType   string `json:"issued_token_type"`
 		ExpiresIn         *int64 `json:"expires_in"`
 		SubjectTokenBound *bool  `json:"subject_token_bound"`
+		Scope             string `json:"scope"`
 	}
 	if err := json.Unmarshal(body, &tr); err != nil {
 		return nil, newInfra(http.StatusOK, "", "token response is not the JSON this server expects", err)
@@ -357,6 +366,7 @@ func parseTokenResponse(body []byte) (*Token, error) {
 		AccessToken:       tr.AccessToken,
 		TokenType:         tr.TokenType,
 		SubjectTokenBound: tr.SubjectTokenBound,
+		Scope:             tr.Scope,
 	}
 	// Absent expires_in means "lifetime unknown" (ExpiresAt zero, cached
 	// under the TTL cap). An EXPLICIT zero or negative value is different:
