@@ -12,10 +12,9 @@
 // the MCP client back through authorization, while an endpoint outage or a
 // misconfiguration of OUR client (InfraError) must never do that.
 //
-// The contract is bc3's delegation exchange (basecamp-mcp-server's
-// docs/bc3-asks.md, where this package was proven); comments naming bc3
-// describe that contract, which other product authorization servers copy
-// verbatim (Fizzy's hosted plan, phase C).
+// The contract is bc3's delegation exchange, against which this package
+// was proven; comments naming bc3 describe that contract, which other product
+// authorization servers can follow.
 package exchange
 
 import (
@@ -67,9 +66,8 @@ type Config struct {
 	TokenURL string
 	// Resource is the OPTIONAL RFC 8707 resource indicator: where the
 	// minted token will be USED (API origin or account URN), not this
-	// server's identity - bc3 derives our audience binding from client
-	// registration. When empty the resource form param is omitted
-	// entirely.
+	// server's identity, which the AS knows from client registration.
+	// When empty the resource form param is omitted entirely.
 	Resource string
 	// Auth applies this server's client authentication to each request.
 	Auth ClientAuthenticator
@@ -100,11 +98,10 @@ type Token struct {
 	// ExpiresAt is zero when the response carried no expires_in.
 	ExpiresAt time.Time
 	// SubjectTokenBound is bc3's extension member reporting whether the
-	// SUBJECT token was DPoP-bound. Nil when the response omitted it
-	// (pre-contract endpoints). This is the accept-mode telemetry channel:
-	// it reports binding without ever risking a terminal error the way an
-	// eagerly-sent subject_token_dpop_jkt would, and the bound fraction of
-	// inbound traffic is what times the accept -> require flip.
+	// SUBJECT token was DPoP-bound. Nil when the response omitted it. It
+	// lets a caller observe binding without risking the terminal error an
+	// eagerly-sent subject_token_dpop_jkt can cause (see
+	// ExchangeWithBinding).
 	SubjectTokenBound *bool
 }
 
@@ -167,10 +164,9 @@ func (e *Exchanger) Exchange(ctx context.Context, subjectToken string) (*Token, 
 
 // ExchangeWithBinding additionally sends subject_token_dpop_jkt, asking bc3
 // to confirm that the key the MCP client proved possession of is the key its
-// token is bound to (docs/bc3-asks.md ask 6). STRICT semantics by contract:
-// sending a jkt for an UNBOUND subject token is invalid_grant, so callers
-// send one only when the deployment requires bound tokens (inbound DPoP
-// require mode) - never speculatively.
+// token is bound to. STRICT semantics by contract: sending a jkt for an
+// UNBOUND subject token is invalid_grant, so callers send one only when they
+// require bound tokens themselves - never speculatively.
 func (e *Exchanger) ExchangeWithBinding(ctx context.Context, subjectToken, subjectJKT string) (*Token, error) {
 	// The client's Timeout bounds each request; a nonce retry is a second
 	// one, so the exchange as a whole gets the same bound, shared by both
@@ -184,9 +180,9 @@ func (e *Exchanger) ExchangeWithBinding(ctx context.Context, subjectToken, subje
 	tok, err := e.exchangeOnce(ctx, subjectToken, subjectJKT, "")
 
 	// RFC 9449 §8 nonce dance: ONE deterministic retry with the
-	// AS-supplied nonce, then stop. bc3's client rows don't require nonces
-	// initially, but the dance must exist so they can flip the requirement
-	// without breaking us (docs/bc3-asks.md ask #4).
+	// AS-supplied nonce, then stop. A server may or may not require
+	// nonces, and may start requiring them at any time; the dance keeps
+	// either case working.
 	var nr *nonceRequiredError
 	if errors.As(err, &nr) {
 		tok, err = e.exchangeOnce(ctx, subjectToken, subjectJKT, nr.nonce)
@@ -270,9 +266,8 @@ func (e *Exchanger) exchangeOnce(ctx context.Context, subjectToken, subjectJKT, 
 		// round trip when a nonce becomes required is acceptable.
 		return parseTokenResponse(body)
 	case http.StatusTooManyRequests:
-		// bc3 rate-limits the token endpoint (60/min per client_id+IP) and
-		// serves escalating abuse blocks the same way. Always infra: a
-		// throttled client must back off, never re-consent.
+		// An AS may rate-limit or refuse requests this way. Always infra:
+		// a throttled client must back off, never re-consent.
 		ie := newInfra(resp.StatusCode, "", "token endpoint rate limited the exchange", nil)
 		ie.RetryAfter = upstream.ParseRetryAfter(resp.Header.Get("Retry-After"))
 		return nil, ie

@@ -185,7 +185,7 @@ func isTokenByte(c byte) bool {
 // knownOAuthCodes is the closed set of error codes this server passes
 // through: RFC 6749 §5.2, RFC 7591 §3.2.2 (dynamic client registration, which
 // the stdio login path routes through this same boundary), RFC 8693, RFC 9449,
-// and the bc3 delegation contract (docs/bc3-asks.md). Everything else
+// and the bc3 delegation contract. Everything else
 // collapses to "unrecognized_error" before it can reach any error string, log,
 // or transcript.
 //
@@ -193,8 +193,8 @@ func isTokenByte(c byte) bool {
 // hole exactly the size of a credential: bc_at_* tokens are lowercase, digits,
 // and underscores, so "looks like an OAuth code" admits precisely the byte
 // string this guard exists to keep out of logs. The cost of the list is that a
-// future bc3 code lands in the unrecognized bucket until the contract doc (and
-// this set) updates — which is the honest telemetry for an unknown code
+// future bc3 code lands in the unrecognized bucket until this set updates —
+// which is the honest telemetry for an unknown code
 // anyway.
 var knownOAuthCodes = map[string]bool{
 	"invalid_request":         true,
