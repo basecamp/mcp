@@ -1447,3 +1447,114 @@ func TestDroppedRuneCannotRejoinASecret(t *testing.T) {
 		})
 	}
 }
+
+
+// TestErrorDescriptionRedactsReplacementSplitCredentials: a credential split
+// by U+FFFD, or by bytes that are not valid UTF-8 (which the JSON decoder
+// turns into U+FFFD), must not dodge exact redaction and then rejoin when the
+// rendering drops the non-ASCII between its halves. The secrets are shorter
+// than the token-run backstop, so only the exact match can catch them, and
+// both the terminal description and an infrastructure failure's rendered
+// text are checked.
+func TestErrorDescriptionRedactsReplacementSplitCredentials(t *testing.T) {
+	const (
+		secret  = "abcdef123456789" // #nosec G101 -- test fixture
+		subject = "subj0123456789"
+	)
+	splitters := map[string]string{
+		"escaped U+FFFD":       `�`,
+		"literal U+FFFD":       "�",
+		"lone surrogate":       `\ud800`,
+		"invalid byte 0xff":    "\xff",
+		"overlong NUL":         "\xc0\x80",
+		"truncated multi-byte": "\xe2\x82",
+		"double U+FFFD":        "��",
+	}
+	split := func(s, sep string) string { return s[:6] + sep + s[6:] }
+	for name, sep := range splitters {
+		for _, code := range []string{"invalid_grant", "invalid_client"} {
+			t.Run(name+"/"+code, func(t *testing.T) {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = fmt.Fprintf(w, `{"error":%q,"error_description":"secret=%s subject=%s"}`,
+						code, split(secret, sep), split(subject, sep))
+				}))
+				defer srv.Close()
+
+				ex, err := New(Config{TokenURL: srv.URL, Auth: ClientSecretPost("id", secret)})
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = ex.Exchange(context.Background(), subject)
+				if err == nil {
+					t.Fatal("want an error")
+				}
+				texts := []string{err.Error()}
+				var te *TerminalError
+				if errors.As(err, &te) {
+					texts = append(texts, te.Description, upstream.ScrubDescription(te.Description))
+				}
+				var ie *InfraError
+				if errors.As(err, &ie) {
+					texts = append(texts, ie.Description)
+				}
+				if te == nil && ie == nil {
+					t.Fatalf("want TerminalError or InfraError, got %T: %v", err, err)
+				}
+				for _, text := range texts {
+					// Also drop everything but printable ASCII, as a viewer
+					// or normalizer downstream might.
+					for _, s := range []string{text, upstream.PrintableASCII(text)} {
+						if strings.Contains(s, secret) || strings.Contains(s, subject) {
+							t.Fatalf("split credential rejoined: %q", s)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestInvisibleMarkCannotSplitASecret: a combining mark (variation selector
+// 16, combining grapheme joiner) is invisible but neither a control nor a
+// format character. Threaded through an echoed credential every few bytes,
+// it splits the value into pieces shorter than both the fragment and the
+// token-run redactions, and a viewer that drops it shows the credential
+// whole. Only printable ASCII survives the strip, so the pieces rejoin before
+// redaction sees them.
+func TestInvisibleMarkCannotSplitASecret(t *testing.T) {
+	const secret = "abcdef123456789" // #nosec G101 -- test fixture
+	for _, mark := range []string{"͏", "️", "⃝"} {
+		t.Run(fmt.Sprintf("%U", []rune(mark)[0]), func(t *testing.T) {
+			var threaded strings.Builder
+			for i := 0; i < len(secret); i += 3 {
+				threaded.WriteString(secret[i:min(i+3, len(secret))] + mark)
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = fmt.Fprintf(w, `{"error":"invalid_client","error_description":"was %s"}`, threaded.String())
+			}))
+			defer srv.Close()
+			ex, err := New(Config{TokenURL: srv.URL, Auth: ClientSecretPost("id", secret)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = ex.Exchange(context.Background(), "subject-tok")
+			if !IsInfra(err) {
+				t.Fatalf("want InfraError, got %v", err)
+			}
+			// As a viewer that drops what it can't show would render it.
+			shown := strings.Map(func(r rune) rune {
+				if r < 0x20 || r >= 0x7f {
+					return -1
+				}
+				return r
+			}, err.Error())
+			if strings.Contains(shown, secret) {
+				t.Fatalf("secret rejoined in the error text: %q", err.Error())
+			}
+		})
+	}
+}

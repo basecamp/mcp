@@ -22,10 +22,17 @@
 package upstream
 
 import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"strings"
-	"unicode"
+	"syscall"
 	"unicode/utf8"
 )
 
@@ -37,7 +44,11 @@ const MaxDescriptionBytes = 200
 // minTokenRun is the shortest run of token-alphabet characters a Failure's
 // description redacts. bc3's tokens, JWT client assertions and generated
 // client secrets are all longer; English words in an OAuth error_description
-// are all shorter.
+// are all shorter. A shorter run is kept, so a fragment of a credential under
+// this length can render if an endpoint truncates its own echo: the guarantee
+// is that no usable credential renders, not that no byte of one does. Every
+// credential the request submitted is also removed whole, at any length, by
+// exchange.ParseOAuthError before the description gets here.
 const minTokenRun = 20
 
 // Failure is a failed call to a credentialed endpoint. Its Error text is safe
@@ -89,6 +100,10 @@ func (f *Failure) Error() string {
 		b.WriteString(": ")
 		b.WriteString(f.Reason)
 	}
+	if c := causeClass(f.cause); c != "" {
+		b.WriteString(": ")
+		b.WriteString(c)
+	}
 	if d := ScrubDescription(f.Description); d != "" {
 		fmt.Fprintf(&b, " (%s)", d)
 	}
@@ -107,31 +122,75 @@ func (f *Failure) As(target any) bool {
 	return f.cause != nil && errors.As(f.cause, target)
 }
 
-// LogSafeRune reports whether r may stay in a log line rendered from
-// endpoint text. It drops every control character (C0, DEL and C1, which
-// includes NEL), the Unicode line and paragraph separators, format
-// characters (bidi overrides, zero-width joiners) and U+FFFD: anything a
-// sink might render as a line break or use to disguise text. ScrubDescription
-// and the exchange's redaction both strip with it, so a credential split by
-// a dropped rune is rejoined before redaction rather than after.
-func LogSafeRune(r rune) bool {
-	return r != utf8.RuneError && !unicode.IsControl(r) && !unicode.In(r, unicode.Zl, unicode.Zp, unicode.Cf)
+// causeClass names what kind of failure cause is, in fixed text, so an
+// operator reading a log line can still tell a timeout from a refused
+// connection from a bad certificate without the cause's own text. Every
+// phrase is chosen here; nothing is read out of the cause but its type and
+// the identity of sentinel errors. The one exception is a JSON type error's
+// Field, which is the path of the Go struct field being decoded: this
+// server's own names, never response bytes.
+func causeClass(err error) string {
+	if err == nil {
+		return ""
+	}
+	var (
+		netErr     net.Error
+		dnsErr     *net.DNSError
+		opErr      *net.OpError
+		unknownCA  x509.UnknownAuthorityError
+		certErr    x509.CertificateInvalidError
+		hostErr    x509.HostnameError
+		recordErr  tls.RecordHeaderError
+		syntaxErr  *json.SyntaxError
+		typeErr    *json.UnmarshalTypeError
+		maxBytes   *http.MaxBytesError
+		protoError *http.ProtocolError
+	)
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline exceeded"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	case errors.As(err, &netErr) && netErr.Timeout():
+		return "timeout"
+	case errors.As(err, &dnsErr):
+		return "DNS lookup failed"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return "connection refused"
+	case errors.Is(err, syscall.ECONNRESET):
+		return "connection reset"
+	case errors.As(err, &unknownCA), errors.As(err, &certErr), errors.As(err, &hostErr):
+		return "TLS certificate verification failed"
+	case errors.As(err, &recordErr):
+		return "TLS handshake failed"
+	case errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, io.EOF):
+		return "response ended early"
+	case errors.As(err, &syntaxErr):
+		return "response is not valid JSON"
+	case errors.As(err, &typeErr):
+		if typeErr.Field != "" {
+			return "unexpected JSON value for " + typeErr.Field
+		}
+		return "unexpected JSON value"
+	case errors.As(err, &maxBytes):
+		return "response too large"
+	case errors.As(err, &protoError):
+		return "malformed HTTP response"
+	case errors.As(err, &opErr):
+		return "network error during " + opErr.Op
+	default:
+		return ""
+	}
 }
 
-// ScrubDescription renders endpoint-supplied text for a log line: runes
-// LogSafeRune rejects stripped, every run of at least minTokenRun token-alphabet
+// ScrubDescription renders endpoint-supplied text for a log line: control
+// and everything but printable ASCII stripped (PrintableASCII), every run of at least minTokenRun token-alphabet
 // characters replaced with [redacted], and the result bounded to
 // MaxDescriptionBytes. Redaction runs over the whole text before the bound,
 // so the bound can never cut a token down to a prefix that escapes the run
 // length.
 func ScrubDescription(s string) string {
-	var stripped strings.Builder
-	for _, r := range s {
-		if LogSafeRune(r) {
-			stripped.WriteRune(r)
-		}
-	}
-	text := stripped.String()
+	text := PrintableASCII(s)
 
 	var b strings.Builder
 	run := 0
@@ -170,6 +229,25 @@ func ScrubDescription(s string) string {
 		cut--
 	}
 	return out[:cut] + "…"
+}
+
+// PrintableASCII keeps only printable ASCII (space through tilde) from s.
+// Redaction runs on the result, so nothing invisible can sit inside an
+// echoed credential and split it into pieces that exact matching and the
+// token-run length both miss, for a viewer or a normalizer that drops
+// invisible characters to put back together. An allowlist, because the
+// invisible set is not: C0 and DEL, then C1 and format characters, then
+// variation selectors were each found in turn on review, and Unicode has
+// more. OAuth error descriptions are ASCII by specification (RFC 6749
+// §5.2), so nothing a conformant endpoint says is lost.
+func PrintableASCII(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c >= 0x20 && c < 0x7f {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // isTokenByte reports whether c can appear in a bearer token, a JWT, a
