@@ -1,0 +1,5545 @@
+{
+ "name": "world",
+ "description": "Hand-authored fictional Basecamp account (Eval Co, account 9999999): two projects, five people, the Apollo project's message board, to-dos, card table, docs, check-ins, schedule, chat and timeline. The date the tasks pin is 2026-09-29.",
+ "interactions": [
+  {
+   "request": {
+    "method": "GET",
+    "path": "/authorization.json"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "expires_at": "2099-01-01T00:00:00Z",
+     "identity": {
+      "id": 1001,
+      "first_name": "Eve",
+      "last_name": "Evaluator",
+      "email_address": "eve1001@example.com"
+     },
+     "accounts": [
+      {
+       "product": "bc3",
+       "id": 9999999,
+       "name": "Eval Co",
+       "href": "{{base}}/9999999",
+       "app_href": "https://3.basecamp.com/9999999"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/my/profile.json"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 1001,
+     "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+     "name": "Eve Evaluator",
+     "email_address": "eve1001@example.com",
+     "personable_type": "User",
+     "title": "Product Lead",
+     "bio": "",
+     "location": "",
+     "created_at": "2025-01-10T09:00:00.000Z",
+     "updated_at": "2026-09-01T09:00:00.000Z",
+     "admin": true,
+     "owner": true,
+     "client": false,
+     "employee": true,
+     "time_zone": "America/Los_Angeles",
+     "avatar_url": "https://example.com/avatar.png",
+     "company": {
+      "id": 1,
+      "name": "Eval Co"
+     },
+     "can_ping": true
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/people.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     {
+      "id": 1002,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+      "name": "Annie Ames",
+      "email_address": "annie1002@example.com",
+      "personable_type": "User",
+      "title": "Designer",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     {
+      "id": 1003,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMyIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1003",
+      "name": "Bo Brandt",
+      "email_address": "bo1003@example.com",
+      "personable_type": "User",
+      "title": "Programmer",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     {
+      "id": 1004,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwNCIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1004",
+      "name": "Cy Chen",
+      "email_address": "cy1004@example.com",
+      "personable_type": "User",
+      "title": "QA",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     {
+      "id": 1005,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwNSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1005",
+      "name": "Annie Zhou",
+      "email_address": "annie1005@example.com",
+      "personable_type": "User",
+      "title": "Support",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/circles/people.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     {
+      "id": 1002,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+      "name": "Annie Ames",
+      "email_address": "annie1002@example.com",
+      "personable_type": "User",
+      "title": "Designer",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     {
+      "id": 1003,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMyIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1003",
+      "name": "Bo Brandt",
+      "email_address": "bo1003@example.com",
+      "personable_type": "User",
+      "title": "Programmer",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     {
+      "id": 1004,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwNCIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1004",
+      "name": "Cy Chen",
+      "email_address": "cy1004@example.com",
+      "personable_type": "User",
+      "title": "QA",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     {
+      "id": 1005,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwNSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1005",
+      "name": "Annie Zhou",
+      "email_address": "annie1005@example.com",
+      "personable_type": "User",
+      "title": "Support",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/people/1001"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 1001,
+     "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+     "name": "Eve Evaluator",
+     "email_address": "eve1001@example.com",
+     "personable_type": "User",
+     "title": "Product Lead",
+     "bio": "",
+     "location": "",
+     "created_at": "2025-01-10T09:00:00.000Z",
+     "updated_at": "2026-09-01T09:00:00.000Z",
+     "admin": true,
+     "owner": true,
+     "client": false,
+     "employee": true,
+     "time_zone": "America/Los_Angeles",
+     "avatar_url": "https://example.com/avatar.png",
+     "company": {
+      "id": 1,
+      "name": "Eval Co"
+     },
+     "can_ping": true
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/people/1002"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 1002,
+     "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+     "name": "Annie Ames",
+     "email_address": "annie1002@example.com",
+     "personable_type": "User",
+     "title": "Designer",
+     "bio": "",
+     "location": "",
+     "created_at": "2025-01-10T09:00:00.000Z",
+     "updated_at": "2026-09-01T09:00:00.000Z",
+     "admin": false,
+     "owner": false,
+     "client": false,
+     "employee": true,
+     "time_zone": "America/Los_Angeles",
+     "avatar_url": "https://example.com/avatar.png",
+     "company": {
+      "id": 1,
+      "name": "Eval Co"
+     },
+     "can_ping": true
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/people/1003"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 1003,
+     "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMyIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1003",
+     "name": "Bo Brandt",
+     "email_address": "bo1003@example.com",
+     "personable_type": "User",
+     "title": "Programmer",
+     "bio": "",
+     "location": "",
+     "created_at": "2025-01-10T09:00:00.000Z",
+     "updated_at": "2026-09-01T09:00:00.000Z",
+     "admin": false,
+     "owner": false,
+     "client": false,
+     "employee": true,
+     "time_zone": "America/Los_Angeles",
+     "avatar_url": "https://example.com/avatar.png",
+     "company": {
+      "id": 1,
+      "name": "Eval Co"
+     },
+     "can_ping": true
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/people/1004"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 1004,
+     "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwNCIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1004",
+     "name": "Cy Chen",
+     "email_address": "cy1004@example.com",
+     "personable_type": "User",
+     "title": "QA",
+     "bio": "",
+     "location": "",
+     "created_at": "2025-01-10T09:00:00.000Z",
+     "updated_at": "2026-09-01T09:00:00.000Z",
+     "admin": false,
+     "owner": false,
+     "client": false,
+     "employee": true,
+     "time_zone": "America/Los_Angeles",
+     "avatar_url": "https://example.com/avatar.png",
+     "company": {
+      "id": 1,
+      "name": "Eval Co"
+     },
+     "can_ping": true
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/people/1005"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 1005,
+     "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwNSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1005",
+     "name": "Annie Zhou",
+     "email_address": "annie1005@example.com",
+     "personable_type": "User",
+     "title": "Support",
+     "bio": "",
+     "location": "",
+     "created_at": "2025-01-10T09:00:00.000Z",
+     "updated_at": "2026-09-01T09:00:00.000Z",
+     "admin": false,
+     "owner": false,
+     "client": false,
+     "employee": true,
+     "time_zone": "America/Los_Angeles",
+     "avatar_url": "https://example.com/avatar.png",
+     "company": {
+      "id": 1,
+      "name": "Eval Co"
+     },
+     "can_ping": true
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/projects.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 2001,
+      "status": "active",
+      "created_at": "2026-01-05T17:00:00.000Z",
+      "updated_at": "2026-09-28T17:00:00.000Z",
+      "name": "Apollo",
+      "description": "The Apollo launch.",
+      "purpose": "topic",
+      "clients_enabled": false,
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/P2001.json",
+      "url": "{{base}}/9999999/projects/2001.json",
+      "app_url": "https://3.basecamp.com/9999999/projects/2001",
+      "dock": [
+       {
+        "id": 3001,
+        "title": "Message Board",
+        "name": "message_board",
+        "enabled": true,
+        "position": 1,
+        "url": "{{base}}/9999999/message_boards/3001.json",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2001/message_boards/3001"
+       },
+       {
+        "id": 3002,
+        "title": "To-dos",
+        "name": "todoset",
+        "enabled": true,
+        "position": 2,
+        "url": "{{base}}/9999999/todosets/3002.json",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2001/todosets/3002"
+       },
+       {
+        "id": 3003,
+        "title": "Schedule",
+        "name": "schedule",
+        "enabled": true,
+        "position": 3,
+        "url": "{{base}}/9999999/schedules/3003.json",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2001/schedules/3003"
+       },
+       {
+        "id": 3004,
+        "title": "Automatic Check-ins",
+        "name": "questionnaire",
+        "enabled": true,
+        "position": 4,
+        "url": "{{base}}/9999999/questionnaires/3004.json",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2001/questionnaires/3004"
+       },
+       {
+        "id": 3005,
+        "title": "Docs & Files",
+        "name": "vault",
+        "enabled": true,
+        "position": 5,
+        "url": "{{base}}/9999999/vaults/3005.json",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2001/vaults/3005"
+       },
+       {
+        "id": 3006,
+        "title": "Chat",
+        "name": "chat",
+        "enabled": true,
+        "position": 6,
+        "url": "{{base}}/9999999/chats/3006.json",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2001/chats/3006"
+       },
+       {
+        "id": 3007,
+        "title": "Card Table",
+        "name": "kanban_board",
+        "enabled": true,
+        "position": 7,
+        "url": "{{base}}/9999999/card_tables/3007.json",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/3007"
+       }
+      ],
+      "bookmarked": false
+     },
+     {
+      "id": 2002,
+      "status": "active",
+      "created_at": "2026-01-05T17:00:00.000Z",
+      "updated_at": "2026-09-28T17:00:00.000Z",
+      "name": "Borealis",
+      "description": "Borealis research.",
+      "purpose": "topic",
+      "clients_enabled": false,
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/P2002.json",
+      "url": "{{base}}/9999999/projects/2002.json",
+      "app_url": "https://3.basecamp.com/9999999/projects/2002",
+      "dock": [
+       {
+        "id": 3101,
+        "title": "Message Board",
+        "name": "message_board",
+        "enabled": true,
+        "position": 1,
+        "url": "{{base}}/9999999/message_boards/3101.json",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2002/message_boards/3101"
+       },
+       {
+        "id": 3102,
+        "title": "To-dos",
+        "name": "todoset",
+        "enabled": true,
+        "position": 2,
+        "url": "{{base}}/9999999/todosets/3102.json",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2002/todosets/3102"
+       }
+      ],
+      "bookmarked": false
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/projects/2001"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 2001,
+     "status": "active",
+     "created_at": "2026-01-05T17:00:00.000Z",
+     "updated_at": "2026-09-28T17:00:00.000Z",
+     "name": "Apollo",
+     "description": "The Apollo launch.",
+     "purpose": "topic",
+     "clients_enabled": false,
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/P2001.json",
+     "url": "{{base}}/9999999/projects/2001.json",
+     "app_url": "https://3.basecamp.com/9999999/projects/2001",
+     "dock": [
+      {
+       "id": 3001,
+       "title": "Message Board",
+       "name": "message_board",
+       "enabled": true,
+       "position": 1,
+       "url": "{{base}}/9999999/message_boards/3001.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/message_boards/3001"
+      },
+      {
+       "id": 3002,
+       "title": "To-dos",
+       "name": "todoset",
+       "enabled": true,
+       "position": 2,
+       "url": "{{base}}/9999999/todosets/3002.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todosets/3002"
+      },
+      {
+       "id": 3003,
+       "title": "Schedule",
+       "name": "schedule",
+       "enabled": true,
+       "position": 3,
+       "url": "{{base}}/9999999/schedules/3003.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/schedules/3003"
+      },
+      {
+       "id": 3004,
+       "title": "Automatic Check-ins",
+       "name": "questionnaire",
+       "enabled": true,
+       "position": 4,
+       "url": "{{base}}/9999999/questionnaires/3004.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/questionnaires/3004"
+      },
+      {
+       "id": 3005,
+       "title": "Docs & Files",
+       "name": "vault",
+       "enabled": true,
+       "position": 5,
+       "url": "{{base}}/9999999/vaults/3005.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/vaults/3005"
+      },
+      {
+       "id": 3006,
+       "title": "Chat",
+       "name": "chat",
+       "enabled": true,
+       "position": 6,
+       "url": "{{base}}/9999999/chats/3006.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/chats/3006"
+      },
+      {
+       "id": 3007,
+       "title": "Card Table",
+       "name": "kanban_board",
+       "enabled": true,
+       "position": 7,
+       "url": "{{base}}/9999999/card_tables/3007.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/3007"
+      }
+     ],
+     "bookmarked": false
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/projects/2002"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 2002,
+     "status": "active",
+     "created_at": "2026-01-05T17:00:00.000Z",
+     "updated_at": "2026-09-28T17:00:00.000Z",
+     "name": "Borealis",
+     "description": "Borealis research.",
+     "purpose": "topic",
+     "clients_enabled": false,
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/P2002.json",
+     "url": "{{base}}/9999999/projects/2002.json",
+     "app_url": "https://3.basecamp.com/9999999/projects/2002",
+     "dock": [
+      {
+       "id": 3101,
+       "title": "Message Board",
+       "name": "message_board",
+       "enabled": true,
+       "position": 1,
+       "url": "{{base}}/9999999/message_boards/3101.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2002/message_boards/3101"
+      },
+      {
+       "id": 3102,
+       "title": "To-dos",
+       "name": "todoset",
+       "enabled": true,
+       "position": 2,
+       "url": "{{base}}/9999999/todosets/3102.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2002/todosets/3102"
+      }
+     ],
+     "bookmarked": false
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/projects/2001/people.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     {
+      "id": 1002,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+      "name": "Annie Ames",
+      "email_address": "annie1002@example.com",
+      "personable_type": "User",
+      "title": "Designer",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     {
+      "id": 1003,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMyIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1003",
+      "name": "Bo Brandt",
+      "email_address": "bo1003@example.com",
+      "personable_type": "User",
+      "title": "Programmer",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     {
+      "id": 1004,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwNCIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1004",
+      "name": "Cy Chen",
+      "email_address": "cy1004@example.com",
+      "personable_type": "User",
+      "title": "QA",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/projects/2002/people.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     {
+      "id": 1005,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwNSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1005",
+      "name": "Annie Zhou",
+      "email_address": "annie1005@example.com",
+      "personable_type": "User",
+      "title": "Support",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/message_boards/3001"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 3001,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-01-05T17:00:00.000Z",
+     "updated_at": "2026-01-05T17:00:00.000Z",
+     "title": "Message Board",
+     "inherits_status": true,
+     "type": "Message::Board",
+     "url": "{{base}}/9999999/message_boards/3001.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/message_boards/3001",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL3001.json",
+     "subscription_url": "{{base}}/9999999/recordings/3001/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/3001/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "messages_count": 2,
+     "messages_url": "{{base}}/9999999/message_boards/3001/messages.json"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/messages/4001"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 4001,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-22T17:00:00.000Z",
+     "updated_at": "2026-09-28T17:00:00.000Z",
+     "title": "Launch plan",
+     "inherits_status": true,
+     "type": "Message",
+     "url": "{{base}}/9999999/messages/4001.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/messages/4001",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL4001.json",
+     "subscription_url": "{{base}}/9999999/recordings/4001/subscription.json",
+     "comments_count": 1,
+     "comments_url": "{{base}}/9999999/recordings/4001/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1002,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+      "name": "Annie Ames",
+      "email_address": "annie1002@example.com",
+      "personable_type": "User",
+      "title": "Designer",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 3001,
+      "title": "Message Board",
+      "type": "Message::Board",
+      "url": "{{base}}/9999999/message_boards/3001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/message_boards/3001"
+     },
+     "subject": "Launch plan",
+     "content": "<div>We launch Apollo on October 6. Bo owns the release build; Cy runs the QA pass.</div>"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/messages/4002"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 4002,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-19T17:00:00.000Z",
+     "updated_at": "2026-09-19T17:00:00.000Z",
+     "title": "Week 38 status",
+     "inherits_status": true,
+     "type": "Message",
+     "url": "{{base}}/9999999/messages/4002.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/messages/4002",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL4002.json",
+     "subscription_url": "{{base}}/9999999/recordings/4002/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/4002/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 3001,
+      "title": "Message Board",
+      "type": "Message::Board",
+      "url": "{{base}}/9999999/message_boards/3001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/message_boards/3001"
+     },
+     "subject": "Week 38 status",
+     "content": "<div>Design review done. Pricing page slipped a week.</div>"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/message_boards/3001/messages.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 4001,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-22T17:00:00.000Z",
+      "updated_at": "2026-09-28T17:00:00.000Z",
+      "title": "Launch plan",
+      "inherits_status": true,
+      "type": "Message",
+      "url": "{{base}}/9999999/messages/4001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/messages/4001",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL4001.json",
+      "subscription_url": "{{base}}/9999999/recordings/4001/subscription.json",
+      "comments_count": 1,
+      "comments_url": "{{base}}/9999999/recordings/4001/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1002,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+       "name": "Annie Ames",
+       "email_address": "annie1002@example.com",
+       "personable_type": "User",
+       "title": "Designer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 3001,
+       "title": "Message Board",
+       "type": "Message::Board",
+       "url": "{{base}}/9999999/message_boards/3001.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/message_boards/3001"
+      },
+      "subject": "Launch plan",
+      "content": "<div>We launch Apollo on October 6. Bo owns the release build; Cy runs the QA pass.</div>"
+     },
+     {
+      "id": 4002,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-19T17:00:00.000Z",
+      "updated_at": "2026-09-19T17:00:00.000Z",
+      "title": "Week 38 status",
+      "inherits_status": true,
+      "type": "Message",
+      "url": "{{base}}/9999999/messages/4002.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/messages/4002",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL4002.json",
+      "subscription_url": "{{base}}/9999999/recordings/4002/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/4002/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 3001,
+       "title": "Message Board",
+       "type": "Message::Board",
+       "url": "{{base}}/9999999/message_boards/3001.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/message_boards/3001"
+      },
+      "subject": "Week 38 status",
+      "content": "<div>Design review done. Pricing page slipped a week.</div>"
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/comments/4101"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 4101,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-28T18:30:00.000Z",
+     "updated_at": "2026-09-28T18:30:00.000Z",
+     "title": "Re: Launch plan",
+     "inherits_status": true,
+     "type": "Comment",
+     "url": "{{base}}/9999999/comments/4101.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/messages/4001#__recording_4101",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL4101.json",
+     "subscription_url": "{{base}}/9999999/recordings/4101/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/4101/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1003,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMyIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1003",
+      "name": "Bo Brandt",
+      "email_address": "bo1003@example.com",
+      "personable_type": "User",
+      "title": "Programmer",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 4001,
+      "title": "Launch plan",
+      "type": "Message",
+      "url": "{{base}}/9999999/messages/4001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/messages/4001"
+     },
+     "content": "<div>Can we ship the release build Friday instead of Monday?</div>"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/recordings/4001/comments.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 4101,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-28T18:30:00.000Z",
+      "updated_at": "2026-09-28T18:30:00.000Z",
+      "title": "Re: Launch plan",
+      "inherits_status": true,
+      "type": "Comment",
+      "url": "{{base}}/9999999/comments/4101.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/messages/4001#__recording_4101",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL4101.json",
+      "subscription_url": "{{base}}/9999999/recordings/4101/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/4101/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1003,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMyIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1003",
+       "name": "Bo Brandt",
+       "email_address": "bo1003@example.com",
+       "personable_type": "User",
+       "title": "Programmer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 4001,
+       "title": "Launch plan",
+       "type": "Message",
+       "url": "{{base}}/9999999/messages/4001.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/messages/4001"
+      },
+      "content": "<div>Can we ship the release build Friday instead of Monday?</div>"
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/todosets/3002"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 3002,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-01-05T17:00:00.000Z",
+     "updated_at": "2026-01-05T17:00:00.000Z",
+     "title": "To-dos",
+     "inherits_status": true,
+     "type": "Todoset",
+     "url": "{{base}}/9999999/todosets/3002.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/todosets/3002",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL3002.json",
+     "subscription_url": "{{base}}/9999999/recordings/3002/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/3002/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "name": "To-dos",
+     "todolists_count": 2,
+     "todolists_url": "{{base}}/9999999/todosets/3002/todolists.json",
+     "completed": false,
+     "completed_ratio": "1/6"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/todosets/3002/todolists.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 5001,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-02-01T17:00:00.000Z",
+      "updated_at": "2026-09-26T17:00:00.000Z",
+      "title": "Launch",
+      "inherits_status": true,
+      "type": "Todolist",
+      "url": "{{base}}/9999999/todolists/5001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5001.json",
+      "subscription_url": "{{base}}/9999999/recordings/5001/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/5001/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 3002,
+       "title": "To-dos",
+       "type": "Todoset",
+       "url": "{{base}}/9999999/todosets/3002.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todosets/3002"
+      },
+      "name": "Launch",
+      "description": "",
+      "completed": false,
+      "completed_ratio": "0/4",
+      "todos_url": "{{base}}/9999999/todolists/5001/todos.json",
+      "groups_url": "{{base}}/9999999/todolists/5001/groups.json"
+     },
+     {
+      "id": 5002,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-02-01T17:00:00.000Z",
+      "updated_at": "2026-09-26T17:00:00.000Z",
+      "title": "Marketing",
+      "inherits_status": true,
+      "type": "Todolist",
+      "url": "{{base}}/9999999/todolists/5002.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5002",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5002.json",
+      "subscription_url": "{{base}}/9999999/recordings/5002/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/5002/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 3002,
+       "title": "To-dos",
+       "type": "Todoset",
+       "url": "{{base}}/9999999/todosets/3002.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todosets/3002"
+      },
+      "name": "Marketing",
+      "description": "",
+      "completed": false,
+      "completed_ratio": "0/4",
+      "todos_url": "{{base}}/9999999/todolists/5002/todos.json",
+      "groups_url": "{{base}}/9999999/todolists/5002/groups.json"
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/todolists/5001"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 5001,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-02-01T17:00:00.000Z",
+     "updated_at": "2026-09-26T17:00:00.000Z",
+     "title": "Launch",
+     "inherits_status": true,
+     "type": "Todolist",
+     "url": "{{base}}/9999999/todolists/5001.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5001.json",
+     "subscription_url": "{{base}}/9999999/recordings/5001/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/5001/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 3002,
+      "title": "To-dos",
+      "type": "Todoset",
+      "url": "{{base}}/9999999/todosets/3002.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todosets/3002"
+     },
+     "name": "Launch",
+     "description": "",
+     "completed": false,
+     "completed_ratio": "0/4",
+     "todos_url": "{{base}}/9999999/todolists/5001/todos.json",
+     "groups_url": "{{base}}/9999999/todolists/5001/groups.json"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/todolists/5002"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 5002,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-02-01T17:00:00.000Z",
+     "updated_at": "2026-09-26T17:00:00.000Z",
+     "title": "Marketing",
+     "inherits_status": true,
+     "type": "Todolist",
+     "url": "{{base}}/9999999/todolists/5002.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5002",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5002.json",
+     "subscription_url": "{{base}}/9999999/recordings/5002/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/5002/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 3002,
+      "title": "To-dos",
+      "type": "Todoset",
+      "url": "{{base}}/9999999/todosets/3002.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todosets/3002"
+     },
+     "name": "Marketing",
+     "description": "",
+     "completed": false,
+     "completed_ratio": "0/4",
+     "todos_url": "{{base}}/9999999/todolists/5002/todos.json",
+     "groups_url": "{{base}}/9999999/todolists/5002/groups.json"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/todolists/5001/todos.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 5101,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-01T17:00:00.000Z",
+      "updated_at": "2026-09-20T17:00:00.000Z",
+      "title": "Write the release notes",
+      "inherits_status": true,
+      "type": "Todo",
+      "url": "{{base}}/9999999/todos/5101.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5101",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5101.json",
+      "subscription_url": "{{base}}/9999999/recordings/5101/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/5101/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 5001,
+       "title": "Launch",
+       "type": "Todolist",
+       "url": "{{base}}/9999999/todolists/5001.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001"
+      },
+      "content": "Write the release notes",
+      "description": "",
+      "completed": false,
+      "due_on": "2026-09-25",
+      "starts_on": null,
+      "assignees": [
+       {
+        "id": 1001,
+        "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+        "name": "Eve Evaluator",
+        "email_address": "eve1001@example.com",
+        "personable_type": "User",
+        "title": "Product Lead",
+        "bio": "",
+        "location": "",
+        "created_at": "2025-01-10T09:00:00.000Z",
+        "updated_at": "2026-09-01T09:00:00.000Z",
+        "admin": true,
+        "owner": true,
+        "client": false,
+        "employee": true,
+        "time_zone": "America/Los_Angeles",
+        "avatar_url": "https://example.com/avatar.png",
+        "company": {
+         "id": 1,
+         "name": "Eval Co"
+        },
+        "can_ping": true
+       }
+      ],
+      "completion_subscribers": [],
+      "completion_url": "{{base}}/9999999/todos/5101/completion.json",
+      "position": 1
+     },
+     {
+      "id": 5102,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-02-10T17:00:00.000Z",
+      "updated_at": "2026-03-02T17:00:00.000Z",
+      "title": "Update the old brochure PDF",
+      "inherits_status": true,
+      "type": "Todo",
+      "url": "{{base}}/9999999/todos/5102.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5102",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5102.json",
+      "subscription_url": "{{base}}/9999999/recordings/5102/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/5102/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 5001,
+       "title": "Launch",
+       "type": "Todolist",
+       "url": "{{base}}/9999999/todolists/5001.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001"
+      },
+      "content": "Update the old brochure PDF",
+      "description": "",
+      "completed": false,
+      "due_on": null,
+      "starts_on": null,
+      "assignees": [],
+      "completion_subscribers": [],
+      "completion_url": "{{base}}/9999999/todos/5102/completion.json",
+      "position": 1
+     },
+     {
+      "id": 5103,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-02-11T17:00:00.000Z",
+      "updated_at": "2026-04-14T17:00:00.000Z",
+      "title": "Order printed flyers",
+      "inherits_status": true,
+      "type": "Todo",
+      "url": "{{base}}/9999999/todos/5103.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5103",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5103.json",
+      "subscription_url": "{{base}}/9999999/recordings/5103/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/5103/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 5001,
+       "title": "Launch",
+       "type": "Todolist",
+       "url": "{{base}}/9999999/todolists/5001.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001"
+      },
+      "content": "Order printed flyers",
+      "description": "",
+      "completed": false,
+      "due_on": null,
+      "starts_on": null,
+      "assignees": [],
+      "completion_subscribers": [],
+      "completion_url": "{{base}}/9999999/todos/5103/completion.json",
+      "position": 1
+     },
+     {
+      "id": 5104,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-10T17:00:00.000Z",
+      "updated_at": "2026-09-27T17:00:00.000Z",
+      "title": "QA pass on the release build",
+      "inherits_status": true,
+      "type": "Todo",
+      "url": "{{base}}/9999999/todos/5104.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5104",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5104.json",
+      "subscription_url": "{{base}}/9999999/recordings/5104/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/5104/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 5001,
+       "title": "Launch",
+       "type": "Todolist",
+       "url": "{{base}}/9999999/todolists/5001.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001"
+      },
+      "content": "QA pass on the release build",
+      "description": "",
+      "completed": false,
+      "due_on": "2026-10-05",
+      "starts_on": null,
+      "assignees": [
+       {
+        "id": 1004,
+        "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwNCIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1004",
+        "name": "Cy Chen",
+        "email_address": "cy1004@example.com",
+        "personable_type": "User",
+        "title": "QA",
+        "bio": "",
+        "location": "",
+        "created_at": "2025-01-10T09:00:00.000Z",
+        "updated_at": "2026-09-01T09:00:00.000Z",
+        "admin": false,
+        "owner": false,
+        "client": false,
+        "employee": true,
+        "time_zone": "America/Los_Angeles",
+        "avatar_url": "https://example.com/avatar.png",
+        "company": {
+         "id": 1,
+         "name": "Eval Co"
+        },
+        "can_ping": true
+       }
+      ],
+      "completion_subscribers": [],
+      "completion_url": "{{base}}/9999999/todos/5104/completion.json",
+      "position": 1
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/todolists/5002/todos.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 5201,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-15T17:00:00.000Z",
+      "updated_at": "2026-09-24T17:00:00.000Z",
+      "title": "Draft the launch tweet",
+      "inherits_status": true,
+      "type": "Todo",
+      "url": "{{base}}/9999999/todos/5201.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5201",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5201.json",
+      "subscription_url": "{{base}}/9999999/recordings/5201/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/5201/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 5002,
+       "title": "Marketing",
+       "type": "Todolist",
+       "url": "{{base}}/9999999/todolists/5002.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5002"
+      },
+      "content": "Draft the launch tweet",
+      "description": "",
+      "completed": false,
+      "due_on": "2026-09-26",
+      "starts_on": null,
+      "assignees": [
+       {
+        "id": 1001,
+        "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+        "name": "Eve Evaluator",
+        "email_address": "eve1001@example.com",
+        "personable_type": "User",
+        "title": "Product Lead",
+        "bio": "",
+        "location": "",
+        "created_at": "2025-01-10T09:00:00.000Z",
+        "updated_at": "2026-09-01T09:00:00.000Z",
+        "admin": true,
+        "owner": true,
+        "client": false,
+        "employee": true,
+        "time_zone": "America/Los_Angeles",
+        "avatar_url": "https://example.com/avatar.png",
+        "company": {
+         "id": 1,
+         "name": "Eval Co"
+        },
+        "can_ping": true
+       },
+       {
+        "id": 1002,
+        "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+        "name": "Annie Ames",
+        "email_address": "annie1002@example.com",
+        "personable_type": "User",
+        "title": "Designer",
+        "bio": "",
+        "location": "",
+        "created_at": "2025-01-10T09:00:00.000Z",
+        "updated_at": "2026-09-01T09:00:00.000Z",
+        "admin": false,
+        "owner": false,
+        "client": false,
+        "employee": true,
+        "time_zone": "America/Los_Angeles",
+        "avatar_url": "https://example.com/avatar.png",
+        "company": {
+         "id": 1,
+         "name": "Eval Co"
+        },
+        "can_ping": true
+       }
+      ],
+      "completion_subscribers": [],
+      "completion_url": "{{base}}/9999999/todos/5201/completion.json",
+      "position": 1
+     },
+     {
+      "id": 5202,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-15T17:00:00.000Z",
+      "updated_at": "2026-09-28T17:00:00.000Z",
+      "title": "Book the podcast slot",
+      "inherits_status": true,
+      "type": "Todo",
+      "url": "{{base}}/9999999/todos/5202.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5202",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5202.json",
+      "subscription_url": "{{base}}/9999999/recordings/5202/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/5202/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 5002,
+       "title": "Marketing",
+       "type": "Todolist",
+       "url": "{{base}}/9999999/todolists/5002.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5002"
+      },
+      "content": "Book the podcast slot",
+      "description": "",
+      "completed": false,
+      "due_on": "2026-10-09",
+      "starts_on": null,
+      "assignees": [
+       {
+        "id": 1001,
+        "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+        "name": "Eve Evaluator",
+        "email_address": "eve1001@example.com",
+        "personable_type": "User",
+        "title": "Product Lead",
+        "bio": "",
+        "location": "",
+        "created_at": "2025-01-10T09:00:00.000Z",
+        "updated_at": "2026-09-01T09:00:00.000Z",
+        "admin": true,
+        "owner": true,
+        "client": false,
+        "employee": true,
+        "time_zone": "America/Los_Angeles",
+        "avatar_url": "https://example.com/avatar.png",
+        "company": {
+         "id": 1,
+         "name": "Eval Co"
+        },
+        "can_ping": true
+       }
+      ],
+      "completion_subscribers": [],
+      "completion_url": "{{base}}/9999999/todos/5202/completion.json",
+      "position": 1
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/todos/5101"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 5101,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-01T17:00:00.000Z",
+     "updated_at": "2026-09-20T17:00:00.000Z",
+     "title": "Write the release notes",
+     "inherits_status": true,
+     "type": "Todo",
+     "url": "{{base}}/9999999/todos/5101.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5101",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5101.json",
+     "subscription_url": "{{base}}/9999999/recordings/5101/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/5101/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 5001,
+      "title": "Launch",
+      "type": "Todolist",
+      "url": "{{base}}/9999999/todolists/5001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001"
+     },
+     "content": "Write the release notes",
+     "description": "",
+     "completed": false,
+     "due_on": "2026-09-25",
+     "starts_on": null,
+     "assignees": [
+      {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      }
+     ],
+     "completion_subscribers": [],
+     "completion_url": "{{base}}/9999999/todos/5101/completion.json",
+     "position": 1
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/todos/5102"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 5102,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-02-10T17:00:00.000Z",
+     "updated_at": "2026-03-02T17:00:00.000Z",
+     "title": "Update the old brochure PDF",
+     "inherits_status": true,
+     "type": "Todo",
+     "url": "{{base}}/9999999/todos/5102.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5102",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5102.json",
+     "subscription_url": "{{base}}/9999999/recordings/5102/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/5102/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 5001,
+      "title": "Launch",
+      "type": "Todolist",
+      "url": "{{base}}/9999999/todolists/5001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001"
+     },
+     "content": "Update the old brochure PDF",
+     "description": "",
+     "completed": false,
+     "due_on": null,
+     "starts_on": null,
+     "assignees": [],
+     "completion_subscribers": [],
+     "completion_url": "{{base}}/9999999/todos/5102/completion.json",
+     "position": 1
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/todos/5103"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 5103,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-02-11T17:00:00.000Z",
+     "updated_at": "2026-04-14T17:00:00.000Z",
+     "title": "Order printed flyers",
+     "inherits_status": true,
+     "type": "Todo",
+     "url": "{{base}}/9999999/todos/5103.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5103",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5103.json",
+     "subscription_url": "{{base}}/9999999/recordings/5103/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/5103/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 5001,
+      "title": "Launch",
+      "type": "Todolist",
+      "url": "{{base}}/9999999/todolists/5001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001"
+     },
+     "content": "Order printed flyers",
+     "description": "",
+     "completed": false,
+     "due_on": null,
+     "starts_on": null,
+     "assignees": [],
+     "completion_subscribers": [],
+     "completion_url": "{{base}}/9999999/todos/5103/completion.json",
+     "position": 1
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/todos/5104"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 5104,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-10T17:00:00.000Z",
+     "updated_at": "2026-09-27T17:00:00.000Z",
+     "title": "QA pass on the release build",
+     "inherits_status": true,
+     "type": "Todo",
+     "url": "{{base}}/9999999/todos/5104.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5104",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5104.json",
+     "subscription_url": "{{base}}/9999999/recordings/5104/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/5104/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 5001,
+      "title": "Launch",
+      "type": "Todolist",
+      "url": "{{base}}/9999999/todolists/5001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001"
+     },
+     "content": "QA pass on the release build",
+     "description": "",
+     "completed": false,
+     "due_on": "2026-10-05",
+     "starts_on": null,
+     "assignees": [
+      {
+       "id": 1004,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwNCIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1004",
+       "name": "Cy Chen",
+       "email_address": "cy1004@example.com",
+       "personable_type": "User",
+       "title": "QA",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      }
+     ],
+     "completion_subscribers": [],
+     "completion_url": "{{base}}/9999999/todos/5104/completion.json",
+     "position": 1
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/todos/5201"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 5201,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-15T17:00:00.000Z",
+     "updated_at": "2026-09-24T17:00:00.000Z",
+     "title": "Draft the launch tweet",
+     "inherits_status": true,
+     "type": "Todo",
+     "url": "{{base}}/9999999/todos/5201.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5201",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5201.json",
+     "subscription_url": "{{base}}/9999999/recordings/5201/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/5201/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 5002,
+      "title": "Marketing",
+      "type": "Todolist",
+      "url": "{{base}}/9999999/todolists/5002.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5002"
+     },
+     "content": "Draft the launch tweet",
+     "description": "",
+     "completed": false,
+     "due_on": "2026-09-26",
+     "starts_on": null,
+     "assignees": [
+      {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      {
+       "id": 1002,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+       "name": "Annie Ames",
+       "email_address": "annie1002@example.com",
+       "personable_type": "User",
+       "title": "Designer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      }
+     ],
+     "completion_subscribers": [],
+     "completion_url": "{{base}}/9999999/todos/5201/completion.json",
+     "position": 1
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/todos/5202"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 5202,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-15T17:00:00.000Z",
+     "updated_at": "2026-09-28T17:00:00.000Z",
+     "title": "Book the podcast slot",
+     "inherits_status": true,
+     "type": "Todo",
+     "url": "{{base}}/9999999/todos/5202.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5202",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5202.json",
+     "subscription_url": "{{base}}/9999999/recordings/5202/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/5202/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 5002,
+      "title": "Marketing",
+      "type": "Todolist",
+      "url": "{{base}}/9999999/todolists/5002.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5002"
+     },
+     "content": "Book the podcast slot",
+     "description": "",
+     "completed": false,
+     "due_on": "2026-10-09",
+     "starts_on": null,
+     "assignees": [
+      {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      }
+     ],
+     "completion_subscribers": [],
+     "completion_url": "{{base}}/9999999/todos/5202/completion.json",
+     "position": 1
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/my/assignments.json"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "priorities": [],
+     "non_priorities": [
+      {
+       "id": 5101,
+       "type": "Todo",
+       "content": "Write the release notes",
+       "completed": false,
+       "has_description": false,
+       "due_on": "2026-09-25",
+       "comments_count": 0,
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5101",
+       "assignees": [
+        {
+         "id": 1001,
+         "name": "Eve Evaluator",
+         "avatar_url": "https://example.com/avatar.png"
+        }
+       ],
+       "bucket": {
+        "id": 2001,
+        "name": "Apollo",
+        "app_url": "https://3.basecamp.com/9999999/projects/2001"
+       },
+       "parent": {
+        "id": 5001,
+        "title": "Launch",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001"
+       }
+      },
+      {
+       "id": 5201,
+       "type": "Todo",
+       "content": "Draft the launch tweet",
+       "completed": false,
+       "has_description": false,
+       "due_on": "2026-09-26",
+       "comments_count": 0,
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5201",
+       "assignees": [
+        {
+         "id": 1001,
+         "name": "Eve Evaluator",
+         "avatar_url": "https://example.com/avatar.png"
+        },
+        {
+         "id": 1002,
+         "name": "Annie Ames",
+         "avatar_url": "https://example.com/avatar.png"
+        }
+       ],
+       "bucket": {
+        "id": 2001,
+        "name": "Apollo",
+        "app_url": "https://3.basecamp.com/9999999/projects/2001"
+       },
+       "parent": {
+        "id": 5002,
+        "title": "Marketing",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5002"
+       }
+      },
+      {
+       "id": 5202,
+       "type": "Todo",
+       "content": "Book the podcast slot",
+       "completed": false,
+       "has_description": false,
+       "due_on": "2026-10-09",
+       "comments_count": 0,
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5202",
+       "assignees": [
+        {
+         "id": 1001,
+         "name": "Eve Evaluator",
+         "avatar_url": "https://example.com/avatar.png"
+        }
+       ],
+       "bucket": {
+        "id": 2001,
+        "name": "Apollo",
+        "app_url": "https://3.basecamp.com/9999999/projects/2001"
+       },
+       "parent": {
+        "id": 5002,
+        "title": "Marketing",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5002"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/my/assignments/due.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 5101,
+      "type": "Todo",
+      "content": "Write the release notes",
+      "completed": false,
+      "has_description": false,
+      "due_on": "2026-09-25",
+      "comments_count": 0,
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5101",
+      "assignees": [
+       {
+        "id": 1001,
+        "name": "Eve Evaluator",
+        "avatar_url": "https://example.com/avatar.png"
+       }
+      ],
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "app_url": "https://3.basecamp.com/9999999/projects/2001"
+      },
+      "parent": {
+       "id": 5001,
+       "title": "Launch",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001"
+      }
+     },
+     {
+      "id": 5201,
+      "type": "Todo",
+      "content": "Draft the launch tweet",
+      "completed": false,
+      "has_description": false,
+      "due_on": "2026-09-26",
+      "comments_count": 0,
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5201",
+      "assignees": [
+       {
+        "id": 1001,
+        "name": "Eve Evaluator",
+        "avatar_url": "https://example.com/avatar.png"
+       },
+       {
+        "id": 1002,
+        "name": "Annie Ames",
+        "avatar_url": "https://example.com/avatar.png"
+       }
+      ],
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "app_url": "https://3.basecamp.com/9999999/projects/2001"
+      },
+      "parent": {
+       "id": 5002,
+       "title": "Marketing",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5002"
+      }
+     },
+     {
+      "id": 5202,
+      "type": "Todo",
+      "content": "Book the podcast slot",
+      "completed": false,
+      "has_description": false,
+      "due_on": "2026-10-09",
+      "comments_count": 0,
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5202",
+      "assignees": [
+       {
+        "id": 1001,
+        "name": "Eve Evaluator",
+        "avatar_url": "https://example.com/avatar.png"
+       }
+      ],
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "app_url": "https://3.basecamp.com/9999999/projects/2001"
+      },
+      "parent": {
+       "id": 5002,
+       "title": "Marketing",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5002"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/my/assignments/due.json",
+    "query": {
+     "scope": "overdue"
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 5101,
+      "type": "Todo",
+      "content": "Write the release notes",
+      "completed": false,
+      "has_description": false,
+      "due_on": "2026-09-25",
+      "comments_count": 0,
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5101",
+      "assignees": [
+       {
+        "id": 1001,
+        "name": "Eve Evaluator",
+        "avatar_url": "https://example.com/avatar.png"
+       }
+      ],
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "app_url": "https://3.basecamp.com/9999999/projects/2001"
+      },
+      "parent": {
+       "id": 5001,
+       "title": "Launch",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001"
+      }
+     },
+     {
+      "id": 5201,
+      "type": "Todo",
+      "content": "Draft the launch tweet",
+      "completed": false,
+      "has_description": false,
+      "due_on": "2026-09-26",
+      "comments_count": 0,
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5201",
+      "assignees": [
+       {
+        "id": 1001,
+        "name": "Eve Evaluator",
+        "avatar_url": "https://example.com/avatar.png"
+       },
+       {
+        "id": 1002,
+        "name": "Annie Ames",
+        "avatar_url": "https://example.com/avatar.png"
+       }
+      ],
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "app_url": "https://3.basecamp.com/9999999/projects/2001"
+      },
+      "parent": {
+       "id": 5002,
+       "title": "Marketing",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5002"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/my/assignments/due.json",
+    "query": {
+     "scope": "due_today"
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": []
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/my/assignments/due.json",
+    "query": {
+     "scope": "due_later_this_week"
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 5202,
+      "type": "Todo",
+      "content": "Book the podcast slot",
+      "completed": false,
+      "has_description": false,
+      "due_on": "2026-10-09",
+      "comments_count": 0,
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5202",
+      "assignees": [
+       {
+        "id": 1001,
+        "name": "Eve Evaluator",
+        "avatar_url": "https://example.com/avatar.png"
+       }
+      ],
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "app_url": "https://3.basecamp.com/9999999/projects/2001"
+      },
+      "parent": {
+       "id": 5002,
+       "title": "Marketing",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5002"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/reports/todos/overdue.json"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "under_a_week_late": [
+      {
+       "id": 5101,
+       "status": "active",
+       "visible_to_clients": false,
+       "created_at": "2026-09-01T17:00:00.000Z",
+       "updated_at": "2026-09-20T17:00:00.000Z",
+       "title": "Write the release notes",
+       "inherits_status": true,
+       "type": "Todo",
+       "url": "{{base}}/9999999/todos/5101.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5101",
+       "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5101.json",
+       "subscription_url": "{{base}}/9999999/recordings/5101/subscription.json",
+       "comments_count": 0,
+       "comments_url": "{{base}}/9999999/recordings/5101/comments.json",
+       "bucket": {
+        "id": 2001,
+        "name": "Apollo",
+        "type": "Project"
+       },
+       "creator": {
+        "id": 1001,
+        "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+        "name": "Eve Evaluator",
+        "email_address": "eve1001@example.com",
+        "personable_type": "User",
+        "title": "Product Lead",
+        "bio": "",
+        "location": "",
+        "created_at": "2025-01-10T09:00:00.000Z",
+        "updated_at": "2026-09-01T09:00:00.000Z",
+        "admin": true,
+        "owner": true,
+        "client": false,
+        "employee": true,
+        "time_zone": "America/Los_Angeles",
+        "avatar_url": "https://example.com/avatar.png",
+        "company": {
+         "id": 1,
+         "name": "Eval Co"
+        },
+        "can_ping": true
+       },
+       "parent": {
+        "id": 5001,
+        "title": "Launch",
+        "type": "Todolist",
+        "url": "{{base}}/9999999/todolists/5001.json",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5001"
+       },
+       "content": "Write the release notes",
+       "description": "",
+       "completed": false,
+       "due_on": "2026-09-25",
+       "starts_on": null,
+       "assignees": [
+        {
+         "id": 1001,
+         "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+         "name": "Eve Evaluator",
+         "email_address": "eve1001@example.com",
+         "personable_type": "User",
+         "title": "Product Lead",
+         "bio": "",
+         "location": "",
+         "created_at": "2025-01-10T09:00:00.000Z",
+         "updated_at": "2026-09-01T09:00:00.000Z",
+         "admin": true,
+         "owner": true,
+         "client": false,
+         "employee": true,
+         "time_zone": "America/Los_Angeles",
+         "avatar_url": "https://example.com/avatar.png",
+         "company": {
+          "id": 1,
+          "name": "Eval Co"
+         },
+         "can_ping": true
+        }
+       ],
+       "completion_subscribers": [],
+       "completion_url": "{{base}}/9999999/todos/5101/completion.json",
+       "position": 1
+      },
+      {
+       "id": 5201,
+       "status": "active",
+       "visible_to_clients": false,
+       "created_at": "2026-09-15T17:00:00.000Z",
+       "updated_at": "2026-09-24T17:00:00.000Z",
+       "title": "Draft the launch tweet",
+       "inherits_status": true,
+       "type": "Todo",
+       "url": "{{base}}/9999999/todos/5201.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5201",
+       "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5201.json",
+       "subscription_url": "{{base}}/9999999/recordings/5201/subscription.json",
+       "comments_count": 0,
+       "comments_url": "{{base}}/9999999/recordings/5201/comments.json",
+       "bucket": {
+        "id": 2001,
+        "name": "Apollo",
+        "type": "Project"
+       },
+       "creator": {
+        "id": 1001,
+        "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+        "name": "Eve Evaluator",
+        "email_address": "eve1001@example.com",
+        "personable_type": "User",
+        "title": "Product Lead",
+        "bio": "",
+        "location": "",
+        "created_at": "2025-01-10T09:00:00.000Z",
+        "updated_at": "2026-09-01T09:00:00.000Z",
+        "admin": true,
+        "owner": true,
+        "client": false,
+        "employee": true,
+        "time_zone": "America/Los_Angeles",
+        "avatar_url": "https://example.com/avatar.png",
+        "company": {
+         "id": 1,
+         "name": "Eval Co"
+        },
+        "can_ping": true
+       },
+       "parent": {
+        "id": 5002,
+        "title": "Marketing",
+        "type": "Todolist",
+        "url": "{{base}}/9999999/todolists/5002.json",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2001/todolists/5002"
+       },
+       "content": "Draft the launch tweet",
+       "description": "",
+       "completed": false,
+       "due_on": "2026-09-26",
+       "starts_on": null,
+       "assignees": [
+        {
+         "id": 1001,
+         "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+         "name": "Eve Evaluator",
+         "email_address": "eve1001@example.com",
+         "personable_type": "User",
+         "title": "Product Lead",
+         "bio": "",
+         "location": "",
+         "created_at": "2025-01-10T09:00:00.000Z",
+         "updated_at": "2026-09-01T09:00:00.000Z",
+         "admin": true,
+         "owner": true,
+         "client": false,
+         "employee": true,
+         "time_zone": "America/Los_Angeles",
+         "avatar_url": "https://example.com/avatar.png",
+         "company": {
+          "id": 1,
+          "name": "Eval Co"
+         },
+         "can_ping": true
+        },
+        {
+         "id": 1002,
+         "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+         "name": "Annie Ames",
+         "email_address": "annie1002@example.com",
+         "personable_type": "User",
+         "title": "Designer",
+         "bio": "",
+         "location": "",
+         "created_at": "2025-01-10T09:00:00.000Z",
+         "updated_at": "2026-09-01T09:00:00.000Z",
+         "admin": false,
+         "owner": false,
+         "client": false,
+         "employee": true,
+         "time_zone": "America/Los_Angeles",
+         "avatar_url": "https://example.com/avatar.png",
+         "company": {
+          "id": 1,
+          "name": "Eval Co"
+         },
+         "can_ping": true
+        }
+       ],
+       "completion_subscribers": [],
+       "completion_url": "{{base}}/9999999/todos/5201/completion.json",
+       "position": 1
+      }
+     ],
+     "over_a_week_late": [],
+     "over_a_month_late": [],
+     "over_three_months_late": []
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/card_tables/3007"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 3007,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-01-05T17:00:00.000Z",
+     "updated_at": "2026-01-05T17:00:00.000Z",
+     "title": "Card Table",
+     "inherits_status": true,
+     "type": "Kanban::Board",
+     "url": "{{base}}/9999999/card_tables/3007.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/3007",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL3007.json",
+     "subscription_url": "{{base}}/9999999/recordings/3007/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/3007/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "subscribers": [],
+     "wormholes": [],
+     "lists": [
+      {
+       "id": 6001,
+       "status": "active",
+       "visible_to_clients": false,
+       "created_at": "2026-01-05T17:00:00.000Z",
+       "updated_at": "2026-01-05T17:00:00.000Z",
+       "title": "Triage",
+       "inherits_status": true,
+       "type": "Kanban::Column",
+       "url": "{{base}}/9999999/card_tables/columns/6001.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/columns/6001",
+       "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL6001.json",
+       "subscription_url": "{{base}}/9999999/recordings/6001/subscription.json",
+       "comments_count": 0,
+       "comments_url": "{{base}}/9999999/recordings/6001/comments.json",
+       "bucket": {
+        "id": 2001,
+        "name": "Apollo",
+        "type": "Project"
+       },
+       "creator": {
+        "id": 1001,
+        "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+        "name": "Eve Evaluator",
+        "email_address": "eve1001@example.com",
+        "personable_type": "User",
+        "title": "Product Lead",
+        "bio": "",
+        "location": "",
+        "created_at": "2025-01-10T09:00:00.000Z",
+        "updated_at": "2026-09-01T09:00:00.000Z",
+        "admin": true,
+        "owner": true,
+        "client": false,
+        "employee": true,
+        "time_zone": "America/Los_Angeles",
+        "avatar_url": "https://example.com/avatar.png",
+        "company": {
+         "id": 1,
+         "name": "Eval Co"
+        },
+        "can_ping": true
+       },
+       "parent": {
+        "id": 3007,
+        "title": "Card Table",
+        "type": "Kanban::Board",
+        "url": "{{base}}/9999999/card_tables/3007.json",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/3007"
+       },
+       "position": 1,
+       "color": "white",
+       "description": "",
+       "on_hold": null,
+       "cards_count": 1,
+       "comment_count": 0,
+       "cards_url": "{{base}}/9999999/card_tables/lists/6001/cards.json",
+       "subscribers": []
+      },
+      {
+       "id": 6002,
+       "status": "active",
+       "visible_to_clients": false,
+       "created_at": "2026-01-05T17:00:00.000Z",
+       "updated_at": "2026-01-05T17:00:00.000Z",
+       "title": "In progress",
+       "inherits_status": true,
+       "type": "Kanban::Column",
+       "url": "{{base}}/9999999/card_tables/columns/6002.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/columns/6002",
+       "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL6002.json",
+       "subscription_url": "{{base}}/9999999/recordings/6002/subscription.json",
+       "comments_count": 0,
+       "comments_url": "{{base}}/9999999/recordings/6002/comments.json",
+       "bucket": {
+        "id": 2001,
+        "name": "Apollo",
+        "type": "Project"
+       },
+       "creator": {
+        "id": 1001,
+        "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+        "name": "Eve Evaluator",
+        "email_address": "eve1001@example.com",
+        "personable_type": "User",
+        "title": "Product Lead",
+        "bio": "",
+        "location": "",
+        "created_at": "2025-01-10T09:00:00.000Z",
+        "updated_at": "2026-09-01T09:00:00.000Z",
+        "admin": true,
+        "owner": true,
+        "client": false,
+        "employee": true,
+        "time_zone": "America/Los_Angeles",
+        "avatar_url": "https://example.com/avatar.png",
+        "company": {
+         "id": 1,
+         "name": "Eval Co"
+        },
+        "can_ping": true
+       },
+       "parent": {
+        "id": 3007,
+        "title": "Card Table",
+        "type": "Kanban::Board",
+        "url": "{{base}}/9999999/card_tables/3007.json",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/3007"
+       },
+       "position": 2,
+       "color": "white",
+       "description": "",
+       "on_hold": null,
+       "cards_count": 2,
+       "comment_count": 0,
+       "cards_url": "{{base}}/9999999/card_tables/lists/6002/cards.json",
+       "subscribers": []
+      },
+      {
+       "id": 6003,
+       "status": "active",
+       "visible_to_clients": false,
+       "created_at": "2026-01-05T17:00:00.000Z",
+       "updated_at": "2026-01-05T17:00:00.000Z",
+       "title": "Done",
+       "inherits_status": true,
+       "type": "Kanban::Column",
+       "url": "{{base}}/9999999/card_tables/columns/6003.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/columns/6003",
+       "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL6003.json",
+       "subscription_url": "{{base}}/9999999/recordings/6003/subscription.json",
+       "comments_count": 0,
+       "comments_url": "{{base}}/9999999/recordings/6003/comments.json",
+       "bucket": {
+        "id": 2001,
+        "name": "Apollo",
+        "type": "Project"
+       },
+       "creator": {
+        "id": 1001,
+        "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+        "name": "Eve Evaluator",
+        "email_address": "eve1001@example.com",
+        "personable_type": "User",
+        "title": "Product Lead",
+        "bio": "",
+        "location": "",
+        "created_at": "2025-01-10T09:00:00.000Z",
+        "updated_at": "2026-09-01T09:00:00.000Z",
+        "admin": true,
+        "owner": true,
+        "client": false,
+        "employee": true,
+        "time_zone": "America/Los_Angeles",
+        "avatar_url": "https://example.com/avatar.png",
+        "company": {
+         "id": 1,
+         "name": "Eval Co"
+        },
+        "can_ping": true
+       },
+       "parent": {
+        "id": 3007,
+        "title": "Card Table",
+        "type": "Kanban::Board",
+        "url": "{{base}}/9999999/card_tables/3007.json",
+        "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/3007"
+       },
+       "position": 3,
+       "color": "white",
+       "description": "",
+       "on_hold": null,
+       "cards_count": 0,
+       "comment_count": 0,
+       "cards_url": "{{base}}/9999999/card_tables/lists/6003/cards.json",
+       "subscribers": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/card_tables/columns/6001"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 6001,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-01-05T17:00:00.000Z",
+     "updated_at": "2026-01-05T17:00:00.000Z",
+     "title": "Triage",
+     "inherits_status": true,
+     "type": "Kanban::Column",
+     "url": "{{base}}/9999999/card_tables/columns/6001.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/columns/6001",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL6001.json",
+     "subscription_url": "{{base}}/9999999/recordings/6001/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/6001/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 3007,
+      "title": "Card Table",
+      "type": "Kanban::Board",
+      "url": "{{base}}/9999999/card_tables/3007.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/3007"
+     },
+     "position": 1,
+     "color": "white",
+     "description": "",
+     "on_hold": null,
+     "cards_count": 1,
+     "comment_count": 0,
+     "cards_url": "{{base}}/9999999/card_tables/lists/6001/cards.json",
+     "subscribers": []
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/card_tables/lists/6001/cards.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 6103,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-10T17:00:00.000Z",
+      "updated_at": "2026-09-27T17:00:00.000Z",
+      "title": "Rotate the staging certificates",
+      "inherits_status": true,
+      "type": "Kanban::Card",
+      "url": "{{base}}/9999999/card_tables/cards/6103.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/cards/6103",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL6103.json",
+      "subscription_url": "{{base}}/9999999/recordings/6103/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/6103/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 6001,
+       "title": "Triage",
+       "type": "Kanban::Column",
+       "url": "{{base}}/9999999/card_tables/columns/6001.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/columns/6001"
+      },
+      "content": "",
+      "description": "",
+      "completed": false,
+      "due_on": null,
+      "position": 1,
+      "assignees": [],
+      "completion_subscribers": [],
+      "steps": [],
+      "description_attachments": [],
+      "completion_url": "{{base}}/9999999/todos/6103/completion.json",
+      "comment_count": 0
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/card_tables/columns/6002"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 6002,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-01-05T17:00:00.000Z",
+     "updated_at": "2026-01-05T17:00:00.000Z",
+     "title": "In progress",
+     "inherits_status": true,
+     "type": "Kanban::Column",
+     "url": "{{base}}/9999999/card_tables/columns/6002.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/columns/6002",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL6002.json",
+     "subscription_url": "{{base}}/9999999/recordings/6002/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/6002/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 3007,
+      "title": "Card Table",
+      "type": "Kanban::Board",
+      "url": "{{base}}/9999999/card_tables/3007.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/3007"
+     },
+     "position": 2,
+     "color": "white",
+     "description": "",
+     "on_hold": null,
+     "cards_count": 2,
+     "comment_count": 0,
+     "cards_url": "{{base}}/9999999/card_tables/lists/6002/cards.json",
+     "subscribers": []
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/card_tables/lists/6002/cards.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 6101,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-10T17:00:00.000Z",
+      "updated_at": "2026-09-27T17:00:00.000Z",
+      "title": "Fix the login redirect loop",
+      "inherits_status": true,
+      "type": "Kanban::Card",
+      "url": "{{base}}/9999999/card_tables/cards/6101.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/cards/6101",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL6101.json",
+      "subscription_url": "{{base}}/9999999/recordings/6101/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/6101/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 6002,
+       "title": "In progress",
+       "type": "Kanban::Column",
+       "url": "{{base}}/9999999/card_tables/columns/6002.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/columns/6002"
+      },
+      "content": "<div>Users bounce between /login and /home after SSO.</div>",
+      "description": "<div>Users bounce between /login and /home after SSO.</div>",
+      "completed": false,
+      "due_on": null,
+      "position": 1,
+      "assignees": [
+       {
+        "id": 1002,
+        "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+        "name": "Annie Ames",
+        "email_address": "annie1002@example.com",
+        "personable_type": "User",
+        "title": "Designer",
+        "bio": "",
+        "location": "",
+        "created_at": "2025-01-10T09:00:00.000Z",
+        "updated_at": "2026-09-01T09:00:00.000Z",
+        "admin": false,
+        "owner": false,
+        "client": false,
+        "employee": true,
+        "time_zone": "America/Los_Angeles",
+        "avatar_url": "https://example.com/avatar.png",
+        "company": {
+         "id": 1,
+         "name": "Eval Co"
+        },
+        "can_ping": true
+       },
+       {
+        "id": 1004,
+        "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwNCIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1004",
+        "name": "Cy Chen",
+        "email_address": "cy1004@example.com",
+        "personable_type": "User",
+        "title": "QA",
+        "bio": "",
+        "location": "",
+        "created_at": "2025-01-10T09:00:00.000Z",
+        "updated_at": "2026-09-01T09:00:00.000Z",
+        "admin": false,
+        "owner": false,
+        "client": false,
+        "employee": true,
+        "time_zone": "America/Los_Angeles",
+        "avatar_url": "https://example.com/avatar.png",
+        "company": {
+         "id": 1,
+         "name": "Eval Co"
+        },
+        "can_ping": true
+       }
+      ],
+      "completion_subscribers": [],
+      "steps": [],
+      "description_attachments": [],
+      "completion_url": "{{base}}/9999999/todos/6101/completion.json",
+      "comment_count": 0
+     },
+     {
+      "id": 6102,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-10T17:00:00.000Z",
+      "updated_at": "2026-09-27T17:00:00.000Z",
+      "title": "Update the pricing page",
+      "inherits_status": true,
+      "type": "Kanban::Card",
+      "url": "{{base}}/9999999/card_tables/cards/6102.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/cards/6102",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL6102.json",
+      "subscription_url": "{{base}}/9999999/recordings/6102/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/6102/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 6002,
+       "title": "In progress",
+       "type": "Kanban::Column",
+       "url": "{{base}}/9999999/card_tables/columns/6002.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/columns/6002"
+      },
+      "content": "",
+      "description": "",
+      "completed": false,
+      "due_on": null,
+      "position": 1,
+      "assignees": [
+       {
+        "id": 1003,
+        "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMyIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1003",
+        "name": "Bo Brandt",
+        "email_address": "bo1003@example.com",
+        "personable_type": "User",
+        "title": "Programmer",
+        "bio": "",
+        "location": "",
+        "created_at": "2025-01-10T09:00:00.000Z",
+        "updated_at": "2026-09-01T09:00:00.000Z",
+        "admin": false,
+        "owner": false,
+        "client": false,
+        "employee": true,
+        "time_zone": "America/Los_Angeles",
+        "avatar_url": "https://example.com/avatar.png",
+        "company": {
+         "id": 1,
+         "name": "Eval Co"
+        },
+        "can_ping": true
+       }
+      ],
+      "completion_subscribers": [],
+      "steps": [],
+      "description_attachments": [],
+      "completion_url": "{{base}}/9999999/todos/6102/completion.json",
+      "comment_count": 0
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/card_tables/columns/6003"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 6003,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-01-05T17:00:00.000Z",
+     "updated_at": "2026-01-05T17:00:00.000Z",
+     "title": "Done",
+     "inherits_status": true,
+     "type": "Kanban::Column",
+     "url": "{{base}}/9999999/card_tables/columns/6003.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/columns/6003",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL6003.json",
+     "subscription_url": "{{base}}/9999999/recordings/6003/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/6003/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 3007,
+      "title": "Card Table",
+      "type": "Kanban::Board",
+      "url": "{{base}}/9999999/card_tables/3007.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/3007"
+     },
+     "position": 3,
+     "color": "white",
+     "description": "",
+     "on_hold": null,
+     "cards_count": 0,
+     "comment_count": 0,
+     "cards_url": "{{base}}/9999999/card_tables/lists/6003/cards.json",
+     "subscribers": []
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/card_tables/lists/6003/cards.json"
+   },
+   "response": {
+    "status": 200,
+    "body": []
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/card_tables/cards/6101"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 6101,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-10T17:00:00.000Z",
+     "updated_at": "2026-09-27T17:00:00.000Z",
+     "title": "Fix the login redirect loop",
+     "inherits_status": true,
+     "type": "Kanban::Card",
+     "url": "{{base}}/9999999/card_tables/cards/6101.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/cards/6101",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL6101.json",
+     "subscription_url": "{{base}}/9999999/recordings/6101/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/6101/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 6002,
+      "title": "In progress",
+      "type": "Kanban::Column",
+      "url": "{{base}}/9999999/card_tables/columns/6002.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/columns/6002"
+     },
+     "content": "<div>Users bounce between /login and /home after SSO.</div>",
+     "description": "<div>Users bounce between /login and /home after SSO.</div>",
+     "completed": false,
+     "due_on": null,
+     "position": 1,
+     "assignees": [
+      {
+       "id": 1002,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+       "name": "Annie Ames",
+       "email_address": "annie1002@example.com",
+       "personable_type": "User",
+       "title": "Designer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      {
+       "id": 1004,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwNCIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1004",
+       "name": "Cy Chen",
+       "email_address": "cy1004@example.com",
+       "personable_type": "User",
+       "title": "QA",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      }
+     ],
+     "completion_subscribers": [],
+     "steps": [],
+     "description_attachments": [],
+     "completion_url": "{{base}}/9999999/todos/6101/completion.json",
+     "comment_count": 0
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/card_tables/cards/6102"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 6102,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-10T17:00:00.000Z",
+     "updated_at": "2026-09-27T17:00:00.000Z",
+     "title": "Update the pricing page",
+     "inherits_status": true,
+     "type": "Kanban::Card",
+     "url": "{{base}}/9999999/card_tables/cards/6102.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/cards/6102",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL6102.json",
+     "subscription_url": "{{base}}/9999999/recordings/6102/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/6102/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 6002,
+      "title": "In progress",
+      "type": "Kanban::Column",
+      "url": "{{base}}/9999999/card_tables/columns/6002.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/columns/6002"
+     },
+     "content": "",
+     "description": "",
+     "completed": false,
+     "due_on": null,
+     "position": 1,
+     "assignees": [
+      {
+       "id": 1003,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMyIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1003",
+       "name": "Bo Brandt",
+       "email_address": "bo1003@example.com",
+       "personable_type": "User",
+       "title": "Programmer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      }
+     ],
+     "completion_subscribers": [],
+     "steps": [],
+     "description_attachments": [],
+     "completion_url": "{{base}}/9999999/todos/6102/completion.json",
+     "comment_count": 0
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/card_tables/cards/6103"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 6103,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-10T17:00:00.000Z",
+     "updated_at": "2026-09-27T17:00:00.000Z",
+     "title": "Rotate the staging certificates",
+     "inherits_status": true,
+     "type": "Kanban::Card",
+     "url": "{{base}}/9999999/card_tables/cards/6103.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/cards/6103",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL6103.json",
+     "subscription_url": "{{base}}/9999999/recordings/6103/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/6103/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 6001,
+      "title": "Triage",
+      "type": "Kanban::Column",
+      "url": "{{base}}/9999999/card_tables/columns/6001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/card_tables/columns/6001"
+     },
+     "content": "",
+     "description": "",
+     "completed": false,
+     "due_on": null,
+     "position": 1,
+     "assignees": [],
+     "completion_subscribers": [],
+     "steps": [],
+     "description_attachments": [],
+     "completion_url": "{{base}}/9999999/todos/6103/completion.json",
+     "comment_count": 0
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/vaults/3005"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 3005,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-01-05T17:00:00.000Z",
+     "updated_at": "2026-01-05T17:00:00.000Z",
+     "title": "Docs & Files",
+     "inherits_status": true,
+     "type": "Vault",
+     "url": "{{base}}/9999999/vaults/3005.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/vaults/3005",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL3005.json",
+     "subscription_url": "{{base}}/9999999/recordings/3005/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/3005/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "documents_count": 2,
+     "uploads_count": 0,
+     "vaults_count": 0,
+     "documents_url": "{{base}}/9999999/vaults/3005/documents.json",
+     "uploads_url": "{{base}}/9999999/vaults/3005/uploads.json",
+     "vaults_url": "{{base}}/9999999/vaults/3005/vaults.json",
+     "position": 1
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/vaults/3005/documents.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 7001,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-12T17:00:00.000Z",
+      "updated_at": "2026-09-27T17:00:00.000Z",
+      "title": "Launch checklist",
+      "inherits_status": true,
+      "type": "Document",
+      "url": "{{base}}/9999999/documents/7001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/documents/7001",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL7001.json",
+      "subscription_url": "{{base}}/9999999/recordings/7001/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/7001/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1002,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+       "name": "Annie Ames",
+       "email_address": "annie1002@example.com",
+       "personable_type": "User",
+       "title": "Designer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 3005,
+       "title": "Docs & Files",
+       "type": "Vault",
+       "url": "{{base}}/9999999/vaults/3005.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/vaults/3005"
+      },
+      "position": 1,
+      "content": "<div><ul><li>Freeze the release branch (Sep 30)</li><li>Final QA pass (Oct 5)</li><li>Publish release notes</li><li>Flip the pricing page</li></ul></div>"
+     },
+     {
+      "id": 7002,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-05-02T17:00:00.000Z",
+      "updated_at": "2026-05-02T17:00:00.000Z",
+      "title": "Brand voice",
+      "inherits_status": true,
+      "type": "Document",
+      "url": "{{base}}/9999999/documents/7002.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/documents/7002",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL7002.json",
+      "subscription_url": "{{base}}/9999999/recordings/7002/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/7002/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1002,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+       "name": "Annie Ames",
+       "email_address": "annie1002@example.com",
+       "personable_type": "User",
+       "title": "Designer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 3005,
+       "title": "Docs & Files",
+       "type": "Vault",
+       "url": "{{base}}/9999999/vaults/3005.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/vaults/3005"
+      },
+      "position": 2,
+      "content": "<div>Short sentences. No exclamation marks.</div>"
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/documents/7001"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 7001,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-09-12T17:00:00.000Z",
+     "updated_at": "2026-09-27T17:00:00.000Z",
+     "title": "Launch checklist",
+     "inherits_status": true,
+     "type": "Document",
+     "url": "{{base}}/9999999/documents/7001.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/documents/7001",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL7001.json",
+     "subscription_url": "{{base}}/9999999/recordings/7001/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/7001/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1002,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+      "name": "Annie Ames",
+      "email_address": "annie1002@example.com",
+      "personable_type": "User",
+      "title": "Designer",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 3005,
+      "title": "Docs & Files",
+      "type": "Vault",
+      "url": "{{base}}/9999999/vaults/3005.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/vaults/3005"
+     },
+     "position": 1,
+     "content": "<div><ul><li>Freeze the release branch (Sep 30)</li><li>Final QA pass (Oct 5)</li><li>Publish release notes</li><li>Flip the pricing page</li></ul></div>"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/documents/7002"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 7002,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-05-02T17:00:00.000Z",
+     "updated_at": "2026-05-02T17:00:00.000Z",
+     "title": "Brand voice",
+     "inherits_status": true,
+     "type": "Document",
+     "url": "{{base}}/9999999/documents/7002.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/documents/7002",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL7002.json",
+     "subscription_url": "{{base}}/9999999/recordings/7002/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/7002/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1002,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+      "name": "Annie Ames",
+      "email_address": "annie1002@example.com",
+      "personable_type": "User",
+      "title": "Designer",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": false,
+      "owner": false,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 3005,
+      "title": "Docs & Files",
+      "type": "Vault",
+      "url": "{{base}}/9999999/vaults/3005.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/vaults/3005"
+     },
+     "position": 2,
+     "content": "<div>Short sentences. No exclamation marks.</div>"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/vaults/3005/vaults.json"
+   },
+   "response": {
+    "status": 200,
+    "body": []
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/vaults/3005/uploads.json"
+   },
+   "response": {
+    "status": 200,
+    "body": []
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/questionnaires/3004"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 3004,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-01-05T17:00:00.000Z",
+     "updated_at": "2026-01-05T17:00:00.000Z",
+     "title": "Automatic Check-ins",
+     "inherits_status": true,
+     "type": "Questionnaire",
+     "url": "{{base}}/9999999/questionnaires/3004.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/questionnaires/3004",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL3004.json",
+     "subscription_url": "{{base}}/9999999/recordings/3004/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/3004/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "name": "Automatic Check-ins",
+     "questions_count": 1,
+     "questions_url": "{{base}}/9999999/questionnaires/3004/questions.json"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/questionnaires/3004/questions.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 8001,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-01-05T17:00:00.000Z",
+      "updated_at": "2026-01-05T17:00:00.000Z",
+      "title": "What did you work on this week?",
+      "inherits_status": true,
+      "type": "Question",
+      "url": "{{base}}/9999999/questions/8001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/questions/8001",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL8001.json",
+      "subscription_url": "{{base}}/9999999/recordings/8001/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/8001/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 3004,
+       "title": "Automatic Check-ins",
+       "type": "Questionnaire",
+       "url": "{{base}}/9999999/questionnaires/3004.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/questionnaires/3004"
+      },
+      "paused": false,
+      "schedule": {
+       "frequency": "every_week",
+       "days": [
+        5
+       ],
+       "hour": 16,
+       "minute": 0
+      },
+      "answers_count": 3,
+      "answers_url": "{{base}}/9999999/questions/8001/answers.json"
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/questions/8001"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 8001,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-01-05T17:00:00.000Z",
+     "updated_at": "2026-01-05T17:00:00.000Z",
+     "title": "What did you work on this week?",
+     "inherits_status": true,
+     "type": "Question",
+     "url": "{{base}}/9999999/questions/8001.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/questions/8001",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL8001.json",
+     "subscription_url": "{{base}}/9999999/recordings/8001/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/8001/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "parent": {
+      "id": 3004,
+      "title": "Automatic Check-ins",
+      "type": "Questionnaire",
+      "url": "{{base}}/9999999/questionnaires/3004.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/questionnaires/3004"
+     },
+     "paused": false,
+     "schedule": {
+      "frequency": "every_week",
+      "days": [
+       5
+      ],
+      "hour": 16,
+      "minute": 0
+     },
+     "answers_count": 3,
+     "answers_url": "{{base}}/9999999/questions/8001/answers.json"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/questions/8001/answers.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 8103,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-25T17:00:00.000Z",
+      "updated_at": "2026-09-25T17:00:00.000Z",
+      "title": "Answer for \u201cWhat did you work on this week?\u201d",
+      "inherits_status": true,
+      "type": "Question::Answer",
+      "url": "{{base}}/9999999/question_answers/8103.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/question_answers/8103",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL8103.json",
+      "subscription_url": "{{base}}/9999999/recordings/8103/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/8103/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1003,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMyIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1003",
+       "name": "Bo Brandt",
+       "email_address": "bo1003@example.com",
+       "personable_type": "User",
+       "title": "Programmer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 8001,
+       "title": "What did you work on this week?",
+       "type": "Question",
+       "url": "{{base}}/9999999/questions/8001.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/questions/8001"
+      },
+      "content": "<div>Release build pipeline, signing keys.</div>",
+      "group_on": "2026-09-25"
+     },
+     {
+      "id": 8102,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-25T17:00:00.000Z",
+      "updated_at": "2026-09-25T17:00:00.000Z",
+      "title": "Answer for \u201cWhat did you work on this week?\u201d",
+      "inherits_status": true,
+      "type": "Question::Answer",
+      "url": "{{base}}/9999999/question_answers/8102.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/question_answers/8102",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL8102.json",
+      "subscription_url": "{{base}}/9999999/recordings/8102/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/8102/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1002,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+       "name": "Annie Ames",
+       "email_address": "annie1002@example.com",
+       "personable_type": "User",
+       "title": "Designer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 8001,
+       "title": "What did you work on this week?",
+       "type": "Question",
+       "url": "{{base}}/9999999/questions/8001.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/questions/8001"
+      },
+      "content": "<div>Pricing page designs, launch illustrations.</div>",
+      "group_on": "2026-09-25"
+     },
+     {
+      "id": 8101,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-18T17:00:00.000Z",
+      "updated_at": "2026-09-18T17:00:00.000Z",
+      "title": "Answer for \u201cWhat did you work on this week?\u201d",
+      "inherits_status": true,
+      "type": "Question::Answer",
+      "url": "{{base}}/9999999/question_answers/8101.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/question_answers/8101",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL8101.json",
+      "subscription_url": "{{base}}/9999999/recordings/8101/subscription.json",
+      "comments_count": 0,
+      "comments_url": "{{base}}/9999999/recordings/8101/comments.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1004,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwNCIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1004",
+       "name": "Cy Chen",
+       "email_address": "cy1004@example.com",
+       "personable_type": "User",
+       "title": "QA",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "parent": {
+       "id": 8001,
+       "title": "What did you work on this week?",
+       "type": "Question",
+       "url": "{{base}}/9999999/questions/8001.json",
+       "app_url": "https://3.basecamp.com/9999999/buckets/2001/questions/8001"
+      },
+      "content": "<div>Regression suite for SSO.</div>",
+      "group_on": "2026-09-18"
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/schedules/3003"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 3003,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-01-05T17:00:00.000Z",
+     "updated_at": "2026-01-05T17:00:00.000Z",
+     "title": "Schedule",
+     "inherits_status": true,
+     "type": "Schedule",
+     "url": "{{base}}/9999999/schedules/3003.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/schedules/3003",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL3003.json",
+     "subscription_url": "{{base}}/9999999/recordings/3003/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/3003/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "entries_count": 0,
+     "entries_url": "{{base}}/9999999/schedules/3003/entries.json",
+     "include_due_assignments": true,
+     "position": 3
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/schedules/3003/entries.json"
+   },
+   "response": {
+    "status": 200,
+    "body": []
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/chats/3006"
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "id": 3006,
+     "status": "active",
+     "visible_to_clients": false,
+     "created_at": "2026-01-05T17:00:00.000Z",
+     "updated_at": "2026-01-05T17:00:00.000Z",
+     "title": "Chat",
+     "inherits_status": true,
+     "type": "Chat::Transcript",
+     "url": "{{base}}/9999999/chats/3006.json",
+     "app_url": "https://3.basecamp.com/9999999/buckets/2001/chats/3006",
+     "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL3006.json",
+     "subscription_url": "{{base}}/9999999/recordings/3006/subscription.json",
+     "comments_count": 0,
+     "comments_url": "{{base}}/9999999/recordings/3006/comments.json",
+     "bucket": {
+      "id": 2001,
+      "name": "Apollo",
+      "type": "Project"
+     },
+     "creator": {
+      "id": 1001,
+      "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+      "name": "Eve Evaluator",
+      "email_address": "eve1001@example.com",
+      "personable_type": "User",
+      "title": "Product Lead",
+      "bio": "",
+      "location": "",
+      "created_at": "2025-01-10T09:00:00.000Z",
+      "updated_at": "2026-09-01T09:00:00.000Z",
+      "admin": true,
+      "owner": true,
+      "client": false,
+      "employee": true,
+      "time_zone": "America/Los_Angeles",
+      "avatar_url": "https://example.com/avatar.png",
+      "company": {
+       "id": 1,
+       "name": "Eval Co"
+      },
+      "can_ping": true
+     },
+     "lines_url": "{{base}}/9999999/chats/3006/lines.json",
+     "files_url": "{{base}}/9999999/chats/3006/uploads.json"
+    }
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/chats/3006/lines.json"
+   },
+   "response": {
+    "status": 200,
+    "body": []
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/projects/2001/timeline.json"
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 9001,
+      "created_at": "2026-09-28T18:30:00.000Z",
+      "kind": "comment_created",
+      "parent_recording_id": 0,
+      "url": "{{base}}/9999999/messages/4001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/messages/4001",
+      "creator": {
+       "id": 1003,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMyIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1003",
+       "name": "Bo Brandt",
+       "email_address": "bo1003@example.com",
+       "personable_type": "User",
+       "title": "Programmer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "action": "commented on",
+      "target": "Message",
+      "title": "Launch plan",
+      "summary_excerpt": "Can we ship the release build Friday instead of Monday?",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      }
+     },
+     {
+      "id": 9002,
+      "created_at": "2026-09-22T17:00:00.000Z",
+      "kind": "message_created",
+      "parent_recording_id": 0,
+      "url": "{{base}}/9999999/messages/4001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/messages/4001",
+      "creator": {
+       "id": 1002,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+       "name": "Annie Ames",
+       "email_address": "annie1002@example.com",
+       "personable_type": "User",
+       "title": "Designer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "action": "posted a message",
+      "target": "Message",
+      "title": "Launch plan",
+      "summary_excerpt": "We launch Apollo on October 6.",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      }
+     },
+     {
+      "id": 9003,
+      "created_at": "2026-09-28T20:00:00.000Z",
+      "kind": "todo_completed",
+      "parent_recording_id": 0,
+      "url": "{{base}}/9999999/todos/5105.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5105",
+      "creator": {
+       "id": 1004,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwNCIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1004",
+       "name": "Cy Chen",
+       "email_address": "cy1004@example.com",
+       "personable_type": "User",
+       "title": "QA",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "action": "completed",
+      "target": "Todo",
+      "title": "Regression suite for SSO",
+      "summary_excerpt": "",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      }
+     },
+     {
+      "id": 9004,
+      "created_at": "2026-09-27T17:00:00.000Z",
+      "kind": "document_created",
+      "parent_recording_id": 0,
+      "url": "{{base}}/9999999/documents/7001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/documents/7001",
+      "creator": {
+       "id": 1002,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+       "name": "Annie Ames",
+       "email_address": "annie1002@example.com",
+       "personable_type": "User",
+       "title": "Designer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "action": "updated",
+      "target": "Document",
+      "title": "Launch checklist",
+      "summary_excerpt": "Freeze the release branch",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      }
+     },
+     {
+      "id": 9005,
+      "created_at": "2026-09-29T16:00:00.000Z",
+      "kind": "todo_created",
+      "parent_recording_id": 0,
+      "url": "{{base}}/9999999/todos/5202.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5202",
+      "creator": {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "action": "added",
+      "target": "Todo",
+      "title": "Book the podcast slot",
+      "summary_excerpt": "",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/search.json",
+    "query": {
+     "q": "Launch checklist"
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 7001,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-12T17:00:00.000Z",
+      "updated_at": "2026-09-27T17:00:00.000Z",
+      "title": "Launch checklist",
+      "inherits_status": true,
+      "type": "Document",
+      "url": "{{base}}/9999999/documents/7001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/documents/7001",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL7001.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1002,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+       "name": "Annie Ames",
+       "email_address": "annie1002@example.com",
+       "personable_type": "User",
+       "title": "Designer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "plain_text_content": "<div><ul><li>Freeze the release branch (Sep 30)</li><li>Final QA pass (Oct 5)</li><li>Publish release notes</li><li>Flip the pricing page</li></ul></div>"
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/search.json",
+    "query": {
+     "q": "launch checklist"
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 7001,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-12T17:00:00.000Z",
+      "updated_at": "2026-09-27T17:00:00.000Z",
+      "title": "Launch checklist",
+      "inherits_status": true,
+      "type": "Document",
+      "url": "{{base}}/9999999/documents/7001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/documents/7001",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL7001.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1002,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+       "name": "Annie Ames",
+       "email_address": "annie1002@example.com",
+       "personable_type": "User",
+       "title": "Designer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "plain_text_content": "<div><ul><li>Freeze the release branch (Sep 30)</li><li>Final QA pass (Oct 5)</li><li>Publish release notes</li><li>Flip the pricing page</li></ul></div>"
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/search.json",
+    "query": {
+     "q": "launch"
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 7001,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-12T17:00:00.000Z",
+      "updated_at": "2026-09-27T17:00:00.000Z",
+      "title": "Launch checklist",
+      "inherits_status": true,
+      "type": "Document",
+      "url": "{{base}}/9999999/documents/7001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/documents/7001",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL7001.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1002,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+       "name": "Annie Ames",
+       "email_address": "annie1002@example.com",
+       "personable_type": "User",
+       "title": "Designer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "plain_text_content": "<div><ul><li>Freeze the release branch (Sep 30)</li><li>Final QA pass (Oct 5)</li><li>Publish release notes</li><li>Flip the pricing page</li></ul></div>"
+     },
+     {
+      "id": 4001,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-22T17:00:00.000Z",
+      "updated_at": "2026-09-28T17:00:00.000Z",
+      "title": "Launch plan",
+      "inherits_status": true,
+      "type": "Message",
+      "url": "{{base}}/9999999/messages/4001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/messages/4001",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL4001.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1002,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+       "name": "Annie Ames",
+       "email_address": "annie1002@example.com",
+       "personable_type": "User",
+       "title": "Designer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "plain_text_content": "<div>We launch Apollo on October 6. Bo owns the release build; Cy runs the QA pass.</div>"
+     },
+     {
+      "id": 5101,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-01T17:00:00.000Z",
+      "updated_at": "2026-09-20T17:00:00.000Z",
+      "title": "Write the release notes",
+      "inherits_status": true,
+      "type": "Todo",
+      "url": "{{base}}/9999999/todos/5101.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/todos/5101",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL5101.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1001,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMSIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1001",
+       "name": "Eve Evaluator",
+       "email_address": "eve1001@example.com",
+       "personable_type": "User",
+       "title": "Product Lead",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": true,
+       "owner": true,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "plain_text_content": "Write the release notes"
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "method": "GET",
+    "path": "/9999999/search.json",
+    "query": {
+     "q": "checklist"
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": [
+     {
+      "id": 7001,
+      "status": "active",
+      "visible_to_clients": false,
+      "created_at": "2026-09-12T17:00:00.000Z",
+      "updated_at": "2026-09-27T17:00:00.000Z",
+      "title": "Launch checklist",
+      "inherits_status": true,
+      "type": "Document",
+      "url": "{{base}}/9999999/documents/7001.json",
+      "app_url": "https://3.basecamp.com/9999999/buckets/2001/documents/7001",
+      "bookmark_url": "{{base}}/9999999/my/bookmarks/EVAL7001.json",
+      "bucket": {
+       "id": 2001,
+       "name": "Apollo",
+       "type": "Project"
+      },
+      "creator": {
+       "id": 1002,
+       "attachable_sgid": "eyJfcmFpbHMiOnsiZGF0YSI6ImdpZDovL2JjMy9QZXJzb24vMTAwMiIsInB1ciI6ImF0dGFjaGFibGUifX0--evalperson1002",
+       "name": "Annie Ames",
+       "email_address": "annie1002@example.com",
+       "personable_type": "User",
+       "title": "Designer",
+       "bio": "",
+       "location": "",
+       "created_at": "2025-01-10T09:00:00.000Z",
+       "updated_at": "2026-09-01T09:00:00.000Z",
+       "admin": false,
+       "owner": false,
+       "client": false,
+       "employee": true,
+       "time_zone": "America/Los_Angeles",
+       "avatar_url": "https://example.com/avatar.png",
+       "company": {
+        "id": 1,
+        "name": "Eval Co"
+       },
+       "can_ping": true
+      },
+      "plain_text_content": "<div><ul><li>Freeze the release branch (Sep 30)</li><li>Final QA pass (Oct 5)</li><li>Publish release notes</li><li>Flip the pricing page</li></ul></div>"
+     }
+    ]
+   }
+  }
+ ]
+}

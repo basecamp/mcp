@@ -186,9 +186,10 @@ corpus edits never gating). The hermetic end-to-end smoke runs in the normal
 
 ## Hillclimb — deferred, each an independent increment
 
-- **Cassette player** — a record/replay stub for `basecamp-mcp`'s eager
-  startup (and, later, real dispatched-result grading), which turns basecamp
-  from a `--live` target into a hermetic one.
+- **Cassette player** — landed with the multi-turn mode below
+  (`eval/cassette`). Wiring it into this single-turn command's `basecamp`
+  profile (a Player answering `authorization.json`) is what remains to make
+  that profile hermetic too.
 - **Three-SHA rows** — stamp catalog/SDK/API SHAs on each record so a baseline
   drop keys directly to the layer that moved, and a PR touching a catalog reruns
   only the changed domains' scenarios.
@@ -199,3 +200,224 @@ corpus edits never gating). The hermetic end-to-end smoke runs in the normal
   cache reads collapse the per-scenario input cost.
 - **CI with a tiny real-model set** behind a gated secret, for a periodic signal
   rather than per-PR.
+
+## Multi-turn mode — does guidance help an agent finish?
+
+`eval/cmd/multiturn` (package `eval/multiturn`) runs an **agent loop against a
+real MCP server as a real client** — initialize, `tools/list`, `tools/call`,
+results fed back — for up to N turns per task, with the product backend
+**replayed from cassettes** (`eval/cassette`), and grades the whole trace by
+rule. It is built to answer one question: does MCP-side guidance (server
+instructions, a guide tool, a preloaded skill) make agents finish realistic
+requests more often, in fewer calls, with fewer wrong ids and no unsafe writes?
+
+### Hermetic replay — `eval/cassette`
+
+The server under test runs unchanged; only its network is replaced. The
+harness starts a **Player** (a loopback HTTP server) and launches the server
+with its API base URL pointed at it — `basecamp-mcp stdio` with
+`BASECAMP_BASE_URL=<player>` and a dummy `BASECAMP_TOKEN`, in a minimal
+environment with a throwaway `HOME`, so nothing from the operator's shell
+(a real token, a config file) can reach it. The server's own SDK client,
+pagination, mention expansion, and error masking all run for real.
+
+- A cassette is `method + path + query → status + headers + JSON body`.
+  Query matching is a subset match (the most specific interaction wins),
+  a trailing `.json` is optional, later cassettes override earlier ones (a
+  task cassette layered on a shared world), and a read recorded before and
+  after a write is served in the state the replay's own writes have reached
+  (`after`, the writes that had landed) — re-reading never advances it. `{{base}}` in a body or
+  header becomes the Player's URL, so
+  absolute URLs the server follows come back to the Player.
+- An unmatched request is a 404, as the API would answer an id the account
+  does not have — and it is logged. **The Player's exchange log is the
+  replayed backend's final state**: every write the agent's calls produced,
+  with the body the server actually sent.
+
+### Tasks, arms, grading
+
+- **Tasks** (`testdata/multiturn/<server>/tasks.json`) are realistic
+  phrasings — reply to a comment URL mentioning a person, what's overdue for
+  me, summarize a project's week, move card N to Done, trash stale to-dos,
+  post a status update, find a doc, who's assigned to a card, check-in
+  answers, create an assigned to-do due Friday, schedule a meeting, post to
+  chat. The corpus pins **today** (`2026-09-29`) to match the cassettes.
+  Each task carries **accept patterns** in the spirit of basecamp-cli's
+  `skill-evals/`: `expect.calls` over call lines (`<op> <params JSON>` —
+  surface-independent: a gateway call's action and a flat tool's name
+  normalize to the same op), `expect.writes` over the **writes that landed**
+  (`METHOD /path?query <body>`) — `expect.write_groups` when several
+  patterns must hold for one and the same write (the to-do assigned to
+  Annie *and* due Friday *and* titled as asked) — and `expect.answer` over
+  the final reply (a read-only task also needs at least one read the
+  backend answered during a tool call);
+  plus **reject patterns** that are safety violations (a permanent `DELETE`
+  when trash was asked for, a mention of the wrong Annie, a comment on the
+  wrong recording). A `read_only` task fails on any landed write. Each task
+  also carries a **gold script** — the proof its cassettes cover a correct
+  solution.
+- **Arms** (`testdata/multiturn/<server>/arms.json`): `bare`,
+  `instructions`, `guide`, `skill` — cumulative by default (the plugin case
+  has all three), each an explicit set of switches so an isolated arm is one
+  edit. An arm is realized on **both** sides: `server_args`/`server_env`
+  are the flags or config the server takes to switch its guidance, applied
+  when the harness launches it; and the client passes server instructions to
+  the model only when the arm says so, lists the `guide_tools` only when the
+  arm says so, and preloads the skill (`skill_resource` read over MCP, or
+  `skill_file` beside the arms file) only when the arm says so. The client
+  side makes `bare` truly bare against any server build; the server side
+  covers what a client cannot strip. **An arm the server cannot honor is
+  refused before any spend** — `guide` against a build that does not list every
+  `guide_tools` entry fails preflight rather than being measured as bare.
+- **Metrics per episode**: pass (every expectation met, no safety violation,
+  turn budget not exhausted), score (fraction of expectations met, zeroed by a
+  safety violation), calls, turns, guide calls, **wrong_id** (backend requests
+  the cassette could not answer), **wrong_tool** (calls rejected before the
+  backend: hidden/unknown tool, unknown action, invalid params), **safety**,
+  tokens (uncached, cache write, cache read), and cost.
+
+### Backends
+
+| `--backend` | Agent | Needs |
+|---|---|---|
+| `script` | each task's gold script, no model | nothing — the CI smoke |
+| `api` | Anthropic Messages API tool-use loop, exact usage, automatic prompt caching | `ANTHROPIC_API_KEY` |
+| `cli` | the local `claude` CLI as the MCP host (the plugin case) through a stdio bridge to the episode's surface | a logged-in `claude` |
+
+`--models` takes `haiku` (`claude-haiku-4-5-20251001`), `sonnet`
+(`claude-sonnet-5`), `opus` (`claude-opus-5-5`), or any raw model id. Under
+`cli`, Claude Code receives server instructions through `initialize` and puts
+them in its own system prompt, so the harness prompt leaves them out; it runs
+with the harness prompt in place of its default, no built-in tools, only the
+bridge as MCP server, and no setting sources. Cost there is the CLI's own
+figure.
+
+### Run it
+
+```bash
+# CI smoke: in-process fake server, every arm, gold scripts, gated:
+make eval-multiturn-smoke
+
+# basecamp-mcp replayed — build it from its own checkout first:
+(cd ../basecamp-mcp-server && go build -o /tmp/basecamp-mcp ./cmd/basecamp-mcp)
+
+# Prove the cassettes cover every task's gold path (no model):
+go run ./eval/cmd/multiturn --server basecamp \
+    --server-cmd "/tmp/basecamp-mcp stdio" --backend script --arms bare
+
+# Measure: small + frontier model, arms the build can honor:
+go run ./eval/cmd/multiturn --server basecamp \
+    --server-cmd "/tmp/basecamp-mcp stdio" --backend cli \
+    --models haiku,sonnet --arms bare,instructions \
+    --out /tmp/basecamp-mt.jsonl
+
+# Regression gate against a prior run of the same models and arms:
+go run ./eval/cmd/multiturn ... --out /tmp/now.jsonl --baseline /tmp/basecamp-mt.jsonl
+```
+
+`--only` narrows to task ids, `--max-turns` overrides the budget,
+`--parallel N` runs N episodes at once (each has its own Player and server
+process), `EVAL_DEBUG=1` passes the server's stderr through.
+
+Which arms a basecamp build can honor today: `bare` always; `instructions`
+from a build that sends initialize instructions (basecamp/basecamp-mcp-server#172 onward); `guide` once
+the server lists `get_basecamp_guide`; `skill` once `skill.md` sits beside
+`arms.json` (the plugin's skill draft) or `skill_resource` names the URI the
+server serves it at. When the server gains a flag to switch its guidance off
+(so error hints and descriptions vary by arm too), put it in each arm's
+`server_args`.
+
+### The first run
+
+`results/multiturn/basecamp-cli-v0.jsonl`: `--backend cli`, basecamp-mcp
+built from basecamp/basecamp-mcp-server#172 (the first build with initialize
+instructions), the two arms that build can honor, 16 tasks, temp default:
+
+```
+model   arm           pass    rate  calls/task  wrong_id  wrong_tool  safety  cost_usd
+haiku   bare          14/16   88%   4.7         12        7           0/16    $0.4123
+haiku   instructions  13/16   81%   4.6         14        6           0/16    $0.4293
+sonnet  bare          15/16   94%   4.8         7         18          0/16    $0.8879
+sonnet  instructions  15/16   94%   5.2         8         22          0/16    $0.8829
+                                                             TOTAL COST: $2.6123 / 64 episodes
+```
+
+n=1 per cell, so a one-task swing is noise; what the traces show is not.
+**Mentions fail everywhere**: every model × arm misses
+`reply-comment-mention`, writing `@Annie` as plain text or inventing
+`data-mention` markup instead of passing `mentions: [1002]` — the #172
+instructions do not move it. Haiku also misdates "this Friday" and sends
+zone-less times to the schedule. Sonnet's high **wrong_tool** is guessed
+params (`project_id`, `bucket_id` on bucket-less actions) refused by the
+gateway before the backend. Those are the targets for the guide, the skill,
+and error `next` hints — the arms this build could not yet run.
+
+### Regression gate
+
+Same contract as the single-turn gate, keyed on `(model, arm, task)`:
+**newly-failing**, **score-drop**, and **new safety violation** gate (nonzero
+exit); improved / added / removed are reported. A baseline with no overlapping
+cell, duplicate cells, records missing fields, or a label now naming a
+different model is refused — before spend where it can be. Efficiency (calls,
+tokens, cost) is reported, never gated: one more call to finish is not a
+server regression.
+
+### Cassettes — the committed ones, and recording more
+
+`testdata/multiturn/basecamp/cassettes/` is **hand-authored and fictional**:
+Eval Co (account `9999999`), five people (two Annies, one of whom is not on
+the project), the Apollo project's board, to-dos, card table, docs, check-ins,
+schedule, chat and timeline (`world.json`), plus the write endpoints the tasks
+may hit — right and plausibly wrong (`writes.json`). Person sgids are real
+envelopes (`gid://bc3/Person/N`, purpose `attachable`) so the SDK's mention
+expansion runs; their digest is a readable `--evalpersonN` marker, not a
+signature. A test keeps every committed cassette free of live origins,
+tokens, and non-`example.com` addresses.
+
+To **record** real cassettes, use a **seeded test account — never
+production**. Write a profile:
+
+```json
+{
+  "name": "bc-eval-seed",
+  "test_account": true,
+  "upstream": "https://3.basecampapi.com",
+  "account_ids": ["<test account id>"],
+  "token_env": "BC_EVAL_TOKEN",
+  "alias_key_env": "BC_EVAL_ALIAS_KEY",
+  "redact": {"<real name in the seed>": "<fixture name>"}
+}
+```
+
+then record one task at a time — one `--only` task, one `--arms` arm, and
+one `--models` label for a model backend, reseeding between recordings — with `--record-profile profile.json --record-dir <dir>`
+(the gold scripts under `--backend script` record exactly the gold path; a
+model backend records what it explored). The recorder proxies to the
+upstream: it injects the token itself (the server keeps its dummy), refuses —
+locally, never forwarded — any account the profile does not list, refuses a
+token whose identity document lists any other account, records 404s as misses
+(replayed, still a wrong id — and able to override a stale lower layer), and stores
+only scrubbed data: no request headers, an allowlist of response headers, the
+upstream origin as `{{base}}`, emails as keyed aliases (`person-<hmac>@example.com`, keyed by the secret in `alias_key_env` so they survive a token rotation; without it, by the token, stable only while the token is), avatar URLs
+replaced, and the profile's `redact` literals applied.
+
+The scrubber is a safety net, not the guarantee. It rewrites text — origins,
+ASCII email addresses, avatar URLs, the token, and the profile's literal
+names (never JSON values: a literal that parses as JSON is refused) — and
+cannot know every form personal data takes. The guarantee is the seeded
+account: record only fictional data you seeded yourself, and **read each
+recorded cassette before committing it**. Recording performs the
+task's writes on the test account, so reseed between recordings. Each task's
+cassette lands at `<dir>/<task-id>.json` (merged across episodes); point the
+task's `cassettes` at it (and at a shared world, if any) and rewrite its
+`expect` ids to the recorded account's. The tasks' prompts name the fixture
+world, so a recorded corpus is its own `tasks.json` beside its cassettes.
+
+**Replay limits, on purpose.** State follows writes by endpoint and
+occurrence (`after`), with the request body picking between answers recorded
+in the same state. Two *different* writes to one endpoint replayed in the
+opposite order to the recording get each other's answers (ids, echoed
+fields). The grade is unaffected — it reads the bodies the replay actually
+received — and a fully causal model is not worth it at fixture scale.
+Repeated query keys are single-valued in a cassette; no server under test
+sends them.

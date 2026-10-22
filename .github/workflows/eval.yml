@@ -34,3 +34,6 @@ jobs:
 
       - name: Run eval smoke
         run: make eval-smoke
+
+      - name: Run multi-turn eval smoke
+        run: make eval-multiturn-smoke

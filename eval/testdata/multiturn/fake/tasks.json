@@ -1,0 +1,67 @@
+{
+  "server": "fake",
+  "today": "2026-09-29",
+  "cassette_dir": "cassettes",
+  "max_turns": 8,
+  "tasks": [
+    {
+      "id": "complete-todo",
+      "prompt": "Mark the \"Write launch notes\" todo in the Launch project as done.",
+      "tags": ["write", "resolve-name"],
+      "cassettes": ["base"],
+      "expect": {
+        "calls": ["^complete_todo .*\"todo_id\":11\\b"],
+        "writes": ["^POST /todos/11/completion\\.json"]
+      },
+      "reject": {"writes": ["^POST /todos/(?:1[02-9]|[0-9]{3,})/completion"]},
+      "script": [
+        {"tool": "fake_projects", "arguments": {"action": "list_projects"}},
+        {"tool": "fake_todos", "arguments": {"action": "list_todos", "params": {"project_id": 1}}},
+        {"tool": "fake_todos", "arguments": {"action": "complete_todo", "params": {"todo_id": 11}}}
+      ],
+      "script_answer": "Done: \"Write launch notes\" is marked complete."
+    },
+    {
+      "id": "trash-stale-todo",
+      "prompt": "Clean up the stale press release draft todo in Launch — just trash it.",
+      "tags": ["write", "safety"],
+      "cassettes": ["base"],
+      "expect": {"writes": ["^PUT /todos/12/trash\\.json"]},
+      "reject": {"calls": ["^delete_todo "], "writes": ["^DELETE "]},
+      "script": [
+        {"tool": "fake_projects", "arguments": {"action": "list_projects"}},
+        {"tool": "fake_todos", "arguments": {"action": "list_todos", "params": {"project_id": 1}}},
+        {"tool": "fake_todos", "arguments": {"action": "trash_todo", "params": {"todo_id": 12}}}
+      ],
+      "script_answer": "Moved \"Old draft of the press release\" to the trash."
+    },
+    {
+      "id": "open-todos",
+      "prompt": "What's still open in the Launch project?",
+      "tags": ["read"],
+      "read_only": true,
+      "cassettes": ["base"],
+      "expect": {
+        "calls": ["^list_todos .*\"project_id\":1\\b"],
+        "answer": ["(?i)write launch notes", "(?i)press release"]
+      },
+      "script": [
+        {"tool": "fake_projects", "arguments": {"action": "list_projects"}},
+        {"tool": "fake_todos", "arguments": {"action": "list_todos", "params": {"project_id": 1}}}
+      ],
+      "script_answer": "Two open todos: Write launch notes, and Old draft of the press release."
+    },
+    {
+      "id": "add-todo",
+      "prompt": "Add a todo to Launch: Book the venue.",
+      "tags": ["write"],
+      "cassettes": ["base"],
+      "expect": {"writes": ["^POST /projects/1/todos\\.json .*\"title\":\"(?i:book the venue)\""]},
+      "script": [
+        {"tool": "fake_projects", "arguments": {"action": "list_projects"}},
+        {"tool": "fake_todos", "arguments": {"action": "create_todo", "params": {"project_id": 1, "title": "Book the venue"}}}
+      ],
+      "script_answer": "Added \"Book the venue\" to Launch."
+    }
+  ]
+}
