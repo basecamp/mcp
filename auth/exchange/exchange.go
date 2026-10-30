@@ -111,7 +111,24 @@ type Token struct {
 	// so an empty Scope is "unknown", never "nothing": a caller that filters
 	// what it serves by scope must treat it as the narrowest grant.
 	Scope string
+	// GrantID names the authorization grant the subject token rides on, as
+	// the AS reported it in grant_id, the token response member of OAuth
+	// Grant Management (draft-ietf-oauth-grant-management): the id a person
+	// revokes the grant by, which a caller keys per-grant state on. Empty
+	// when the response omitted it, as bc3's does, and when it isn't a
+	// string of at most MaxGrantIDBytes visible ASCII characters. Decoding
+	// is lenient on purpose: the member is an extension no caller needs to
+	// mint or present the token, so a malformed one never fails the
+	// exchange, it just leaves the grant unidentified. An empty GrantID is
+	// "unknown", never a grant of its own: a caller must not key state on it
+	// and should take the strictest path it has for an unidentified grant.
+	GrantID string
 }
+
+// MaxGrantIDBytes bounds a grant_id the exchanger passes through. A longer
+// one is dropped (Token.GrantID empty), so an endpoint can't hand a caller
+// an unbounded store key or log field.
+const MaxGrantIDBytes = 255
 
 // New validates cfg and returns an Exchanger. Every required field fails
 // closed: a half-configured exchanger must never be constructed and then
@@ -331,6 +348,9 @@ func parseTokenResponse(body []byte) (*Token, error) {
 		ExpiresIn         *int64 `json:"expires_in"`
 		SubjectTokenBound *bool  `json:"subject_token_bound"`
 		Scope             string `json:"scope"`
+		// Raw, so a grant_id of the wrong type can't fail the decode
+		// (Token.GrantID).
+		GrantID json.RawMessage `json:"grant_id"`
 	}
 	if err := json.Unmarshal(body, &tr); err != nil {
 		return nil, newInfra(http.StatusOK, "", "token response is not the JSON this server expects", err)
@@ -367,6 +387,7 @@ func parseTokenResponse(body []byte) (*Token, error) {
 		TokenType:         tr.TokenType,
 		SubjectTokenBound: tr.SubjectTokenBound,
 		Scope:             tr.Scope,
+		GrantID:           grantID(tr.GrantID),
 	}
 	// Absent expires_in means "lifetime unknown" (ExpiresAt zero, cached
 	// under the TTL cap). An EXPLICIT zero or negative value is different:
@@ -421,6 +442,21 @@ func (e *Exchanger) classifyOAuthError(resp *http.Response, body []byte, form ur
 		ie.Description = description
 		return ie
 	}
+}
+
+// grantID reads a grant_id member leniently: a JSON string of visible ASCII
+// within MaxGrantIDBytes, or "" for anything else (absent, null, a number,
+// an object, empty, too long, or holding spaces or control characters).
+// Endpoint-controlled text, so nothing about a refused value is reported.
+func grantID(raw json.RawMessage) string {
+	var id string
+	if len(raw) == 0 || json.Unmarshal(raw, &id) != nil {
+		return ""
+	}
+	if id == "" || len(id) > MaxGrantIDBytes || !headerSafeToken(id) {
+		return ""
+	}
+	return id
 }
 
 // headerSafeToken reports whether tok is visible ASCII with no spaces, the

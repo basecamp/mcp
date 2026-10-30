@@ -979,6 +979,59 @@ func TestScopeReported(t *testing.T) {
 	}
 }
 
+// TestGrantIDReported: grant_id (OAuth Grant Management's token response
+// member) is passed through when it is a usable string, and read as unknown
+// otherwise. Unlike scope, a malformed grant_id never fails the exchange:
+// the member is an extension the token doesn't need, so the exchange
+// succeeds with GrantID empty, and the other members are still read.
+func TestGrantIDReported(t *testing.T) {
+	const base = `"access_token":"x","token_type":"Bearer","issued_token_type":"urn:ietf:params:oauth:token-type:access_token","scope":"read write"`
+	long := strings.Repeat("g", MaxGrantIDBytes)
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{"absent means unknown", `{` + base + `}`, ""},
+		{"null means unknown", `{` + base + `,"grant_id":null}`, ""},
+		{"a string, untouched", `{` + base + `,"grant_id":"8kHdQx2p"}`, "8kHdQx2p"},
+		{"a numeric string stays a string", `{` + base + `,"grant_id":"1234"}`, "1234"},
+		{"at the length bound", `{` + base + `,"grant_id":"` + long + `"}`, long},
+		{"past the length bound", `{` + base + `,"grant_id":"` + long + `g"}`, ""},
+		{"empty", `{` + base + `,"grant_id":""}`, ""},
+		{"a number", `{` + base + `,"grant_id":1234}`, ""},
+		{"a boolean", `{` + base + `,"grant_id":true}`, ""},
+		{"an array", `{` + base + `,"grant_id":["a"]}`, ""},
+		{"an object", `{` + base + `,"grant_id":{"id":"a"}}`, ""},
+		{"a space", `{` + base + `,"grant_id":"a b"}`, ""},
+		{"a control character", `{` + base + `,"grant_id":"a\nb"}`, ""},
+		{"non-ASCII", `{` + base + `,"grant_id":"gr\u00e4nt"}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprint(w, tc.body)
+			}))
+			defer srv.Close()
+
+			ex, err := New(Config{TokenURL: srv.URL, Auth: ClientSecretPost("id", "secret")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tok, err := ex.Exchange(context.Background(), "subject")
+			if err != nil {
+				t.Fatalf("Exchange: %v, want success whatever grant_id holds", err)
+			}
+			if tok.GrantID != tc.want {
+				t.Errorf("GrantID = %q, want %q", tok.GrantID, tc.want)
+			}
+			if tok.AccessToken != "x" || tok.Scope != "read write" {
+				t.Errorf("Token = %+v: the other members must be read alongside grant_id", tok)
+			}
+		})
+	}
+}
+
 // TestRedirectRefused: a token endpoint answering 3xx must become an
 // InfraError, never a followed redirect — 307/308 would replay the subject
 // token and client credentials to whatever origin Location names.
