@@ -178,6 +178,14 @@ type truncation struct {
 // The one-text-block JSON shape gets the exact cut; any other shape the
 // coarse one (see the package's size-cap notes).
 func Cap(result *mcp.CallToolResult, maxBytes int) *mcp.CallToolResult {
+	return capList(result, maxBytes, "")
+}
+
+// capList is Cap, cutting the named top-level list of a listing that names
+// its offset however many lists sit beside it: the field a server named in
+// Paging.Listings, whose offset the middleware set. "" leaves the choice to
+// the cap's own rules.
+func capList(result *mcp.CallToolResult, maxBytes int, field string) *mcp.CallToolResult {
 	if result == nil || result.IsError || asksForInput(result) || maxBytes <= 0 {
 		return result
 	}
@@ -186,7 +194,7 @@ func Cap(result *mcp.CallToolResult, maxBytes int) *mcp.CallToolResult {
 	if err == nil && size <= limit-frameReserve {
 		return result
 	}
-	if out := capExact(result, size, limit); out != nil {
+	if out := capExact(result, size, limit, field); out != nil {
 		return out
 	}
 	return capCoarse(result, size, limit)
@@ -237,7 +245,7 @@ func standard(result *mcp.CallToolResult) (tc *mcp.TextContent, value any, resta
 
 // capExact cuts a result in the standard shape, or returns nil when it is in
 // another shape or no cut of its JSON fits (its _meta alone too large, say).
-func capExact(result *mcp.CallToolResult, originalBytes, limit int) *mcp.CallToolResult {
+func capExact(result *mcp.CallToolResult, originalBytes, limit int, field string) *mcp.CallToolResult {
 	tc, value, restated, ok := standard(result)
 	if !ok {
 		return nil
@@ -254,7 +262,7 @@ func capExact(result *mcp.CallToolResult, originalBytes, limit int) *mcp.CallToo
 		n, err := wireBytes(serve(payload))
 		return err == nil && n <= limit-frameReserve
 	}
-	payload := capJSON(value, originalBytes, limit, fits)
+	payload := capJSON(value, originalBytes, limit, fits, field)
 	if payload == nil {
 		return nil
 	}
@@ -315,7 +323,7 @@ func withText(tc *mcp.TextContent, text string) *mcp.TextContent {
 // capJSON renders value as the payload of a result that fits: compact if
 // that fits, else with its largest list shortened, else as a flagged prefix
 // of its compact text; nil when not even an empty prefix fits.
-func capJSON(value any, originalBytes, limit int, fits func([]byte) bool) []byte {
+func capJSON(value any, originalBytes, limit int, fits func([]byte) bool, field string) []byte {
 	compact, err := json.Marshal(value)
 	if err != nil {
 		return nil
@@ -323,7 +331,7 @@ func capJSON(value any, originalBytes, limit int, fits func([]byte) bool) []byte
 	if fits(compact) {
 		return compact
 	}
-	if out := shortenLargestList(value, originalBytes, limit, fits); out != nil {
+	if out := shortenLargestList(value, field, originalBytes, limit, fits); out != nil {
 		return out
 	}
 	if ordered, err := prefixOrder(value); err == nil {
@@ -453,11 +461,11 @@ func FitLeading(n int, fits func(k int) bool) int {
 	return lo
 }
 
-// shortenLargestList cuts the payload's largest list to the most leading
-// items that fit, or returns nil when it can't be cut safely: no list, a
-// continuation that could belong to another list, or no cut that fits and
-// makes progress.
-func shortenLargestList(value any, originalBytes, limit int, fits func([]byte) bool) []byte {
+// shortenLargestList cuts the payload's largest list (or, when named, the
+// list whose offset the payload names) to the most leading items that fit,
+// or returns nil when it can't be cut safely: no list, a continuation that
+// could belong to another list, or no cut that fits and makes progress.
+func shortenLargestList(value any, named string, originalBytes, limit int, fits func([]byte) bool) []byte {
 	var (
 		items []any
 		field string
@@ -471,13 +479,19 @@ func shortenLargestList(value any, originalBytes, limit int, fits func([]byte) b
 			return map[string]any{ItemsKey: kept, "truncated": true, "truncation": t}
 		}
 	case map[string]any:
-		field = largestArrayField(v)
+		field = named
+		if field == "" {
+			field = largestArrayField(v)
+		}
 		arr, ok := v[field].([]any)
 		if !ok {
 			return nil
 		}
 		cont = pageContinuationOf(v)
-		if cont != nil && arrayFields(v) > 1 {
+		if named != "" && cont == nil {
+			return nil
+		}
+		if named == "" && cont != nil && arrayFields(v) > 1 {
 			// The offset could belong to any of the lists; continuing the
 			// largest one could skip items of the list it really pages.
 			return nil

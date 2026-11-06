@@ -48,7 +48,12 @@ func servePaged(t *testing.T, maxBytes int, answer func(tool string, args map[st
 	}
 	server.AddReceivingMiddleware(PagingMiddleware(maxBytes, Paging{
 		Records:  func(tool string) bool { return tool == "get_record" },
-		Listings: func(tool string) bool { return tool == "list_things" },
+		Listings: func(tool string) string {
+			if tool == "list_things" {
+				return "items"
+			}
+			return ""
+		},
 	}))
 	ps.session = mcptest.Connect(t, server)
 	return ps
@@ -213,7 +218,7 @@ func thing(id, n int) map[string]any {
 }
 
 // A HEY-shaped listing ({"items": [...], "next_page": cursor}, paged by an
-// opaque cursor, no offset of its own) is cut to whole items and continued
+// opaque cursor, no offset of its own, another list beside the one paged) is cut to whole items and continued
 // within its page: following truncation.continue reads every item of the
 // page exactly once, an item too large alone is named by its app_url and
 // stepped past, and next_page survives for after.
@@ -232,7 +237,9 @@ func TestPaging_ListingContinuesWithinItsPage(t *testing.T) {
 	}
 	ps := servePaged(t, MinBytes*2, func(_ string, args map[string]any) *mcp.CallToolResult {
 		cursor, _ := args["page"].(string)
-		out := map[string]any{"items": pages[cursor]}
+		// A second list beside the one paged, as a thread's participants
+		// sit beside its messages, is served whole.
+		out := map[string]any{"items": pages[cursor], "participants": []any{"ann", "bo"}}
 		if cursor == "" {
 			out["next_page"] = "CUR2"
 		}
@@ -258,6 +265,7 @@ func TestPaging_ListingContinuesWithinItsPage(t *testing.T) {
 			assert.Equal(t, got, structured(t, res))
 			assert.NotContains(t, got, "partial_json")
 			read = append(read, asList(t, got["items"])...)
+			assert.Equal(t, []any{"ann", "bo"}, got["participants"])
 			if cursor == "" {
 				assert.Equal(t, "CUR2", got["next_page"], "next_page is kept for after the page")
 			}
