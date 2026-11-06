@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"math/big"
 	"strings"
 	"unicode/utf8"
 
@@ -203,7 +204,8 @@ func takeArgument(raw json.RawMessage, key string) (json.RawMessage, int, any, *
 	return data, n, page, nil
 }
 
-// nonNegativeInt reads a JSON number that is a whole number >= 0 (null is
+// nonNegativeInt reads a JSON number that is a whole number >= 0, in any
+// spelling (3, 3.0, 3e0), read exactly: 1.0000000000000001 is not 1 (null is
 // 0, as if absent).
 func nonNegativeInt(v any) (int, bool) {
 	if v == nil {
@@ -213,14 +215,11 @@ func nonNegativeInt(v any) (int, bool) {
 	if !ok {
 		return 0, false
 	}
-	if i, err := num.Int64(); err == nil {
-		return int(i), i >= 0 && i <= math.MaxInt32
-	}
-	f, err := num.Float64()
-	if err != nil || f != math.Trunc(f) || f < 0 || f > math.MaxInt32 {
+	r, ok := new(big.Rat).SetString(num.String())
+	if !ok || !r.IsInt() || r.Sign() < 0 || !r.Num().IsInt64() || r.Num().Int64() > math.MaxInt32 {
 		return 0, false
 	}
-	return int(f), true
+	return int(r.Num().Int64()), true
 }
 
 // errorResult is a tool error the middleware answers with.

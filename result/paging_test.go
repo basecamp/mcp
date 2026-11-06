@@ -156,7 +156,7 @@ func TestPaging_RecordThatFitsIsUntouched(t *testing.T) {
 func TestPaging_ContentOffsetRefusals(t *testing.T) {
 	record := map[string]any{"id": 1, "description": strings.Repeat("d", 100)}
 	ps := servePaged(t, MinBytes, func(string, map[string]any) *mcp.CallToolResult { return JSON(record) })
-	for _, bad := range []any{-1, 1.5, "3", true} {
+	for _, bad := range []any{-1, 1.5, "3", true, json.RawMessage("1.0000000000000001"), json.RawMessage("1e400")} {
 		res := ps.call(t, "get_record", map[string]any{ContentOffsetKey: bad})
 		assert.True(t, res.IsError, "%v", bad)
 		assert.Contains(t, resultText(t, res), "content_offset must be an integer >= 0")
@@ -172,9 +172,15 @@ func TestPaging_ContentOffsetRefusals(t *testing.T) {
 	assert.True(t, res.IsError)
 	assert.Contains(t, resultText(t, res), "has none")
 
-	// content_offset 0 is the default, and a whole-number float is a number.
-	res = ps.call(t, "get_record", map[string]any{ContentOffsetKey: 0.0})
-	assert.False(t, res.IsError)
+	// content_offset 0 is the default, and a whole number in any spelling is
+	// a number.
+	for _, zero := range []any{0.0, json.RawMessage("0e5"), json.RawMessage("0.000")} {
+		res = ps.call(t, "get_record", map[string]any{ContentOffsetKey: zero})
+		assert.False(t, res.IsError, "%v", zero)
+	}
+	n, ok := nonNegativeInt(json.Number("3e1"))
+	assert.True(t, ok)
+	assert.Equal(t, 30, n)
 }
 
 // A later part that fits whole is still flagged, with the end hint and no
