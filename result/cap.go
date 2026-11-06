@@ -7,6 +7,7 @@ import (
 	"io"
 	"maps"
 	"sort"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -58,10 +59,19 @@ import (
 // (the page/offset contract; see pageContinuationOf); cutting its list adds
 // truncation.continue, the page and offset of the first item cut, because
 // those listings have no page size to shrink — re-requesting would cut the
-// same way, and following next_page would skip the cut items. An item too
-// large to be served even alone is named in truncation.oversized_item (by
-// position, and id when it has one) and the continuation steps past it, so
-// continuing always makes progress.
+// same way, and following next_page would skip the cut items. The page is
+// whatever the listing's page argument took: a number, or an opaque cursor
+// (HEY's next_page). An item too large to be served even alone is named in
+// truncation.oversized_item (by position, id when it has one, and app_url
+// when it has a link: reading that record on its own pages its long text, see
+// paging.go) and the continuation steps past it, so continuing always makes
+// progress. A listing whose handler doesn't take an offset itself gets the
+// contract from the middleware (Paging.Listings).
+//
+// A single record has no list to shorten. Where the middleware knows the tool
+// reads one (Paging.Records), an oversized record has its rich-text fields
+// served as a window of bytes, every other field whole, with
+// truncation.continue.content_offset reading on (paging.go).
 //
 // Every other shape — several content blocks, prose beside structured
 // content, structured content alone, plain text, non-text content — gets the
@@ -91,12 +101,25 @@ const truncationHint = "The result exceeded the server's size limit and was cut,
 // page-numbered listing, which can be continued exactly.
 const continueHint = "The result exceeded the server's size limit and was cut to fit. Call again with the page and offset in truncation.continue to get the items that were cut, before following next_page."
 
+// firstPageHint replaces truncationHint when the cut list is the first page
+// of a paged listing, asked for without a page: the offset alone continues
+// it, and next_page comes after.
+const firstPageHint = "The result exceeded the server's size limit and was cut to fit. Call again with the offset in truncation.continue to get the items that were cut, before following next_page."
+
 // offsetHint replaces truncationHint when the cut list belongs to a listing
 // that takes only an offset: there is no page and no next_page to follow.
 const offsetHint = "The result exceeded the server's size limit and was cut to fit. Call again with the offset in truncation.continue to get the items that were cut."
 
 // oversizedHint replaces the hint when the next item exceeds the limit alone.
-const oversizedHint = "The next item exceeds the server's size limit on its own and cannot be returned; truncation.oversized_item names it by position and id. truncation.continue, when present, resumes after it."
+// The item is named by its app_url where it has one, because a link is what
+// reads it on its own, where a long body is served in parts.
+// shortOversizedHint is oversizedHint where the full one does not fit: it is
+// shorter than every other hint, so an envelope that steps past the item fits
+// wherever the empty one does.
+const (
+	oversizedHint      = "The next item exceeds the server's size limit on its own and cannot be returned in this listing; truncation.oversized_item names it by position and id, and by app_url where it has one: reading that record on its own serves a long body in parts it can continue. truncation.continue, when present, resumes after it."
+	shortOversizedHint = "The next item is too large to return; truncation.continue skips it."
+)
 
 // withheldHint explains the coarse cut.
 const withheldHint = "The result exceeded the server's size limit and could not be cut to fit, so it was withheld. Narrow the request with filters, or read a specific record directly."
@@ -117,17 +140,20 @@ const frameReserve = 512
 // positive setting is raised to it.
 const MinBytes = 4096
 
-// pageContinuation is where a cut listing resumes. Page is absent for the
-// unpaginated listings that take only an offset.
+// pageContinuation is where a cut listing resumes. Page is the page the
+// listing was served at, a number or an opaque cursor, as the listing named
+// it; absent for a listing that takes only an offset, or a first page asked
+// for without one.
 type pageContinuation struct {
-	Page   *int64 `json:"page,omitempty"`
-	Offset int64  `json:"offset"`
+	Page   any   `json:"page,omitempty"`
+	Offset int64 `json:"offset"`
 }
 
 // oversizedItem names an item that cannot fit within the limit on its own.
 type oversizedItem struct {
-	Index int `json:"index"`
-	ID    any `json:"id,omitempty"`
+	Index  int    `json:"index"`
+	ID     any    `json:"id,omitempty"`
+	AppURL string `json:"app_url,omitempty"`
 }
 
 // truncation is the explanation attached to a cut result.
@@ -479,25 +505,29 @@ func shortenLargestList(value any, originalBytes, limit int, fits func([]byte) b
 		return nil
 	}
 	// render keeps the first k items; oversized marks item k as too large to
-	// fit alone, so the continuation steps past it.
-	render := func(k int, oversized, withID bool) []byte {
+	// fit alone, so the continuation steps past it, naming it as fully as
+	// shed allows.
+	render := func(k int, oversized bool, shed naming) []byte {
 		t := truncation{
 			LimitBytes: limit, OriginalBytes: originalBytes, Field: field,
 			Returned: &k, Total: &total, Hint: truncationHint,
 		}
 		next := k
 		if cont != nil {
-			t.Hint = continueHint
-			if cont(0).Page == nil {
-				t.Hint = offsetHint
-			}
+			t.Hint = continuationHint(value, cont(0).Page != nil)
 		}
 		if oversized {
 			t.OversizedItem = &oversizedItem{Index: k}
-			if withID {
+			if shed <= namedByURL {
+				t.OversizedItem.AppURL = itemAppURL(items[k])
+			}
+			if shed <= namedByID {
 				t.OversizedItem.ID = itemID(items[k])
 			}
 			t.Hint = oversizedHint
+			if shed == namedTersely {
+				t.Hint = shortOversizedHint
+			}
 			next = k + 1
 		}
 		if cont != nil && next < total {
@@ -514,19 +544,22 @@ func shortenLargestList(value any, originalBytes, limit int, fits func([]byte) b
 	// Never a zero-item page: its continuation would point back at the same
 	// offset forever. When not even one item fits, it is skipped as
 	// oversized, or the list isn't cut here.
-	if k := FitLeading(total, func(k int) bool { return fitsRendered(render(k, false, false)) }); k > 0 {
-		return render(k, false, false)
+	if k := FitLeading(total, func(k int) bool { return fitsRendered(render(k, false, namedByURL)) }); k > 0 {
+		return render(k, false, namedByURL)
 	}
 	// The first item doesn't fit beside the envelope. It is oversized only if
 	// it can't be served even with nothing beside it but the envelope and the
 	// page and offset that place it; if it could, what crowds it out is the
 	// rest of the payload, and stepping past it would skip an item that is
 	// not too large to read.
-	if fitsRendered(minimal(render(1, false, false), field)) {
+	if fitsRendered(minimal(render(1, false, namedByURL), field)) {
 		return nil
 	}
-	for _, withID := range []bool{true, false} {
-		if out := render(0, true, withID); fitsRendered(out) {
+	// The link and the advice are conveniences; the step past the item is
+	// what keeps continuing from repeating the same page, so they are shed,
+	// in that order, while they keep the envelope over the limit.
+	for _, shed := range []naming{namedByURL, namedByID, namedByIndex, namedTersely} {
+		if out := render(0, true, shed); fitsRendered(out) {
 			return out
 		}
 	}
@@ -534,6 +567,48 @@ func shortenLargestList(value any, originalBytes, limit int, fits func([]byte) b
 	// that makes progress, so the prefix fallback, which keeps no
 	// continuation that could return to it, takes over.
 	return nil
+}
+
+// naming is how fully an oversized item is named: each level drops what the
+// one before it carried.
+type naming int
+
+const (
+	namedByURL   naming = iota // index, id and app_url, with the full hint
+	namedByID                  // index and id
+	namedByIndex               // index alone
+	namedTersely               // index alone, with the short hint
+)
+
+// continuationHint is the hint for a cut listing that continues exactly: by
+// page and offset when it was served at a page; by offset, then next_page,
+// on a first page asked for without one; by offset alone otherwise.
+func continuationHint(payload any, paged bool) string {
+	m, _ := payload.(map[string]any)
+	switch {
+	case paged:
+		return continueHint
+	case m["next_page"] != nil:
+		return firstPageHint
+	default:
+		return offsetHint
+	}
+}
+
+// itemAppURL returns the link an item is read by on its own: its "app_url",
+// or its "url" (Fizzy's name for the same link), if it is an object that has
+// one as a web address.
+func itemAppURL(item any) string {
+	m, ok := item.(map[string]any)
+	if !ok {
+		return ""
+	}
+	for _, key := range []string{"app_url", "url"} {
+		if s, isString := m[key].(string); isString && (strings.HasPrefix(s, "https://") || strings.HasPrefix(s, "http://")) {
+			return s
+		}
+	}
+	return ""
 }
 
 // minimal keeps, of a rendered page, only its list, the envelope and the
@@ -587,16 +662,19 @@ func itemID(item any) any {
 }
 
 // pageContinuationOf returns, for the payload of a listing that takes an
-// offset (one carrying a numeric "offset", and "page" when paginated), the
-// continuation after `next` items; nil for any other payload.
+// offset (one carrying a numeric "offset", and "page" when paginated: a
+// number, or a non-empty cursor string), the continuation after `next`
+// items; nil for any other payload.
 func pageContinuationOf(m map[string]any) func(next int) *pageContinuation {
 	offset, ok := jsonInt(m["offset"])
 	if !ok {
 		return nil
 	}
-	var page *int64
+	var page any
 	if p, isPaged := jsonInt(m["page"]); isPaged {
-		page = &p
+		page = p
+	} else if cursor, isCursor := m["page"].(string); isCursor && cursor != "" {
+		page = cursor
 	}
 	return func(next int) *pageContinuation {
 		return &pageContinuation{Page: page, Offset: offset + int64(next)}
