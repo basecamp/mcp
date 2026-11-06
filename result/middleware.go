@@ -32,15 +32,26 @@ import (
 // registry posture (#236, #237) applied where a toolkit-built server can see
 // every tool and every result.
 func Middleware(maxBytes int) mcp.Middleware {
+	return PagingMiddleware(maxBytes, Paging{})
+}
+
+// PagingMiddleware is Middleware that also pages the tools p names: record
+// reads by content_offset, page-based listings by offset within their page,
+// each argument added to the tool's input schema and taken out of its
+// arguments before the handler runs (see paging.go).
+func PagingMiddleware(maxBytes int, p Paging) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if call, ok := req.(*mcp.CallToolRequest); ok && method == "tools/call" {
+				return p.callTool(ctx, next, call, maxBytes)
+			}
 			res, err := next(ctx, method, req)
 			if err != nil {
 				return res, err
 			}
 			switch r := res.(type) {
 			case *mcp.ListToolsResult:
-				return mirrorTitles(r), nil
+				return p.advertise(mirrorTitles(r)), nil
 			case *mcp.CallToolResult:
 				return Cap(Object(r), maxBytes), nil
 			}

@@ -5,7 +5,9 @@
 // explained — exactly, with page/offset continuations, for the one-JSON-block
 // shape every server serves, and coarsely, with a notice that always fits,
 // for any other. Middleware applies both, plus title mirroring on
-// tools/list, to everything a server answers.
+// tools/list, to everything a server answers; PagingMiddleware also pages
+// the tools a server names: a record's rich text by content_offset, a
+// page-based listing by offset within its page (paging.go).
 //
 // Extracted from basecamp-mcp-server internal/tools (result_shape.go,
 // result_cap.go), hey-mcp-server's copy of the shape rules
