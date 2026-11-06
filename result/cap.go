@@ -676,7 +676,7 @@ func itemID(item any) any {
 }
 
 // pageContinuationOf returns, for the payload of a listing that takes an
-// offset (one carrying a numeric "offset", and "page" when paginated: a
+// offset (one carrying an integer "offset", and "page" when paginated: a
 // number, or a non-empty cursor string), the continuation after `next`
 // items; nil for any other payload.
 func pageContinuationOf(m map[string]any) func(next int) *pageContinuation {
@@ -684,11 +684,16 @@ func pageContinuationOf(m map[string]any) func(next int) *pageContinuation {
 	if !ok {
 		return nil
 	}
+	// The page is named back as the listing named it: a number in whatever
+	// spelling it came (2, 2.0, 2e0), or a cursor.
 	var page any
-	if p, isPaged := jsonInt(m["page"]); isPaged {
+	switch p := m["page"].(type) {
+	case json.Number:
 		page = p
-	} else if cursor, isCursor := m["page"].(string); isCursor && cursor != "" {
-		page = cursor
+	case string:
+		if p != "" {
+			page = p
+		}
 	}
 	return func(next int) *pageContinuation {
 		return &pageContinuation{Page: page, Offset: offset + int64(next)}
