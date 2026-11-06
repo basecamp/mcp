@@ -86,9 +86,12 @@ type Paging struct {
 	// Records names the tools that read one record: they take
 	// content_offset, and an oversized record's rich text is paged.
 	Records func(tool string) bool
-	// Listings names the page-based listings whose handlers take no offset:
-	// they take offset, and a cut one continues within its page.
-	Listings func(tool string) bool
+	// Listings names the page-based listings whose handlers take no offset,
+	// by the top-level key of the list each pages ("" for a tool that isn't
+	// one): they take offset, and a cut one continues within its page. Other
+	// lists beside it (a thread's participants beside its messages) are
+	// served whole.
+	Listings func(tool string) string
 	// TextFields are the rich-text field names a record read pages;
 	// DefaultTextFields when empty.
 	TextFields []string
@@ -107,7 +110,7 @@ func (p Paging) kind(tool string) pagingKind {
 	switch {
 	case p.Records != nil && p.Records(tool):
 		return pagesRecord
-	case p.Listings != nil && p.Listings(tool):
+	case p.Listings != nil && p.Listings(tool) != "":
 		return pagesListing
 	}
 	return pagesNothing
@@ -165,7 +168,7 @@ func (p Paging) callTool(ctx context.Context, next mcp.MethodHandler, req *mcp.C
 	if kind == pagesRecord {
 		return capRecord(r, maxBytes, offset, p.textFields()), nil
 	}
-	return capListing(r, maxBytes, offset, page), nil
+	return capListing(r, maxBytes, offset, page, p.Listings(req.Params.Name)), nil
 }
 
 // takeArgument reads key from a call's raw arguments as an integer >= 0
@@ -483,43 +486,33 @@ func textWindow(s string, offset, n int) (string, int) {
 }
 
 // capListing holds a page-based listing's result to maxBytes, serving its
-// one list from offset: the items before it are dropped, and the payload
-// names offset and the page it was served at (the page/offset contract the
-// cap continues exactly). A listing that fits at offset 0 is served as Cap
-// serves it, unnamed. An offset on a result with no one top-level list is
-// refused, as is one on a listing whose handler names its own offset (it was
-// never handed the argument).
-func capListing(result *mcp.CallToolResult, maxBytes, offset int, page any) *mcp.CallToolResult {
+// list (the top-level field the server named) from offset: the items before
+// it are dropped, and the payload names offset and the page it was served at
+// (the page/offset contract the cap continues exactly). A listing that fits
+// at offset 0 is served as the handler built it. An offset on a result
+// without that list is refused, as is one on a listing whose handler names
+// its own offset (it was never handed the argument).
+func capListing(result *mcp.CallToolResult, maxBytes, offset int, page any, field string) *mcp.CallToolResult {
 	if result == nil || result.IsError || asksForInput(result) {
 		return result
 	}
 	tc, value, restated, ok := standard(result)
-	payload, isObject := value.(map[string]any)
-	field := ""
-	if ok && isObject && arrayFields(payload) == 1 {
-		for k, v := range payload {
-			if _, isList := v.([]any); isList {
-				field = k
-			}
-		}
-	}
+	payload, _ := value.(map[string]any)
+	items, isList := payload[field].([]any)
 	_, ownsOffset := payload[OffsetKey]
-	if field == "" || ownsOffset {
+	if !ok || !isList || ownsOffset {
 		if offset > 0 {
-			return errorResult("%s applies only to a listing with one list of items", OffsetKey)
+			return errorResult("%s applies only to a listing of %s; this result has none to page", OffsetKey, field)
 		}
 		return Cap(result, maxBytes)
 	}
-	if offset == 0 && maxBytes > 0 {
-		if size, err := wireBytes(result); err == nil && size <= max(maxBytes, MinBytes)-frameReserve {
+	if offset == 0 {
+		size, err := wireBytes(result)
+		if maxBytes <= 0 || (err == nil && size <= max(maxBytes, MinBytes)-frameReserve) {
 			return result
 		}
 	}
-	if offset == 0 && maxBytes <= 0 {
-		return result
-	}
 	out := maps.Clone(payload)
-	items := payload[field].([]any)
 	out[field] = items[min(offset, len(items)):]
 	out[OffsetKey] = offset
 	if page != nil && page != "" {
@@ -534,5 +527,5 @@ func capListing(result *mcp.CallToolResult, maxBytes, offset int, page any) *mcp
 	if restated {
 		served.StructuredContent = json.RawMessage(data)
 	}
-	return Cap(&served, maxBytes)
+	return capList(&served, maxBytes, field)
 }
