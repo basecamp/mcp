@@ -207,8 +207,13 @@ func TestPaging_AdvertisesItsArguments(t *testing.T) {
 	assert.NotContains(t, props("plain"), ContentOffsetKey)
 	assert.Contains(t, props("get_record"), "id", "the tool's own properties stay")
 
+	exact := json.RawMessage(`{"type":"object","properties":{"id":{"type":"integer","enum":[9007199254740993]}}}`)
+	copied, added := withProperty(exact, OffsetKey, "theirs")
+	require.True(t, added)
+	assert.Contains(t, mustJSON(t, copied), "9007199254740993", "numbers in the copied schema stay exact")
+
 	declared := map[string]any{"type": "object", "properties": map[string]any{OffsetKey: map[string]any{"type": "integer", "description": "mine"}}}
-	_, added := withProperty(declared, OffsetKey, "theirs")
+	_, added = withProperty(declared, OffsetKey, "theirs")
 	assert.False(t, added)
 }
 
@@ -354,6 +359,15 @@ func TestCap_CursorPageContinuation(t *testing.T) {
 	assert.Equal(t, "CUR2", cont["page"])
 	assert.EqualValues(t, 3+len(asList(t, got["items"])), cont["offset"])
 	assert.Equal(t, continueHint, tr["hint"])
+}
+
+// A numeric page is named back in the spelling it came in.
+func TestCap_NumericPageKeepsItsSpelling(t *testing.T) {
+	for _, page := range []string{"2", "2.0", "2e0"} {
+		r := Text(`{"items":` + mustJSON(t, bigItems(100)) + `,"page":` + page + `,"offset":0}`)
+		out := Cap(r, 10_000)
+		assert.Contains(t, resultText(t, out), `"continue":{"page":`+page+`,"offset":`, page)
+	}
 }
 
 // An oversized item whose link would push the step past it over the limit

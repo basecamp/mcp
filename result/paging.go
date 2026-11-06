@@ -263,8 +263,10 @@ func withProperty(schema any, key, description string) (map[string]any, bool) {
 	if err != nil {
 		return nil, false
 	}
-	var m map[string]any
-	if err := json.Unmarshal(data, &m); err != nil || m == nil {
+	// Numbers kept exact: an enum of ids past 2^53 must not be rounded.
+	decoded, ok := decodeJSON(data)
+	m, isObject := decoded.(map[string]any)
+	if !ok || !isObject {
 		return nil, false
 	}
 	if t, _ := m["type"].(string); t != "object" {
@@ -448,7 +450,7 @@ func textFields(record map[string]any, names []string) []textField {
 // paging never enters), so a window can be set at any path without writing
 // through.
 func cloneObjects(m map[string]any) map[string]any {
-	out := make(map[string]any, len(m)+2)
+	out := make(map[string]any, len(m))
 	for k, v := range m {
 		if nested, ok := v.(map[string]any); ok {
 			v = cloneObjects(nested)
