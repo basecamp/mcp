@@ -47,23 +47,13 @@ func ParseOAuthError(body []byte, form url.Values) (code, description string) {
 	return code, description
 }
 
-// stripControls removes the runes upstream.LogSafeRune rejects (controls,
-// line and paragraph separators, format characters, U+FFFD). Applied to both the
-// endpoint text and each redaction candidate so a secret carrying a tab
-// arrives control-stripped in the echoed text and only an identically
-// normalized candidate can match it.
-func stripControls(v string) string {
-	var b strings.Builder
-	for _, r := range v {
-		// The same runes upstream.ScrubDescription drops when rendering:
-		// one left in here would split a credential past redaction and
-		// rejoin it in the rendered text.
-		if upstream.LogSafeRune(r) {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
+// stripControls keeps only printable ASCII (upstream.PrintableASCII), the
+// same strip upstream.ScrubDescription applies when rendering: a rune left in
+// here would split a credential past redaction and rejoin it in the rendered
+// text. Applied to both the endpoint text and each redaction candidate so a
+// secret carrying a tab arrives stripped in the echoed text and only an
+// identically normalized candidate can match it.
+func stripControls(v string) string { return upstream.PrintableASCII(v) }
 
 // credentialFields are the form parameters whose values are secrets at ANY
 // length, spanning both the token-exchange form (subject_token,
