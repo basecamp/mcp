@@ -172,9 +172,10 @@ func Cap(result *mcp.CallToolResult, maxBytes int) *mcp.CallToolResult {
 // a result it built, or a result bound for an older client (which the SDK's
 // multi-round-trip middleware fulfills by calling back), carries its input
 // requests with no resultType. So any non-nil InputRequests counts, an empty
-// map included, as the SDK's own check does.
+// map included, and so does a request state alone (SEP-2322: either one asks
+// the client to continue), as the SDK's own check does.
 func asksForInput(result *mcp.CallToolResult) bool {
-	return result.NeedsInput() || result.InputRequests != nil
+	return result.NeedsInput() || result.InputRequests != nil || result.RequestState != ""
 }
 
 // wireBytes is the size of result as the SDK serializes it.
