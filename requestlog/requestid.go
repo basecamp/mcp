@@ -63,6 +63,10 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	// A RoundTripper must not modify the request it was given.
 	clone := req.Clone(req.Context())
+	if clone.Header == nil {
+		// A request may carry no header map at all; Clone keeps it nil.
+		clone.Header = make(http.Header)
+	}
 	clone.Header.Set(Header, id)
 	return t.base.RoundTrip(clone)
 }

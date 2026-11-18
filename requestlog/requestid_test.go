@@ -61,3 +61,25 @@ func TestTransportSendsTheRequestsID(t *testing.T) {
 func TestTransportDefaultsToTheDefaultTransport(t *testing.T) {
 	assert.Equal(t, http.DefaultTransport, Transport(nil).(*transport).base)
 }
+
+// A request may carry no header map; the transport gives the clone one and
+// leaves the caller's request without.
+func TestTransportSendsTheIDOnARequestWithNoHeader(t *testing.T) {
+	var got string
+	base := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		got = r.Header.Get(Header)
+		return &http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody, Request: r}, nil
+	})
+	req, err := http.NewRequestWithContext(WithRequestID(context.Background(), "rid-2"), http.MethodGet, "http://app.invalid/", nil)
+	require.NoError(t, err)
+	req.Header = nil
+	resp, err := Transport(base).RoundTrip(req)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Equal(t, "rid-2", got)
+	assert.Nil(t, req.Header)
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
