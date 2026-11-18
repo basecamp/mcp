@@ -223,21 +223,27 @@ const WindowBytes = 12
 //
 // It looks at text both as written and with everything but printable
 // ASCII removed, as a viewer or normalizer that drops invisible characters
-// might show it, so a credential threaded with any of them still counts as
-// present, and so does one that itself holds such characters.
+// might show it (the secret too), so a credential threaded with any of them
+// still counts as present, and so does one that itself holds such
+// characters, whether or not the sink kept them.
 func AssertClean(t testing.TB, sink, text string, secrets ...string) {
 	t.Helper()
-	visible := strings.Map(func(r rune) rune {
-		if r < 0x20 || r >= 0x7f {
-			return -1
-		}
-		return r
-	}, text)
+	visible := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			if r < 0x20 || r >= 0x7f {
+				return -1
+			}
+			return r
+		}, s)
+	}
+	shown := visible(text)
 	for _, s := range secrets {
 		if leak, ok := leaked(text, s); ok {
 			t.Errorf("%s contains %s of a planted credential:\n%s", sink, leak, text)
-		} else if leak, ok := leaked(visible, s); ok {
-			t.Errorf("%s contains %s of a planted credential once invisible characters are dropped:\n%s", sink, leak, visible)
+		} else if v := visible(s); v == "" {
+			continue
+		} else if leak, ok := leaked(shown, v); ok {
+			t.Errorf("%s contains %s of a planted credential once invisible characters are dropped:\n%s", sink, leak, shown)
 		}
 	}
 }

@@ -22,6 +22,9 @@ func TestAssertClean(t *testing.T) {
 		{"split by invisibles", "token " + splitByInvisibles(Planted), Planted, true},
 		{"short secret with a control", "abc\tdef", "abc\tdef", true},
 		{"long secret with a control", "x" + "abcdef\tghijklmnop" + "x", "abcdef\tghijklmnop", true},
+		{"sink dropped the secret's control", "abcdef", "abc\tdef", true},
+		{"long, sink dropped the secret's non-ASCII", "token abcdfghijklmnop", "abcdéfghijklmnop", true},
+		{"secret of only invisibles", "anything", "\u200b\t", false},
 		{"secret with non-ASCII", "café-sécurité-token", "café-sécurité-token", true},
 	}
 	for _, tt := range tests {

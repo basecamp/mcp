@@ -128,8 +128,9 @@ func (f *Failure) As(target any) bool {
 // phrase is chosen here; nothing is read out of the cause but its type,
 // the identity of sentinel errors, and a net.OpError's Op when it is one
 // of the fixed names in networkOps. The one exception is a JSON type error's
-// Field, which is the path of the Go struct field being decoded: this
-// server's own names, never response bytes.
+// Field, the path of the Go struct field being decoded: this server's own
+// names when encoding/json sets it, but an exported string any cause can
+// fill, so it goes through ScrubDescription like endpoint text.
 func causeClass(err error) string {
 	if err == nil {
 		return ""
@@ -169,8 +170,8 @@ func causeClass(err error) string {
 	case errors.As(err, &syntaxErr):
 		return "response is not valid JSON"
 	case errors.As(err, &typeErr):
-		if typeErr.Field != "" {
-			return "unexpected JSON value for " + typeErr.Field
+		if field := ScrubDescription(typeErr.Field); field != "" {
+			return "unexpected JSON value for " + field
 		}
 		return "unexpected JSON value"
 	case errors.As(err, &maxBytes):
