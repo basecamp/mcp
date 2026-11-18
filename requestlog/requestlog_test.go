@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -257,6 +258,49 @@ func TestQuestionIsLoggedAsInputRequired(t *testing.T) {
 	assert.Equal(t, map[string]any{"status": "input_required"}, call(t, served, context.Background(), nil, asksInput)["result"])
 }
 
+// A prompt or a resource read can ask too.
+func TestPromptAndResourceQuestionsAreLoggedAsInputRequired(t *testing.T) {
+	for name, res := range map[string]mcp.Result{
+		"prompt state":     &mcp.GetPromptResult{RequestState: "state"},
+		"prompt inputs":    &mcp.GetPromptResult{InputRequests: mcp.InputRequestMap{}},
+		"resource state":   &mcp.ReadResourceResult{RequestState: "state"},
+		"resource inputs":  &mcp.ReadResourceResult{InputRequests: mcp.InputRequestMap{}},
+		"resource answers": &mcp.ReadResourceResult{},
+	} {
+		logs := &syncBuffer{}
+		handler := Middleware(slog.New(slog.NewJSONHandler(logs, nil)), served)(
+			func(context.Context, string, mcp.Request) (mcp.Result, error) { return res, nil })
+		_, _ = handler(context.Background(), "resources/read", &mcp.ServerRequest[*mcp.ReadResourceParams]{Params: &mcp.ReadResourceParams{URI: "x://y"}})
+		lines := requestLines(t, logs)
+		require.Len(t, lines, 1, name)
+		want := "input_required"
+		if name == "resource answers" {
+			want = "ok"
+		}
+		assert.Equal(t, map[string]any{"status": want}, lines[0]["result"], name)
+	}
+}
+
+// An initialize is described by its own params, not the session's: one the
+// handshake refuses has no session record, and a repeated one would find an
+// earlier client's.
+func TestInitializeIsDescribedByItsOwnParams(t *testing.T) {
+	logs := &syncBuffer{}
+	refused := func(context.Context, string, mcp.Request) (mcp.Result, error) {
+		return nil, &jsonrpc.Error{Code: -32602, Message: "no"}
+	}
+	handler := Middleware(slog.New(slog.NewJSONHandler(logs, nil)), served)(refused)
+	_, _ = handler(context.Background(), "initialize", &mcp.ServerRequest[*mcp.InitializeParams]{Params: &mcp.InitializeParams{
+		ProtocolVersion: "2025-06-18", ClientInfo: &mcp.Implementation{Name: "fresh", Version: "9"},
+	}})
+	lines := requestLines(t, logs)
+	require.Len(t, lines, 1)
+	assert.Equal(t, "2025-06-18", lines[0]["protocol"])
+	assert.Equal(t, "fresh", lines[0]["client"])
+	assert.Equal(t, "9", lines[0]["client_version"])
+	assert.Equal(t, map[string]any{"status": "error", "code": float64(-32602)}, lines[0]["result"])
+}
+
 func TestRequestIDComesFromTheContextElseTheHeader(t *testing.T) {
 	ok := answer(&mcp.CallToolResult{}, nil)
 	header := http.Header{}
@@ -300,7 +344,8 @@ func TestLoggedClientStringsAreBounded(t *testing.T) {
 	assert.Equal(t, got, line["request_id"])
 	assert.Equal(t, got, RequestID(WithRequestID(context.Background(), long)))
 
-	init := &mcp.InitializeRequest{Params: &mcp.InitializeParams{
+	// As the server receives it: a ServerRequest, with no session behind it.
+	init := &mcp.ServerRequest[*mcp.InitializeParams]{Params: &mcp.InitializeParams{
 		ProtocolVersion: long, ClientInfo: &mcp.Implementation{Name: long, Version: long},
 	}}
 	logs := &syncBuffer{}

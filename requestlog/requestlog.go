@@ -93,10 +93,13 @@ func requestAttrs(ctx context.Context, method string, req mcp.Request, tools map
 	if d, ok := req.(clientDescriber); ok {
 		protocol, client = d.ProtocolVersion(), d.ClientInfo()
 	}
-	// The initialize request names its client and revision in its params,
-	// before the session has recorded either.
-	if init, ok := req.(*mcp.InitializeRequest); ok && mcp.HasParams(init) {
-		protocol, client = init.Params.ProtocolVersion, init.Params.ClientInfo
+	// The initialize request names its client and revision in its params:
+	// the session hasn't recorded them if the handshake fails, and holds an
+	// earlier handshake's if this one repeats it. A received initialize is a
+	// ServerRequest, not mcp.InitializeRequest (a ClientRequest), so it is
+	// told by its params.
+	if init, ok := req.GetParams().(*mcp.InitializeParams); ok && init != nil {
+		protocol, client = init.ProtocolVersion, init.ClientInfo
 	}
 	attrs = append(attrs, slog.String("protocol", truncate(protocol)))
 	if client != nil {
@@ -161,18 +164,30 @@ func outcomeAttrs(ctx context.Context, res mcp.Result, err error, cutShort func(
 		}
 		return []any{slog.String("status", "error")}
 	}
-	if call, ok := res.(*mcp.CallToolResult); ok && call != nil {
-		switch {
-		// The SDK labels a result input_required (NeedsInput) only after
-		// every middleware has returned, so this asks what it asks: the
-		// same test the SDK's label applies.
-		case call.InputRequests != nil || call.RequestState != "":
-			return []any{slog.String("status", "input_required")}
-		case call.IsError:
-			return []any{slog.String("status", "tool_error")}
-		}
+	if asksForInput(res) {
+		return []any{slog.String("status", "input_required")}
+	}
+	if call, ok := res.(*mcp.CallToolResult); ok && call != nil && call.IsError {
+		return []any{slog.String("status", "tool_error")}
 	}
 	return []any{slog.String("status", "ok")}
+}
+
+// asksForInput reports whether res is a question back to the client: a tool
+// call's, a prompt's or a resource read's, the three results that can ask.
+// The SDK labels a result input_required (NeedsInput) only after every
+// middleware has returned, so this asks what it asks: the same test the
+// SDK's label applies.
+func asksForInput(res mcp.Result) bool {
+	switch r := res.(type) {
+	case *mcp.CallToolResult:
+		return r != nil && (r.InputRequests != nil || r.RequestState != "")
+	case *mcp.GetPromptResult:
+		return r != nil && (r.InputRequests != nil || r.RequestState != "")
+	case *mcp.ReadResourceResult:
+		return r != nil && (r.InputRequests != nil || r.RequestState != "")
+	}
+	return false
 }
 
 func truncate(s string) string {
