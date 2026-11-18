@@ -1501,7 +1501,6 @@ func TestDroppedRuneCannotRejoinASecret(t *testing.T) {
 	}
 }
 
-
 // TestErrorDescriptionRedactsReplacementSplitCredentials: a credential split
 // by U+FFFD, or by bytes that are not valid UTF-8 (which the JSON decoder
 // turns into U+FFFD), must not dodge exact redaction and then rejoin when the

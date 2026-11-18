@@ -221,29 +221,37 @@ const WindowBytes = 12
 // AssertClean fails t when text, from the named sink, contains any
 // WindowBytes-long piece of any secret.
 //
-// It looks at text with everything but printable ASCII removed, as a viewer
-// or normalizer that drops invisible characters might show it, so a
-// credential threaded with any of them still counts as present.
+// It looks at text both as written and with everything but printable
+// ASCII removed, as a viewer or normalizer that drops invisible characters
+// might show it, so a credential threaded with any of them still counts as
+// present, and so does one that itself holds such characters.
 func AssertClean(t testing.TB, sink, text string, secrets ...string) {
 	t.Helper()
-	text = strings.Map(func(r rune) rune {
+	visible := strings.Map(func(r rune) rune {
 		if r < 0x20 || r >= 0x7f {
 			return -1
 		}
 		return r
 	}, text)
 	for _, s := range secrets {
-		if len(s) < WindowBytes {
-			if strings.Contains(text, s) {
-				t.Errorf("%s contains a planted credential (%d bytes)", sink, len(s))
-			}
-			continue
-		}
-		for i := 0; i+WindowBytes <= len(s); i++ {
-			if strings.Contains(text, s[i:i+WindowBytes]) {
-				t.Errorf("%s contains bytes %d-%d of a planted credential:\n%s", sink, i, i+WindowBytes, text)
-				break
-			}
+		if leak, ok := leaked(text, s); ok {
+			t.Errorf("%s contains %s of a planted credential:\n%s", sink, leak, text)
+		} else if leak, ok := leaked(visible, s); ok {
+			t.Errorf("%s contains %s of a planted credential once invisible characters are dropped:\n%s", sink, leak, visible)
 		}
 	}
+}
+
+// leaked reports whether text holds s, or for a secret of at least
+// WindowBytes any WindowBytes-long piece of it, and which.
+func leaked(text, s string) (string, bool) {
+	if len(s) < WindowBytes {
+		return fmt.Sprintf("all %d bytes", len(s)), strings.Contains(text, s)
+	}
+	for i := 0; i+WindowBytes <= len(s); i++ {
+		if strings.Contains(text, s[i:i+WindowBytes]) {
+			return fmt.Sprintf("bytes %d-%d", i, i+WindowBytes), true
+		}
+	}
+	return "", false
 }

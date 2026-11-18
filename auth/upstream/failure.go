@@ -125,8 +125,9 @@ func (f *Failure) As(target any) bool {
 // causeClass names what kind of failure cause is, in fixed text, so an
 // operator reading a log line can still tell a timeout from a refused
 // connection from a bad certificate without the cause's own text. Every
-// phrase is chosen here; nothing is read out of the cause but its type and
-// the identity of sentinel errors. The one exception is a JSON type error's
+// phrase is chosen here; nothing is read out of the cause but its type,
+// the identity of sentinel errors, and a net.OpError's Op when it is one
+// of the fixed names in networkOps. The one exception is a JSON type error's
 // Field, which is the path of the Go struct field being decoded: this
 // server's own names, never response bytes.
 func causeClass(err error) string {
@@ -177,10 +178,21 @@ func causeClass(err error) string {
 	case errors.As(err, &protoError):
 		return "malformed HTTP response"
 	case errors.As(err, &opErr):
-		return "network error during " + opErr.Op
+		if networkOps[opErr.Op] {
+			return "network error during " + opErr.Op
+		}
+		return "network error"
 	default:
 		return ""
 	}
+}
+
+// networkOps are the net.OpError Op values the standard library sets.
+// Op is an exported string any transport can fill, so causeClass names
+// only these and says "network error" for anything else.
+var networkOps = map[string]bool{
+	"dial": true, "read": true, "write": true, "close": true,
+	"listen": true, "accept": true, "set": true,
 }
 
 // ScrubDescription renders endpoint-supplied text for a log line: control

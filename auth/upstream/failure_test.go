@@ -154,6 +154,7 @@ func TestCauseClass(t *testing.T) {
 		{"deadline", fmt.Errorf("wrapped: %w", context.DeadlineExceeded), "deadline exceeded"},
 		{"refused", &net.OpError{Op: "dial", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)}, "connection refused"},
 		{"other network", &net.OpError{Op: "read", Err: errors.New(secret)}, "network error during read"},
+		{"forged op", &net.OpError{Op: "read " + secret + "\nforged log entry", Err: errors.New("failed")}, "network error"},
 		{"dns", &net.DNSError{Err: "no such host", Name: secret}, "DNS lookup failed"},
 		{"eof", fmt.Errorf("reading: %w", io.ErrUnexpectedEOF), "response ended early"},
 		{"json type", typeErr, "unexpected JSON value for expires_in"},
