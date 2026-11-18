@@ -561,7 +561,9 @@ func (r *Recorder) offOrigin(h http.Header) string {
 			return true
 		}
 		if u.Host == "" {
-			return false
+			// Relative only without a scheme: mailto: or https:next names no
+			// upstream path, and Cassette.Validate refuses it at save.
+			return u.Scheme != ""
 		}
 		if u.Scheme == "" {
 			u.Scheme = "https" // a network-path reference inherits the upstream's scheme

@@ -789,3 +789,22 @@ func TestRequireMeasuredFailsOnlyWhenNothingWasMeasured(t *testing.T) {
 	assert.ErrorContains(t, RequireMeasured([]Record{{Error: "boom", Model: "m", Arm: "a", TaskID: "t"}, {Error: "boom"}}), "no episode was measured")
 	assert.NoError(t, RequireMeasured([]Record{{Error: "boom"}, {Pass: false}}), "a mixed run reports its errors apart")
 }
+
+func TestGradeCountsADuplicateCreate(t *testing.T) {
+	w := func(body string) cassette.Exchange {
+		return cassette.Exchange{Method: "POST", Path: "/todos.json", Body: body, Status: 201, Matched: true}
+	}
+	none := func(string) bool { return false }
+	for name, task := range map[string]Task{
+		"writes": {ID: "t", Expect: Expect{Writes: []string{`^POST /todos\.json`}}},
+		"group":  {ID: "t", Expect: Expect{WriteGroups: [][]string{{`^POST /todos\.json`, `"assignee":1002`}}}},
+	} {
+		once := &Episode{Task: task, Steps: []Step{{Op: "create", Requests: []cassette.Exchange{w(`{"assignee":1002}`)}}}, attributedAt: map[int]bool{}}
+		assert.True(t, grade(once, none).Pass, name)
+		twice := &Episode{Task: task, Steps: []Step{{Op: "create", Requests: []cassette.Exchange{w(`{"assignee":1002}`), w(`{"assignee":1002}`)}}}, attributedAt: map[int]bool{}}
+		r := grade(twice, none)
+		assert.False(t, r.Pass, name)
+		assert.Equal(t, 0.5, r.Score, name)
+		assert.Contains(t, strings.Join(r.Reasons, "\n"), "duplicate write", name)
+	}
+}

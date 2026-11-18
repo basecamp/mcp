@@ -55,6 +55,9 @@ type options struct {
 	out, baseline, recordProfile, recordDir                         string
 	maxTurns, parallel                                              int
 	requirePass, quiet                                              bool
+	// onlySet and armsSet: the flag was given, even as "" (an empty CI
+	// variable), which narrows to nothing rather than meaning "all".
+	onlySet, armsSet bool
 }
 
 func run() error {
@@ -87,6 +90,14 @@ func run() error {
 	if flag.NArg() > 0 {
 		return fmt.Errorf("unexpected argument %q (flags after it would be ignored)", flag.Arg(0))
 	}
+	flag.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "only":
+			o.onlySet = true
+		case "arms":
+			o.armsSet = true
+		}
+	})
 
 	ctx := context.Background()
 	cfg, plan, base, err := preflight(&o)
@@ -179,7 +190,11 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 	if corpus.Server != o.server {
 		return fail(fmt.Errorf("corpus %s is for server %q but --server is %q", o.tasks, corpus.Server, o.server))
 	}
-	if err := corpus.Filter(splitCSV(o.only)); err != nil {
+	only, err := selection("only", o.only, o.onlySet)
+	if err != nil {
+		return fail(err)
+	}
+	if err := corpus.Filter(only); err != nil {
 		return fail(err)
 	}
 	corpus.OverrideTurns(o.maxTurns)
@@ -187,7 +202,11 @@ func preflight(o *options) (multiturn.Config, map[string]string, *multiturn.Base
 	if err != nil {
 		return fail(err)
 	}
-	if err := arms.Select(splitCSV(o.arms)); err != nil {
+	armIDs, err := selection("arms", o.arms, o.armsSet)
+	if err != nil {
+		return fail(err)
+	}
+	if err := arms.Select(armIDs); err != nil {
 		return fail(err)
 	}
 	launch, err := launcher(o.server, o.serverCmd)
@@ -545,6 +564,17 @@ func launcher(server, serverCmd string) (multiturn.Launcher, error) {
 		}
 		return session, func() { _ = session.Close(); _ = os.RemoveAll(home) }, nil
 	}, nil
+}
+
+// selection reads a --only or --arms list. Given but naming nothing (",",
+// or an empty variable) it is refused: an empty list means "all", and a
+// paid run would otherwise broaden to the whole matrix.
+func selection(flagName, s string, set bool) ([]string, error) {
+	ids := splitCSV(s)
+	if len(ids) == 0 && (set || s != "") {
+		return nil, fmt.Errorf("--%s names nothing; omit it to run every one", flagName)
+	}
+	return ids, nil
 }
 
 func splitCSV(s string) []string {

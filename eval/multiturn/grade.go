@@ -159,6 +159,27 @@ func grade(ep *Episode, guide func(string) bool) Record {
 			rec.Reasons = append(rec.Reasons, fmt.Sprintf("missing write matching all of: %s", strings.Join(g, " && ")))
 		}
 	}
+	// An expected create lands once. The Player answers a repeat as it did
+	// the first, so a second landed POST matching the same expectation (a
+	// duplicate to-do, a comment posted twice) would otherwise pass unseen.
+	duplicates := func(label string, matches []string) {
+		posts := 0
+		for _, l := range matches {
+			if strings.HasPrefix(l, "POST ") {
+				posts++
+			}
+		}
+		for ; posts > 1; posts-- {
+			total++
+			rec.Reasons = append(rec.Reasons, "duplicate write: "+label)
+		}
+	}
+	for _, p := range t.Expect.Writes {
+		duplicates(p, allMatches(p, landed))
+	}
+	for _, g := range t.Expect.WriteGroups {
+		duplicates(strings.Join(g, " && "), linesMatchingAll(g, landed))
+	}
 	check("answer", t.Expect.Answer, []string{ep.Answer})
 	// A read task's answer must come from the account: at least one read the
 	// backend answered during a tool call. Startup reads (the server fetching
@@ -215,6 +236,24 @@ func isWrongID(ex cassette.Exchange) bool {
 }
 
 // oneLineMatchesAll reports whether a single line matches every pattern.
+// linesMatchingAll returns each line that every pattern matches.
+func linesMatchingAll(patterns []string, lines []string) []string {
+	var out []string
+	for _, l := range lines {
+		all := true
+		for _, p := range patterns {
+			if !regexp.MustCompile(p).MatchString(l) {
+				all = false
+				break
+			}
+		}
+		if all {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
 func oneLineMatchesAll(patterns []string, lines []string) bool {
 	for _, l := range lines {
 		all := true

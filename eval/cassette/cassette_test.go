@@ -934,3 +934,20 @@ func TestEmailAliasesSurviveATokenRotation(t *testing.T) {
 	_, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://api.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN", AliasKeyEnv: "EVAL_ALIAS_KEY"})
 	assert.ErrorContains(t, err, "EVAL_ALIAS_KEY")
 }
+
+func TestHostlessAbsoluteTargetIsOffOrigin(t *testing.T) {
+	t.Setenv("EVAL_REC_TOKEN", "tok")
+	r, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://api.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN"})
+	require.NoError(t, err)
+	for _, target := range []string{"mailto:support@example.com", "https:next"} {
+		h := http.Header{}
+		h.Set("Location", target)
+		assert.NotEmpty(t, r.offOrigin(h), "%s names no upstream path", target)
+		h = http.Header{}
+		h.Set("Link", "<"+target+">; rel=next")
+		assert.NotEmpty(t, r.offOrigin(h), "a Link to %s", target)
+	}
+	h := http.Header{}
+	h.Set("Location", "/1/next")
+	assert.Empty(t, r.offOrigin(h), "a relative path stays on the upstream")
+}

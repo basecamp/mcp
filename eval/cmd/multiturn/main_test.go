@@ -34,12 +34,16 @@ func TestPreflight(t *testing.T) {
 	assert.Len(t, cfg.Arms.Arms, 4)
 
 	cases := map[string]func(o *options){
-		"unknown backend": func(o *options) { o.backend = "magic" },
-		"api without key": func(o *options) { o.backend = "api"; t.Setenv("ANTHROPIC_API_KEY", "") },
-		"duplicate model": func(o *options) { o.backend = "cli"; o.models = "haiku,haiku" },
-		"corpus server":   func(o *options) { o.tasks = "eval/testdata/multiturn/basecamp/tasks.json" },
-		"unknown arm":     func(o *options) { o.arms = "bare,nope" },
-		"unknown task":    func(o *options) { o.only = "nope" },
+		"unknown backend":    func(o *options) { o.backend = "magic" },
+		"api without key":    func(o *options) { o.backend = "api"; t.Setenv("ANTHROPIC_API_KEY", "") },
+		"duplicate model":    func(o *options) { o.backend = "cli"; o.models = "haiku,haiku" },
+		"corpus server":      func(o *options) { o.tasks = "eval/testdata/multiturn/basecamp/tasks.json" },
+		"unknown arm":        func(o *options) { o.arms = "bare,nope" },
+		"unknown task":       func(o *options) { o.only = "nope" },
+		"only names nothing": func(o *options) { o.only = " , " },
+		"only set empty":     func(o *options) { o.only, o.onlySet = "", true },
+		"arms names nothing": func(o *options) { o.arms = "," },
+		"arms set empty":     func(o *options) { o.arms, o.armsSet = "", true },
 		"unknown server": func(o *options) {
 			o.server = "nope"
 			o.tasks = "eval/testdata/multiturn/fake/tasks.json"
