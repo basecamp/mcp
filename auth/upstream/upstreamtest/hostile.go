@@ -11,6 +11,7 @@
 package upstreamtest
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -97,6 +98,11 @@ const (
 	// TerminalDescription answers 400 invalid_grant with the echo in the
 	// error_description.
 	TerminalDescription Kind = "echoed invalid_grant description"
+	// ControlSplitDescription answers 401 invalid_client with the echo in
+	// the error_description, an invisible character after every third
+	// character, so neither exact redaction nor a run length sees it
+	// whole.
+	ControlSplitDescription Kind = "control-split error_description"
 	// ServerError answers 500 with the echo as the body.
 	ServerError Kind = "echoed 500 body"
 	// RateLimited answers 429 with the echo as Retry-After and the body.
@@ -107,7 +113,7 @@ const (
 var Kinds = []Kind{
 	MalformedLocation, Redirect, MalformedStatus, MalformedHeader, MalformedTrailer,
 	HugeNumber, NegativeLifetime, BadProfile, OAuthCode, OAuthDescription,
-	TerminalDescription, ServerError, RateLimited,
+	TerminalDescription, ControlSplitDescription, ServerError, RateLimited,
 }
 
 const accessTokenURN = "urn:ietf:params:oauth:token-type:access_token" // #nosec G101 -- RFC 8693 URN
@@ -150,6 +156,9 @@ func Handler(kind Kind) http.Handler {
 		case TerminalDescription:
 			writeJSON(w, http.StatusBadRequest, fmt.Sprintf(
 				`{"error":"invalid_grant","error_description":"grant rejected; request was %s"}`, echo))
+		case ControlSplitDescription:
+			desc, _ := json.Marshal("client rejected; request was " + splitByInvisibles(echo))
+			writeJSON(w, http.StatusUnauthorized, fmt.Sprintf(`{"error":"invalid_client","error_description":%s}`, desc))
 		case ServerError:
 			writeText(w, http.StatusInternalServerError, echo)
 		case RateLimited:
@@ -159,6 +168,23 @@ func Handler(kind Kind) http.Handler {
 			panic("upstreamtest: unknown kind " + string(kind))
 		}
 	})
+}
+
+// invisibles are characters a viewer shows as nothing, from each class
+// review found: C1 (NEL), format (zero-width space, word joiner), and
+// combining marks (variation selector 16, combining grapheme joiner).
+var invisibles = []rune{'\u0085', '\u200b', '\u2060', '\ufe0f', '\u034f'}
+
+// splitByInvisibles puts one of invisibles after every third character of s.
+func splitByInvisibles(s string) string {
+	var b strings.Builder
+	for i, r := range s {
+		b.WriteRune(r)
+		if i%3 == 2 {
+			b.WriteRune(invisibles[(i/3)%len(invisibles)])
+		}
+	}
+	return b.String()
 }
 
 func writeJSON(w http.ResponseWriter, status int, body string) {
@@ -194,20 +220,44 @@ const WindowBytes = 12
 
 // AssertClean fails t when text, from the named sink, contains any
 // WindowBytes-long piece of any secret.
+//
+// It looks at text both as written and with everything but printable
+// ASCII removed, as a viewer or normalizer that drops invisible characters
+// might show it (the secret too), so a credential threaded with any of them
+// still counts as present, and so does one that itself holds such
+// characters, whether or not the sink kept them.
 func AssertClean(t testing.TB, sink, text string, secrets ...string) {
 	t.Helper()
+	visible := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			if r < 0x20 || r >= 0x7f {
+				return -1
+			}
+			return r
+		}, s)
+	}
+	shown := visible(text)
 	for _, s := range secrets {
-		if len(s) < WindowBytes {
-			if strings.Contains(text, s) {
-				t.Errorf("%s contains a planted credential (%d bytes)", sink, len(s))
-			}
+		if leak, ok := leaked(text, s); ok {
+			t.Errorf("%s contains %s of a planted credential:\n%s", sink, leak, text)
+		} else if v := visible(s); v == "" {
 			continue
-		}
-		for i := 0; i+WindowBytes <= len(s); i++ {
-			if strings.Contains(text, s[i:i+WindowBytes]) {
-				t.Errorf("%s contains bytes %d-%d of a planted credential:\n%s", sink, i, i+WindowBytes, text)
-				break
-			}
+		} else if leak, ok := leaked(shown, v); ok {
+			t.Errorf("%s contains %s of a planted credential once invisible characters are dropped:\n%s", sink, leak, shown)
 		}
 	}
+}
+
+// leaked reports whether text holds s, or for a secret of at least
+// WindowBytes any WindowBytes-long piece of it, and which.
+func leaked(text, s string) (string, bool) {
+	if len(s) < WindowBytes {
+		return fmt.Sprintf("all %d bytes", len(s)), strings.Contains(text, s)
+	}
+	for i := 0; i+WindowBytes <= len(s); i++ {
+		if strings.Contains(text, s[i:i+WindowBytes]) {
+			return fmt.Sprintf("bytes %d-%d", i, i+WindowBytes), true
+		}
+	}
+	return "", false
 }
