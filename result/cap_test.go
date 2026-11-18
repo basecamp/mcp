@@ -113,11 +113,13 @@ func TestCap_InputRequestsUntouched(t *testing.T) {
 
 // A result a handler builds and caps itself has no resultType yet, and one
 // bound for a client before 2026-07-28 never gets one: its input requests
-// alone mark it, an empty map included.
+// or its request state mark it, an empty map included.
 func TestCap_InputRequestsWithoutResultTypeUntouched(t *testing.T) {
 	for name, requests := range map[string]mcp.InputRequestMap{
 		"requests": {"confirm": &mcp.ElicitParams{Message: strings.Repeat("m", 50_000)}},
 		"empty":    {},
+		// A request state alone asks the client to continue too.
+		"state only": nil,
 	} {
 		t.Run(name, func(t *testing.T) {
 			in := &mcp.CallToolResult{InputRequests: requests, RequestState: strings.Repeat("s", 50_000)}
