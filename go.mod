@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/go-jose/go-jose/v4 v4.1.5
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.1-0.20261014132652-7c486efa8223
 	github.com/stretchr/testify v1.12.1
 )
 
