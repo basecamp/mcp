@@ -403,8 +403,11 @@ replaced, and the profile's `redact` literals applied.
 
 The scrubber is a safety net, not the guarantee. It rewrites text — origins,
 ASCII email addresses, avatar URLs, the token, and the profile's literal
-names (never JSON values: a literal that parses as JSON is refused) — and
-cannot know every form personal data takes. The guarantee is the seeded
+names (never JSON values: a literal that parses as JSON is refused). A
+recording is refused when the token, a literal or a non-example.com address
+survives in a scrubbed body, read after JSON and percent-decoding (a URL
+value's `?email=alice%40corp.example`). It still cannot know every form
+personal data takes. The guarantee is the seeded
 account: record only fictional data you seeded yourself, and **read each
 recorded cassette before committing it**. Recording performs the
 task's writes on the test account, so reseed between recordings. Each task's

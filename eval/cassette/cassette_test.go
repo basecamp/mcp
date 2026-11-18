@@ -951,3 +951,26 @@ func TestHostlessAbsoluteTargetIsOffOrigin(t *testing.T) {
 	h.Set("Location", "/1/next")
 	assert.Empty(t, r.offOrigin(h), "a relative path stays on the upstream")
 }
+
+func TestDetectorsSeePercentEncodedPersonalData(t *testing.T) {
+	t.Setenv("EVAL_REC_TOKEN", "tok-secret-value")
+	r, err := NewRecorder(&Profile{Name: "seed", TestAccount: true, Upstream: "https://api.example", AccountIDs: []string{"1"}, TokenEnv: "EVAL_REC_TOKEN", Redact: map[string]string{"Alice & Bob": "Pair"}})
+	require.NoError(t, err)
+	for _, body := range []string{
+		`{"next":"https://x.example/s?email=alice%40corp.example"}`,
+		`{"next":"https://x.example/s?email=alice%2540corp.example"}`, // twice encoded
+		`{"next":"https://x.example/s?email=alice%40corp.example&done=100%"}`,
+		`{"https://x.example/s?email=alice%40corp.example":1}`,
+	} {
+		assert.True(t, leaksPersonal([]byte(body)), body)
+	}
+	assert.False(t, leaksPersonal([]byte(`{"next":"https://x.example/s?email=person-1%40example.com"}`)))
+	for _, body := range []string{
+		`{"next":"?name=Alice%20%26%20Bob"}`,
+		`{"next":"?name=Alice+%26+Bob"}`,
+		`{"next":"?t=tok%2Dsecret%2Dvalue"}`,
+	} {
+		assert.True(t, r.leaksRedacted([]byte(body)), body)
+	}
+	assert.False(t, r.leaksRedacted([]byte(`{"next":"?name=Pair%20only"}`)))
+}

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -648,9 +649,11 @@ func (r *Recorder) leaksRedacted(body []byte) bool {
 	walk = func(v any) bool {
 		switch t := v.(type) {
 		case string:
-			for _, lit := range lits {
-				if lit != "" && strings.Contains(t, lit) {
-					return true
+			for _, sp := range spellings(t) {
+				for _, lit := range lits {
+					if lit != "" && strings.Contains(sp, lit) {
+						return true
+					}
 				}
 			}
 		case map[string]any:
@@ -687,17 +690,13 @@ func leaksPersonal(body []byte) bool {
 			if under && t != "" && t != "https://example.com/avatar.png" {
 				return true
 			}
-			for _, m := range emailRE.FindAllString(t, -1) {
-				if !strings.HasSuffix(strings.ToLower(m), "@example.com") {
-					return true
-				}
+			if foreignEmail(t) {
+				return true
 			}
 		case map[string]any:
 			for k, c := range t {
-				for _, m := range emailRE.FindAllString(k, -1) {
-					if !strings.HasSuffix(strings.ToLower(m), "@example.com") {
-						return true // an address used as a key
-					}
+				if foreignEmail(k) {
+					return true // an address used as a key
 				}
 				if walk(under || strings.HasPrefix(k, "avatar"), c) {
 					return true
@@ -713,6 +712,56 @@ func leaksPersonal(body []byte) bool {
 		return false
 	}
 	return walk(false, doc)
+}
+
+// foreignEmail reports whether s, in any of its spellings, holds an email
+// address outside example.com.
+func foreignEmail(s string) bool {
+	for _, sp := range spellings(s) {
+		for _, m := range emailRE.FindAllString(sp, -1) {
+			if !strings.HasSuffix(strings.ToLower(m), "@example.com") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// percentEscape is one %XX escape. A stray % elsewhere ("100%") leaves the
+// rest decodable, where url.PathUnescape would refuse the whole string.
+var percentEscape = regexp.MustCompile(`%[0-9A-Fa-f]{2}`)
+
+// spellings returns s and what it reads as once percent-decoded, as a path
+// and as a query (where + is a space), up to three layers deep: a JSON
+// string holding a URL (?email=alice%40corp.example) keeps its escapes
+// after JSON decoding, and the detectors look at what a reader would see.
+func spellings(s string) []string {
+	out := []string{s}
+	layer := []string{s}
+	for depth := 0; depth < 3 && len(layer) > 0; depth++ {
+		var next []string
+		for _, v := range layer {
+			if !strings.ContainsAny(v, "%+") {
+				continue
+			}
+			path := percentEscape.ReplaceAllStringFunc(v, func(e string) string {
+				b, _ := strconv.ParseUint(e[1:], 16, 8)
+				return string([]byte{byte(b)})
+			})
+			query := percentEscape.ReplaceAllStringFunc(strings.ReplaceAll(v, "+", " "), func(e string) string {
+				b, _ := strconv.ParseUint(e[1:], 16, 8)
+				return string([]byte{byte(b)})
+			})
+			for _, d := range []string{path, query} {
+				if d != v && !slices.Contains(out, d) {
+					out = append(out, d)
+					next = append(next, d)
+				}
+			}
+		}
+		layer = next
+	}
+	return out
 }
 
 // defaultPort reports whether an explicit port is 443 in any spelling (0443
