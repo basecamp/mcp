@@ -144,8 +144,9 @@ func TestStateIsBoundToTheCall(t *testing.T) {
 func TestHashesAreCanonical(t *testing.T) {
 	assert.Equal(t, HashArgs(map[string]any{"a": 1, "b": 2}), HashArgs(map[string]any{"b": 2, "a": 1}))
 	assert.NotEqual(t, HashArgs(map[string]any{"a": 1}), HashArgs(map[string]any{"a": 2}))
-	assert.Equal(t, "unhashable", HashArgs(func() {}))
-	assert.Equal(t, "undigestable", Digest(make(chan int)))
+	assert.NotEqual(t, HashArgs(func() {}), HashArgs(func() {}), "an unencodable value matches nothing")
+	assert.NotEqual(t, Digest(make(chan int)), Digest(make(chan int)))
+	assert.NotEqual(t, HashArgs(json.RawMessage(`{"a":1,"b":2}`)), HashArgs(json.RawMessage(`{"b":2,"a":1}`)), "raw JSON hashes as written")
 	assert.Len(t, Digest("x"), 64)
 }
 

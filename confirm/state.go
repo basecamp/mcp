@@ -190,22 +190,28 @@ func (k *Keys) Verify(blob string, now time.Time) (State, error) {
 	return state, nil
 }
 
-// HashArgs hashes a call's arguments canonically (encoding/json sorts map
-// keys).
+// HashArgs hashes a call's arguments canonically: encoding/json sorts map
+// keys, so pass the decoded arguments (a map, a struct, an id), not raw
+// JSON, which hashes byte for byte as the client wrote it.
 func HashArgs(args any) string {
-	data, err := json.Marshal(args)
-	if err != nil {
-		return "unhashable"
-	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
+	return hashJSON(args)
 }
 
 // Digest hashes what a person is asked to approve.
 func Digest(v any) string {
+	return hashJSON(v)
+}
+
+// hashJSON is the SHA-256 of v's JSON. A value that can't be encoded gets a
+// fresh random value instead, so it matches nothing, not even itself on the
+// retry: the confirmation fails closed rather than binding every
+// unencodable value to one shared fingerprint.
+func hashJSON(v any) string {
 	data, err := json.Marshal(v)
 	if err != nil {
-		return "undigestable"
+		data = make([]byte, 32)
+		_, _ = rand.Read(data)
+		return "unhashable:" + hex.EncodeToString(data)
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
