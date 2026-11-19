@@ -270,6 +270,12 @@ func TestFilterToolsCopiesTheList(t *testing.T) {
 	assert.Same(t, req, asked)
 	assert.Equal(t, []string{"read", "send"}, names(served.Tools), "the served list is untouched")
 
+	res, err = FilterTools(func(*mcp.ListToolsRequest) func(string) bool { return func(string) bool { return false } })(next)(context.Background(), "tools/list", req)
+	require.NoError(t, err)
+	data, err := json.Marshal(res)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"tools":[]`, "a page with nothing left is still an array")
+
 	call := &mcp.CallToolResult{}
 	res, err = FilterTools(func(*mcp.ListToolsRequest) func(string) bool { panic("not a list") })(
 		func(context.Context, string, mcp.Request) (mcp.Result, error) { return call, nil })(context.Background(), "tools/call", &mcp.CallToolRequest{})

@@ -121,7 +121,8 @@ func FilterTools(listed func(req *mcp.ListToolsRequest) func(name string) bool) 
 			}
 			keep := listed(listReq)
 			filtered := *list
-			filtered.Tools = nil
+			// Never nil: a page with nothing left still lists "tools": [].
+			filtered.Tools = make([]*mcp.Tool, 0, len(list.Tools))
 			for _, t := range list.Tools {
 				if keep(t.Name) {
 					filtered.Tools = append(filtered.Tools, t)
