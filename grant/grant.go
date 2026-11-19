@@ -157,11 +157,25 @@ func (p Policy) Middleware() mcp.Middleware {
 // insufficient_scope, the scopes to ask for, the protected resource metadata
 // URL (RFC 9728) the host authorizes against, and a description, which
 // OpenAI's Apps SDK requires alongside the error. Quoted values are escaped
-// per RFC 9110 §5.6.4, so no input can end a parameter early.
+// per RFC 9110 §5.6.4, so no input can end a parameter early, and the
+// description keeps only the characters RFC 6750 §3 allows it (printable
+// ASCII but `"` and `\`); any other becomes a space, so a strict client
+// doesn't reject the challenge. The refusal's text keeps the full sentence.
 func Challenge(resourceMetadata string, scopes []string, description string) string {
 	return `Bearer error="insufficient_scope", scope=` + quote(strings.Join(scopes, " ")) +
 		`, resource_metadata=` + quote(resourceMetadata) +
-		`, error_description=` + quote(description)
+		`, error_description=` + quote(errorDescription(description))
+}
+
+// errorDescription maps every character RFC 6750 §3 forbids in
+// error_description (outside %x20-21 / %x23-5B / %x5D-7E) to a space.
+func errorDescription(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r > 0x7e || r == '"' || r == '\\' {
+			return ' '
+		}
+		return r
+	}, s)
 }
 
 // quote renders s as an RFC 9110 quoted-string. Control characters, which a

@@ -151,6 +151,7 @@ func TestExpand(t *testing.T) {
 }
 
 func TestChallengeEscapesQuotedValues(t *testing.T) {
-	got := grant.Challenge(`https://x/"a"`, []string{"read"}, "say \"hi\"\\\nnow")
-	assert.Equal(t, `Bearer error="insufficient_scope", scope="read", resource_metadata="https://x/\"a\"", error_description="say \"hi\"\\ now"`, got)
+	got := grant.Challenge(`https://x/"a"`, []string{"read"}, "say \"hi\"\\\nnow, café")
+	assert.Equal(t, `Bearer error="insufficient_scope", scope="read", resource_metadata="https://x/\"a\"", error_description="say  hi   now, caf "`, got,
+		"error_description keeps only what RFC 6750 §3 allows it; other quoted values are escaped")
 }
