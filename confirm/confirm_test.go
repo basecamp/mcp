@@ -290,3 +290,20 @@ func names(tools []*mcp.Tool) []string {
 	}
 	return out
 }
+
+// A state hey-mcp-server signed before the move, with key k1 = 0xab * 32,
+// still verifies and signs the same, so questions asked during a rollout stay
+// answerable.
+func TestStatesSignedBeforeTheMoveVerify(t *testing.T) {
+	const before = "eyJraWQiOiJrMSIsImV4cCI6NDEwMjQ0NDgwMCwia2luZCI6ImNvbmZpcm0udjIiLCJtZXRob2QiOiJ0b29scy9jYWxsXHUwMDAwY29uZmlybSIsInRvb2wiOiJzZW5kX2RyYWZ0IiwiYXJncyI6ImExIiwiaWRlbnRpdHkiOiI3IiwiZ3JhbnQiOiJnMSIsImRpZ2VzdCI6ImQxIn0.N9-TP79H_w-u5WN3HO6sjjTi8LKgwBk3IQyyIk8nclU"
+	keys, err := ParseKeys("k1:"+hexKey, "k1")
+	require.NoError(t, err)
+	want := State{KeyID: "k1", Expires: 4102444800, Kind: "confirm.v2", Method: "tools/call\x00confirm",
+		Tool: "send_draft", ArgsHash: "a1", Identity: "7", Grant: "g1", Digest: "d1"}
+	got, err := keys.Verify(before, time.Unix(1_800_000_000, 0))
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+	again, err := keys.Sign(want)
+	require.NoError(t, err)
+	assert.Equal(t, before, again, "the same bytes, so a build on either side verifies the other's")
+}
