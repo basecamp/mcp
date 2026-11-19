@@ -3,7 +3,8 @@
 // product instances have proven it by duplication.
 //
 // The root package holds no code; the toolkit arrives as subpackages
-// (mcptest, gateway, catalog, result, auth/exchange, auth/upstream) via the extraction sequence tracked on the MCP
+// (mcptest, gateway, catalog, result, auth/exchange, auth/upstream,
+// confirm) via the extraction sequence tracked on the MCP
 // program board. Products depend on this module; this module never imports a
 // product SDK or server.
 package mcp
