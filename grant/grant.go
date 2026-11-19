@@ -4,7 +4,9 @@
 // permission the tool needs and that reconnecting asks the person for it, and
 // whose _meta["mcp/www_authenticate"] carries a WWW-Authenticate challenge
 // naming the granted scopes plus the needed ones. A host that relinks from a
-// tool result (ChatGPT) acts on the challenge; any other host shows the text.
+// tool result (ChatGPT) acts on the challenge, for a tool whose
+// _meta.securitySchemes (Declare) names the scopes it needs; any other host
+// shows the text.
 //
 // There is no HTTP 403 step-up. Each server's 401 asks for the most the
 // client may hold and the person narrows at consent, so a narrow grant is a
