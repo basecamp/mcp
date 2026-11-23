@@ -30,8 +30,9 @@ func WithoutFile(t *mcp.Tool) *mcp.Tool {
 	required, _ := schema["required"].([]any)
 	required = slices.DeleteFunc(required, func(name any) bool { return name == Param })
 	if !slices.Contains(required, any("content_base64")) {
-		schema["required"] = append(required, "content_base64")
+		required = append(required, "content_base64")
 	}
+	schema["required"] = required
 	out.InputSchema = schema
 	if _, ok := t.Meta[MetaKey]; ok {
 		meta := maps.Clone(t.Meta)

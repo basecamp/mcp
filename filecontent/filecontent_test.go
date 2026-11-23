@@ -204,6 +204,18 @@ func TestRead_ChatGPTFileRefusals(t *testing.T) {
 			wantKind: filecontent.TooLarge,
 		},
 		{
+			name: "a body cut short of its Content-Length",
+			setup: func(t *testing.T) (string, *filecontent.Fetcher, *fakeFileHost) {
+				pinned := newFakeFileHost(t, func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Length", "1000")
+					_, _ = w.Write([]byte("abc"))
+				})
+				return pinned.srv.URL + secretPath, pinTo(t, pinned.srv), nil
+			},
+			wantText: "couldn't be read from OpenAI",
+			wantKind: filecontent.Invalid,
+		},
+		{
 			name: "an expired link",
 			setup: func(t *testing.T) (string, *filecontent.Fetcher, *fakeFileHost) {
 				pinned := newFakeFileHost(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusForbidden) })
@@ -630,6 +642,14 @@ func TestWithoutFile(t *testing.T) {
 		}
 		out := filecontent.WithoutFile(tool)
 		assert.Equal(t, mcp.Meta{"keep": "me"}, out.Meta)
+		assert.Equal(t, []any{"content_base64"}, out.InputSchema.(map[string]any)["required"])
+	})
+	t.Run("file and content_base64 both required", func(t *testing.T) {
+		tool := &mcp.Tool{
+			Name:        "t",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{"file": map[string]any{}}, "required": []string{"file", "content_base64"}},
+		}
+		out := filecontent.WithoutFile(tool)
 		assert.Equal(t, []any{"content_base64"}, out.InputSchema.(map[string]any)["required"])
 	})
 	t.Run("a required file is no longer required", func(t *testing.T) {

@@ -213,10 +213,18 @@ func (f *Fetcher) fetch(ctx context.Context, raw any, opts Options) (data []byte
 	// The buffer is exactly the reservation, so what the process holds is
 	// what the budget counts: io.ReadAll's doubling would hold up to twice
 	// a file's size, and a small file a buffer larger than its reservation.
+	// Only the body's own EOF ends a read: a response cut short of its
+	// Content-Length, or a broken chunked one, is an error, never a file.
 	buf := make([]byte, reserve)
-	n, readErr := io.ReadFull(resp.Body, buf)
+	var n int
+	var readErr error
+	for n < len(buf) && readErr == nil {
+		var m int
+		m, readErr = resp.Body.Read(buf[n:])
+		n += m
+	}
 	data = buf[:n]
-	if errors.Is(readErr, io.EOF) || errors.Is(readErr, io.ErrUnexpectedEOF) {
+	if errors.Is(readErr, io.EOF) {
 		readErr = nil
 	}
 	if readErr != nil {
