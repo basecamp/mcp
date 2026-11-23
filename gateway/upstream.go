@@ -134,6 +134,9 @@ func classifyUpstream(err error, call Upstream) failure {
 			return refusal
 		}
 		return notUpstream
+	case status >= 200 && status < 300:
+		// The product answered, but its body was cut short or timed out:
+		// the chain below decides.
 	case status != 0:
 		return notUpstream
 	}
@@ -173,7 +176,7 @@ func isConnectionFailure(err error) bool {
 func upstreamWords(class failure, call Upstream) (what, next string) {
 	p := call.Product
 	status := ""
-	if call.Status != 0 {
+	if call.Status >= 500 {
 		status = fmt.Sprintf(" (HTTP %d)", call.Status)
 	}
 	if class == refusal {
