@@ -16,7 +16,8 @@ type Budget interface {
 	// Size is the whole budget, in bytes.
 	Size() int64
 	// Reserve takes n bytes, reporting false, and taking nothing, when they
-	// are not free. The caller releases them with the returned func, once.
+	// are not free or n is negative. The caller releases them with the
+	// returned func, once.
 	Reserve(n int64) (release func(), ok bool)
 }
 
@@ -45,9 +46,10 @@ func (b *MemoryBudget) Size() int64 { return b.size }
 func (b *MemoryBudget) Held() int64 { return b.held.Load() }
 
 // Reserve takes n bytes of the budget, reporting false when they are not
-// free.
+// free or n is negative.
 func (b *MemoryBudget) Reserve(n int64) (release func(), ok bool) {
-	if !b.sem.TryAcquire(n) {
+	// A negative weight would add to the semaphore rather than take from it.
+	if n < 0 || !b.sem.TryAcquire(n) {
 		return nil, false
 	}
 	b.held.Add(n)

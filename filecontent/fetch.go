@@ -210,7 +210,15 @@ func (f *Fetcher) fetch(ctx context.Context, raw any, opts Options) (data []byte
 	if !ok {
 		return nil, release, &Error{Kind: Busy, Message: budgetSpent}
 	}
-	data, readErr := io.ReadAll(io.LimitReader(resp.Body, reserve))
+	// The buffer is exactly the reservation, so what the process holds is
+	// what the budget counts: io.ReadAll's doubling would hold up to twice
+	// a file's size, and a small file a buffer larger than its reservation.
+	buf := make([]byte, reserve)
+	n, readErr := io.ReadFull(resp.Body, buf)
+	data = buf[:n]
+	if errors.Is(readErr, io.EOF) || errors.Is(readErr, io.ErrUnexpectedEOF) {
+		readErr = nil
+	}
 	if readErr != nil {
 		held()
 		if errors.Is(readErr, context.DeadlineExceeded) || isTimeout(readErr) {

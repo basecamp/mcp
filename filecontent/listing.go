@@ -26,7 +26,9 @@ func WithoutFile(t *mcp.Tool) *mcp.Tool {
 	if props, ok := schema["properties"].(map[string]any); ok {
 		delete(props, Param)
 	}
+	// file is never required where content_base64 stands in for it.
 	required, _ := schema["required"].([]any)
+	required = slices.DeleteFunc(required, func(name any) bool { return name == Param })
 	if !slices.Contains(required, any("content_base64")) {
 		schema["required"] = append(required, "content_base64")
 	}

@@ -468,6 +468,16 @@ func TestRead_FetchedFileHoldsTheBudget(t *testing.T) {
 		got.Done()
 		assert.Zero(t, budget.Held(), "a second Done releases nothing more")
 	})
+	t.Run("the bytes held are the bytes reserved", func(t *testing.T) {
+		budget := newBudget(t)
+		var logs bytes.Buffer
+		got, err := filecontent.Read(context.Background(),
+			map[string]any{"file": fileObject(host.srv.URL + secretPath)},
+			chatGPT(pinTo(t, host.srv), budget, &logs))
+		require.NoError(t, err)
+		defer got.Done()
+		assert.Equal(t, int64(cap(got.Data)), budget.Held(), "the buffer is no larger than its reservation")
+	})
 	t.Run("released on a sha256 mismatch", func(t *testing.T) {
 		budget := newBudget(t)
 		var logs bytes.Buffer
@@ -562,6 +572,11 @@ func TestNewMemoryBudget(t *testing.T) {
 	release()
 	release()
 	assert.Zero(t, b.Held(), "release is once")
+	_, ok = b.Reserve(-5)
+	assert.False(t, ok, "a negative reservation takes nothing, and frees nothing")
+	_, ok = b.Reserve(15)
+	assert.False(t, ok)
+	assert.Zero(t, b.Held())
 	_, ok = b.Reserve(10)
 	assert.True(t, ok)
 }
@@ -616,6 +631,14 @@ func TestWithoutFile(t *testing.T) {
 		out := filecontent.WithoutFile(tool)
 		assert.Equal(t, mcp.Meta{"keep": "me"}, out.Meta)
 		assert.Equal(t, []any{"content_base64"}, out.InputSchema.(map[string]any)["required"])
+	})
+	t.Run("a required file is no longer required", func(t *testing.T) {
+		tool := &mcp.Tool{
+			Name:        "t",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{"file": map[string]any{}}, "required": []string{"name", "file"}},
+		}
+		out := filecontent.WithoutFile(tool)
+		assert.Equal(t, []any{"name", "content_base64"}, out.InputSchema.(map[string]any)["required"])
 	})
 }
 
