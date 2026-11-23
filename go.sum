@@ -1,3 +1,5 @@
+github.com/basecamp/surfguard/go v0.1.0 h1:JMo+MZQEOBRqnUylzD0/jS9S42Fp+XKWMG+4LWfu/XE=
+github.com/basecamp/surfguard/go v0.1.0/go.mod h1:y5MWhE5S/CZAPzUOS0LoOYGUVxTeWFByFDssE3/l4b4=
 github.com/go-jose/go-jose/v4 v4.1.5 h1:RjgjO2LOtWOJKUC5wpwY9LR3B3vwVAz6JS2YHfYU6eA=
 github.com/go-jose/go-jose/v4 v4.1.5/go.mod h1:x4oUasVrzR7071A4TnHLGSPpNOm2a21K9Kf04k1rs08=
 github.com/golang-jwt/jwt/v5 v5.3.1 h1:kYf81DTWFe7t+1VvL7eS+jKFVWaUnK9cB1qbwn63YCY=
