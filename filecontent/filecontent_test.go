@@ -626,3 +626,24 @@ func keys(m map[string]any) []string {
 	}
 	return out
 }
+
+func TestChatGPT(t *testing.T) {
+	for _, tc := range []struct {
+		name, userAgent string
+		want            bool
+	}{
+		{"openai-mcp", "", true},
+		{" OpenAI-MCP ", "", true},
+		{"", "openai-mcp/1.0.0", true},
+		{"", "openai-mcp", true},
+		{"", "OpenAI-MCP/1.0.0 (x)", true},
+		{"claude-ai", "", false},
+		{"claude-ai", "Claude-User/1.0", false},
+		{"", "", false},
+		{"", "openai-mcp-proxy/1.0", false},
+		{"openai", "", false},
+		{"", "/openai-mcp", false},
+	} {
+		assert.Equal(t, tc.want, filecontent.ChatGPT(tc.name, tc.userAgent), "%q %q", tc.name, tc.userAgent)
+	}
+}

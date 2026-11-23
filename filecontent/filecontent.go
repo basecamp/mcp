@@ -264,3 +264,27 @@ func decodeContentBase64(contentBase64 string, maxSize int64) ([]byte, error) {
 	}
 	return data, nil
 }
+
+// chatGPTClientName is ChatGPT's clientInfo name, and the product of its
+// User-Agent ("openai-mcp/1.0.0"): every request to basecamp-mcp-server's
+// hosted server naming it in a day of production proxy logs (2026-10-28,
+// about 77,000) sent it as the User-Agent's product.
+const chatGPTClientName = "openai-mcp"
+
+// ChatGPT reports whether a call comes from ChatGPT, the one host that fills
+// a tool's file arguments, by its clientInfo name or, on a legacy-protocol
+// call over stateless HTTP, which carries none, its User-Agent's product.
+// Neither is authenticated. That is enough for what it decides, whether the
+// file argument is offered (Options.AcceptsFile): a client claiming the name
+// gains a fetch from OpenAI's file host alone, of a file it already holds
+// the URL to.
+func ChatGPT(clientName, userAgent string) bool {
+	if clientName != "" && strings.EqualFold(strings.TrimSpace(clientName), chatGPTClientName) {
+		return true
+	}
+	product := userAgent
+	if i := strings.IndexAny(product, "/ "); i >= 0 {
+		product = product[:i]
+	}
+	return product != "" && strings.EqualFold(product, chatGPTClientName)
+}
